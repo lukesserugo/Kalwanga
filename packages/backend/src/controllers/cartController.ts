@@ -1,4 +1,4 @@
-// D:\Projects\Kalwanga\packages\backend\src\controllers\cartController.ts
+// packages/backend/src/controllers/cartController.ts
 
 import type { Request, Response, NextFunction } from 'express';
 import { CartService } from '../services/cartService.js';
@@ -22,6 +22,12 @@ const checkoutService = new CheckoutService();
 // NOTE: `EXCHANGE` and `STORE_CREDIT` are valid POS "payment" methods
 // when a customer exchanges goods or spends store credit; they are
 // distinct from `RefundMethod` values but appear in the same UI menu.
+//
+// ⚠ `PAYSTACK` was removed — no provider handler is registered for it
+//   in `paymentService.initializeHandlers()`, and the UI no longer
+//   offers it. Re-adding it here without also registering a factory
+//   there would let a caller type-check a request that fails at
+//   runtime with "Unsupported payment method: PAYSTACK".
 
 const CANONICAL_PAYMENT_METHODS = [
   'CASH',
@@ -46,7 +52,6 @@ const CANONICAL_PAYMENT_METHODS = [
   'OTHER',
   'PAYPAL',
   'FLUTTERWAVE',
-  'PAYSTACK',
   'SQUARE',
   'CHECK',
 ] as const;
@@ -424,6 +429,25 @@ function assertSafeObjectKeys(
 
 /**
  * Whitelist of fields a client may set on `CartSettings`.
+ *
+ * ⚠ Must match `updateCartSettingsSchema` in
+ *   `packages/shared/src/schemas/cart.ts`. A field that's in one but
+ *   not the other either 400s at the schema layer or 400s at this
+ *   whitelist — either way it's a bug.
+ *
+ * ⚠ Phase 2: `'currencySymbol'` was REMOVED. Phase 1 deleted the
+ *   column from `CartSettings` (and from its siblings
+ *   `CheckoutSettings` and `SalesSettings`); the display symbol is
+ *   now derived from `currencyCode` at read time via the registry
+ *   in `lib/currencies.ts`.
+ *
+ *   Only `currencyCode` is settable. A client that still sends
+ *   `currencySymbol` gets a 400 "Unknown settings field:
+ *   currencySymbol" from `assertSafeObjectKeys` above — which is
+ *   intentional. Turning the stale field into a visible error is
+ *   preferable to silently accepting a value that the service will
+ *   discard. It surfaces the Phase 4 / Phase 5 client-side cleanup
+ *   as a real bug during rollout.
  */
 const CART_SETTINGS_ALLOWED_KEYS = new Set<string>([
   'allowGuestCheckout',
@@ -452,7 +476,7 @@ const CART_SETTINGS_ALLOWED_KEYS = new Set<string>([
   'abandonedCartHours',
   'notifyOnLowStock',
   'currencyCode',
-  'currencySymbol',
+  // ⚠ Phase 2: `currencySymbol` intentionally absent.
   'showStockBadge',
   'showVariantImages',
   'isActive',
@@ -1029,6 +1053,11 @@ export const cartController = {
 
   /**
    * GET /cart/settings
+   *
+   * ⚠ Phase 2: The response shape carries `currencyCode` only.
+   *   Phase 1 removed the persisted `currencySymbol` column from
+   *   `CartSettings`; the frontend derives the display symbol from
+   *   the code via `lib/currencies.ts`.
    */
   async getCartSettings(req: Request, res: Response, next: NextFunction) {
     try {
@@ -1043,6 +1072,16 @@ export const cartController = {
 
   /**
    * PUT /cart/settings
+   *
+   * ⚠ Phase 2: `CART_SETTINGS_ALLOWED_KEYS` no longer includes
+   *   `currencySymbol`. A client that still sends it gets a 400
+   *   from `assertSafeObjectKeys` — which is the intended behavior.
+   *   The service's `updateCartSettings` also strips it defensively,
+   *   so the field cannot reach Prisma even if it slipped past this
+   *   whitelist.
+   *
+   *   `currencyCode` remains settable and is the only currency field
+   *   this endpoint persists.
    */
   async updateCartSettings(
     req: Request,
@@ -1054,6 +1093,8 @@ export const cartController = {
       const data = (req.body ?? {}) as Record<string, unknown>;
 
       // Reject unknown / prototype-pollution keys before touching Prisma.
+      // `currencySymbol` now lands in the "unknown" bucket — see the
+      // Phase 2 note on `CART_SETTINGS_ALLOWED_KEYS`.
       assertSafeObjectKeys(data, CART_SETTINGS_ALLOWED_KEYS);
 
       const settings = await cartService.updateCartSettings(
@@ -1184,7 +1225,16 @@ export const cartController = {
    * Backward-compatibility shim. The canonical checkout endpoint is
    * `POST /checkout` handled by `checkoutController.createCheckout`.
    * Both ultimately call `CheckoutService.processCheckout`, so there
-   * is exactly one implementation of the money math and inventory   * mutation.
+   * is exactly one implementation of the money math and inventory
+   * mutation.
+   *
+   * ⚠ Phase 2: `CheckoutService.processCheckout` resolves the
+   *   currency from the business unit and writes it explicitly on
+   *   the `Payment` row. Phase 1 removed the schema default from
+   *   `Payment.currency`, so this delegation is the only path that
+   *   can create a POS `Payment`. No controller-side currency
+   *   handling is needed — the shim's job is just argument
+   *   pass-through.
    */
   async checkout(req: Request, res: Response, next: NextFunction) {
     try {

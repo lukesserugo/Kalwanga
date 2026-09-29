@@ -244,7 +244,10 @@ model Company {
   phone           String
   address         String?
   taxId           String?
-  currency        String           @default("USD")
+  // ⚠ Changed from "USD" to "UGX" — matches DEFAULT_CURRENCY_CODE in
+  //    lib/currencies.ts. A company row without an explicit currency
+  //    should inherit the platform default, not silently claim USD.
+  currency        String           @default("UGX")
   timezone        String           @default("UTC")
   logo            String?
   isActive        Boolean          @default(true)
@@ -320,6 +323,10 @@ model BusinessUnit {
   isActive              Boolean                @default(true)
   settings              Json?
   taxRate               Float?
+  // ⚠ This is the authoritative currency for a business unit. Every
+  //    Payment, Sale, and amount that leaves the backend is resolved
+  //    through this column first (see currencyService.resolveForBusiness).
+  //    Default matches DEFAULT_CURRENCY_CODE.
   currency              String                 @default("UGX")
   currencyRates         CurrencyRate[]
   timezone              String                 @default("UTC")
@@ -444,8 +451,12 @@ model SalesSettings {
   emailReceipts        Boolean  @default(true)
   receiptFooter        String   @default("Thank you for your business!")
   defaultPaymentMethod String   @default("CASH")
-  currencySymbol       String   @default("$")
-  currencyCode         String   @default("USD")
+  // ⚠ `currencySymbol` was removed — the symbol is derived from
+  //    `currencyCode` via the registry. Storing both allowed them
+  //    to drift (a code change to UGX with a stale `$` symbol).
+  // ⚠ `currencyCode` default changed from "USD" to "UGX" — matches
+  //    DEFAULT_CURRENCY_CODE.
+  currencyCode         String   @default("UGX")
   invoicePrefix        String   @default("INV-")
   receiptPrefix        String   @default("RCP-")
   createdAt            DateTime @default(now())
@@ -999,7 +1010,7 @@ model Order {
   id             String       @id @default(cuid())
   orderNumber    String       @unique
   status         OrderStatus  @default(PENDING)
-  vpaymentStatus  PaymentStatus @default(PENDING) 
+  vpaymentStatus  PaymentStatus @default(PENDING)
   subtotal       Float
   tax            Float        @default(0)
   discount       Float        @default(0)
@@ -1045,9 +1056,8 @@ model Sale {
   tax                   Float                  @default(0)
   discount              Float                  @default(0)
 
-  // ── Promotion / loyalty audit fields ────────────────────────
-  discountType          DiscountType?              
-  promotionCode         String?      
+  discountType          DiscountType?
+  promotionCode         String?
   promotionDiscount     Float                  @default(0)
   loyaltyPointsUsed     Int                    @default(0)
   loyaltyDiscount       Float                  @default(0)
@@ -1106,15 +1116,11 @@ model SaleItem {
   @@map("sale_items")
 }
 
-// ============================================
-// CURRENCY RATES
-// ============================================
-
 model CurrencyRate {
   id             String       @id @default(cuid())
   businessUnitId String
-  currencyCode   String       // "USD", "UGX", "KES", ...
-  rate           Float        // optional, for display conversion
+  currencyCode   String
+  rate           Float
   isEnabled      Boolean      @default(true)
   metadata       Json?
   createdAt      DateTime     @default(now())
@@ -1129,9 +1135,14 @@ model CurrencyRate {
 
 model Payment {
   id                    String               @id @default(cuid())
-  idempotencyKey String? @unique
+  idempotencyKey        String?              @unique
   amount                Float
-  currency              String               @default("USD")
+  // ⚠ Changed from `String @default("USD")`. The column is now
+  //    required with no default: every call site must resolve the
+  //    currency through `currencyService` before creating the row.
+  //    A silent USD default on a non-USD deployment was the root
+  //    of the earlier currency-leak bug.
+  currency              String
   paymentMethod         PaymentMethod
   status                PaymentStatus        @default(PENDING)
   transactionId         String?
@@ -1512,8 +1523,8 @@ model PurchaseOrder {
   orderNumber           String                 @unique
   supplierId            String
   status                PurchaseOrderStatus    @default(DRAFT)
-  priority    String    @default("MEDIUM")   
-  cancelledAt DateTime?   
+  priority    String    @default("MEDIUM")
+  cancelledAt DateTime?
   total                 Float
   notes                 String?
   expectedDelivery      DateTime?
@@ -1734,8 +1745,7 @@ model Cart {
   tax            Float    @default(0)
   discount       Float    @default(0)
 
-  // ── Promotion / loyalty audit fields ─────────────────────────
-  discountType       CartDiscountType?  // 'PERCENTAGE' | 'FIXED' | null
+  discountType       CartDiscountType?
   promotionCode      String?
   promotionDiscount  Float     @default(0)
   loyaltyPointsUsed  Int       @default(0)
@@ -1803,8 +1813,11 @@ model CartSettings {
   notifyOnAbandonedCart    Boolean      @default(true)
   abandonedCartHours       Int          @default(24)
   notifyOnLowStock         Boolean      @default(true)
-  currencyCode             String       @default("USD")
-  currencySymbol           String       @default("$")
+  // ⚠ `currencySymbol` was removed — derived from `currencyCode`
+  //    via the registry. Storing both allowed them to drift.
+  // ⚠ `currencyCode` default changed from "USD" to "UGX" — matches
+  //    DEFAULT_CURRENCY_CODE.
+  currencyCode             String       @default("UGX")
   showStockBadge           Boolean      @default(true)
   showVariantImages        Boolean      @default(true)
   isActive                 Boolean      @default(true)
@@ -1841,8 +1854,9 @@ model CheckoutSettings {
   taxRate                  Float        @default(8)
   notifyOnAbandonedCart    Boolean      @default(true)
   abandonedCartHours       Int          @default(2)
-  currencyCode             String       @default("USD")
-  currencySymbol           String       @default("$")
+  // ⚠ `currencySymbol` was removed — derived from `currencyCode`.
+  // ⚠ `currencyCode` default changed from "USD" to "UGX".
+  currencyCode             String       @default("UGX")
   showStockBadge           Boolean      @default(true)
   showVariantImages        Boolean      @default(true)
   createdAt                DateTime     @default(now())
@@ -2127,11 +2141,11 @@ enum PaymentMethod {
   LOYALTY_POINTS
   CRYPTO
   CHECK
-  PAYPAL          // ← ADD
-  FLUTTERWAVE     // ← ADD 
-  SQUARE          // ← ADD
-  MTN             // ← ADD (mobile money sub-provider)
-  AIRTEL          // ← ADD
+  PAYPAL
+  FLUTTERWAVE
+  SQUARE
+  MTN
+  AIRTEL
 }
 
 enum InventoryTransactionType {
@@ -2452,18 +2466,6 @@ enum SortOrder {
   DESC
 }
 
-enum Currency {
-  USD
-  EUR
-  GBP
-  NGN
-  KES
-  ZAR
-  GHS
-  UGX
-  TZS
-}
-
 enum PaymentProviderEnum {
   STRIPE
   CASH
@@ -2500,6 +2502,7 @@ enum DiscountType {
   LOYALTY
   MANUAL
 }
+
 enum CartStatus {
   ACTIVE
   SAVED

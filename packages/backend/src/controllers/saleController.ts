@@ -442,6 +442,15 @@ export const saleController = {
    *
    * Promotion / loyalty passthrough fields are read from the body
    * and forwarded to the service.
+   *
+   * ⚠ `tipAmount` is NOT forwarded. `cartCheckoutSchema` does not
+   *   declare it, and `SaleService.createSaleFromCart` does not
+   *   consume it — the tip would be silently dropped even if we
+   *   passed it through. If tip support is wanted on the cart
+   *   checkout path, that requires (a) declaring `tipAmount` on
+   *   `cartCheckoutSchema`, (b) adding it to the charged total in
+   *   the service, and (c) recording it on the Payment row. Not a
+   *   Phase 3 concern.
    */
   async createSaleFromCart(req: Request, res: Response, next: NextFunction) {
     try {
@@ -464,7 +473,7 @@ export const saleController = {
           cashRegisterId: validatedData.cashRegisterId,
           cashRegisterSessionId: validatedData.cashRegisterSessionId,
           applyLoyaltyPoints: validatedData.applyLoyaltyPoints,
-          tipAmount: validatedData.tipAmount,
+          // ⚠ No `tipAmount` — see the method JSDoc.
           // ✅ Forward the key so the sale layer persists / dedupes on it.
           idempotencyKey,
           // ✅ Forward the promotion / loyalty passthrough.
@@ -501,6 +510,8 @@ export const saleController = {
    * Alias of `createSaleFromCart` for legacy POS clients. Same
    * idempotency semantics — header (`Idempotency-Key`) or body
    * (`idempotencyKey`) is honored. Same promotion passthrough.
+   *
+   * ⚠ `tipAmount` is NOT forwarded — see `createSaleFromCart`.
    */
   async createSaleFromPos(req: Request, res: Response, next: NextFunction) {
     try {
@@ -523,7 +534,7 @@ export const saleController = {
           cashRegisterId: validatedData.cashRegisterId,
           cashRegisterSessionId: validatedData.cashRegisterSessionId,
           applyLoyaltyPoints: validatedData.applyLoyaltyPoints,
-          tipAmount: validatedData.tipAmount,
+          // ⚠ No `tipAmount` — see `createSaleFromCart`.
           // ✅ Forward the key so the sale layer persists / dedupes on it.
           idempotencyKey,
           // ✅ Forward the promotion / loyalty passthrough.

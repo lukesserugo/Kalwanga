@@ -1,4 +1,4 @@
-// D:\Projects\Kalwanga\packages\web\app\page.tsx
+// D:\Projects\Kalwanga\packages\web\app\(public)\page.tsx
 
 'use client';
 
@@ -30,6 +30,15 @@ import {
 // TYPES
 // ============================================
 
+/**
+ * The product shape this page renders.
+ *
+ * ⚠ `inventory` is SINGULAR — matches the backend's `normalizeProduct`
+ *   output and the `ProductInventory` shape in `ProductCard.tsx`.
+ *   The backend flattens the Prisma relation before sending; an
+ *   earlier version of this interface declared it as an array, which
+ *   is why the `ProductCard` prop was failing to type-check.
+ */
 interface Product {
   id: string;
   name: string;
@@ -39,11 +48,11 @@ interface Product {
   description?: string;
   isActive: boolean;
   featured?: boolean;
-  inventory?: Array<{
+  inventory?: {
     quantity: number;
     reserved: number;
     available?: number;
-  }>;
+  } | null;
   variants?: Array<{
     id: string;
     name: string;
@@ -171,6 +180,42 @@ export default function LandingPage() {
           productService.getAllProducts({ limit: 12, isActive: true }),
         ]);
 
+        /**
+         * Map the raw service payload into this page's `Product`.
+         *
+         * The `inventory` field is normalized to a single object (or
+         * `null`) regardless of what the endpoint sends:
+         *
+         *   - modern shape: `Inventory | null` (backend's
+         *     `normalizeProduct` output) — used as-is.
+         *   - legacy shape: `Inventory[]` — the first row is taken.
+         *
+         * `available` is computed when the server didn't send it.
+         */
+        const normalizeInventory = (
+          raw: unknown,
+        ): Product['inventory'] => {
+          const row = Array.isArray(raw) ? raw[0] ?? null : raw ?? null;
+          if (!row || typeof row !== 'object') return null;
+
+          const inv = row as {
+            quantity?: number;
+            reserved?: number;
+            available?: number;
+          };
+          const quantity = inv.quantity ?? 0;
+          const reserved = inv.reserved ?? 0;
+
+          return {
+            quantity,
+            reserved,
+            available:
+              typeof inv.available === 'number'
+                ? inv.available
+                : quantity - reserved,
+          };
+        };
+
         const mapProducts = (products: any[]): Product[] => {
           return (products || []).map((p: any) => ({
             id: p.id,
@@ -197,13 +242,7 @@ export default function LandingPage() {
                 barcode: v.barcode || null,
                 inventoryId: v.inventoryId || null,
               })) || [],
-            inventory: Array.isArray(p.inventory)
-              ? p.inventory.map((inv: any) => ({
-                  quantity: inv.quantity || 0,
-                  reserved: inv.reserved || 0,
-                  available: (inv.quantity || 0) - (inv.reserved || 0),
-                }))
-              : [],
+            inventory: normalizeInventory(p.inventory),
             rating: p.rating,
             reviewCount: p.reviewCount || 0,
             tags: p.tags || [],

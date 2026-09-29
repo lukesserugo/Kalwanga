@@ -43,6 +43,12 @@ import { api } from '../../../../../services/api';
 // IMPORTANT: the backend's `CART_SETTINGS_ALLOWED_KEYS` whitelist must
 // contain every field below. If you add a field here, add it there too
 // — otherwise the PUT will be rejected with a 400.
+//
+// ⚠ `currencySymbol` was removed. Phase 1 dropped the persisted column
+//   from `CartSettings`; the display symbol is derived from
+//   `currencyCode` at render time (see `handleCurrencyChange` and the
+//   `ui` tab). Sending `currencySymbol` in the PUT body would be
+//   rejected by the backend's strict allow-list with a 400.
 
 interface CartSettings {
   // Server-managed
@@ -93,7 +99,7 @@ interface CartSettings {
 
   // UI
   currencyCode: string;
-  currencySymbol: string;
+  // ⚠ `currencySymbol` intentionally absent — see JSDoc above.
   showStockBadge: boolean;
   showVariantImages: boolean;
 }
@@ -122,6 +128,15 @@ type TabKey =
 // ============================================
 // DEFAULTS
 // ============================================
+//
+// ⚠ `currencyCode` fallback is `UGX`, matching the deployment default
+//   that `currencyService.resolveForBusiness` produces when a business
+//   unit has no currency set. If you deploy to a different region,
+//   update this *and* the `CURRENCIES` array below in lockstep with
+//   the backend registry.
+//
+// ⚠ No `currencySymbol` field. The symbol is derived from the code
+//   on render via `CURRENCIES.find(...)`.
 
 const DEFAULT_SETTINGS: CartSettings = {
   isActive: true,
@@ -150,8 +165,8 @@ const DEFAULT_SETTINGS: CartSettings = {
   notifyOnAbandonedCart: true,
   abandonedCartHours: 24,
   notifyOnLowStock: true,
-  currencyCode: 'USD',
-  currencySymbol: '$',
+  currencyCode: 'UGX',
+  // ⚠ `currencySymbol` intentionally absent — see JSDoc above.
   showStockBadge: true,
   showVariantImages: true,
 };
@@ -173,6 +188,9 @@ const EMPTY_STATS: CartStats = {
  * Excludes server-managed fields (`id`, `businessUnitId`, `createdAt`,
  * `updatedAt`) and matches `CART_SETTINGS_ALLOWED_KEYS` in
  * `packages/backend/src/controllers/cartController.ts`.
+ *
+ * ⚠ `currencySymbol` was removed. Sending it would 400 at the
+ *   backend's `assertSafeObjectKeys` whitelist.
  */
 const MANAGED_FIELDS: ReadonlyArray<keyof CartSettings> = [
   'isActive',
@@ -202,7 +220,7 @@ const MANAGED_FIELDS: ReadonlyArray<keyof CartSettings> = [
   'abandonedCartHours',
   'notifyOnLowStock',
   'currencyCode',
-  'currencySymbol',
+  // ⚠ `currencySymbol` intentionally absent — see JSDoc above.
   'showStockBadge',
   'showVariantImages',
 ] as const;
@@ -211,8 +229,14 @@ const MANAGED_FIELDS: ReadonlyArray<keyof CartSettings> = [
  * Numeric fields the form treats as non-negative. Used to clamp values
  * before writing to state — HTML `min={0}` is advisory only, and a user
  * can paste `-5` into a `type="number"` input.
+ *
+ * ⚠ The set is typed via `new Set<keyof CartSettings>([...])` rather
+ *   than a `ReadonlySet<keyof CartSettings>` annotation on the LHS,
+ *   because a plain `new Set([...])` widens string literals to
+ *   `string` — which is not assignable to `keyof CartSettings`.
+ *   Passing the element type to the constructor preserves the union.
  */
-const NON_NEGATIVE_FIELDS: ReadonlySet<keyof CartSettings> = new Set([
+const NON_NEGATIVE_FIELDS = new Set<keyof CartSettings>([
   'maxCartItems',
   'cartExpiryHours',
   'maxDiscountPercentage',
@@ -228,6 +252,23 @@ const NON_NEGATIVE_FIELDS: ReadonlySet<keyof CartSettings> = new Set([
   'abandonedCartHours',
 ]);
 
+/**
+ * Numeric fields with an explicit upper bound. HTML `max={100}` on an
+ * input is advisory only; a user can paste `150` and the value reaches
+ * the wire — where the backend Zod schema rejects it with a 400.
+ * Clamping here keeps the request valid and the user's intent visible
+ * (they see the value snap back to the cap).
+ */
+const BOUNDED_FIELDS: Partial<
+  Record<keyof CartSettings, { min?: number; max?: number }>
+> = {
+  maxDiscountPercentage: { min: 0, max: 100 },
+  taxRate: { min: 0, max: 100 },
+  maxCartItems: { min: 1 },
+  cartExpiryHours: { min: 1 },
+  abandonedCartHours: { min: 1 },
+};
+
 // ============================================
 // CONSTANTS
 // ============================================
@@ -242,17 +283,29 @@ const PAYMENT_METHODS = [
   { value: 'LOYALTY_POINTS', label: 'Loyalty Points' },
 ] as const;
 
-// Matches the Prisma `Currency` enum. `GHS` was previously missing.
+/**
+ * Currency options offered in the UI settings tab.
+ *
+ * ⚠ Keep the `symbol` values in lockstep with the backend's
+ *   `lib/currencies.ts` registry. If the registry returns `USh` for
+ *   UGX but this array says `UGX`, the settings page and the cart
+ *   display disagree on how amounts are rendered.
+ *
+ * The array is a *display* list AND the client-side source of truth
+ * for the symbol shown next to currency-labelled inputs. The backend
+ * validates `currencyCode` against its own registry; a code not
+ * present there will be rejected on save.
+ */
 const CURRENCIES = [
+  { value: 'UGX', label: 'UGX — Ugandan Shilling', symbol: 'USh' },
+  { value: 'TZS', label: 'TZS — Tanzanian Shilling', symbol: 'TSh' },
+  { value: 'KES', label: 'KES — Kenyan Shilling', symbol: 'KSh' },
+  { value: 'NGN', label: 'NGN — Nigerian Naira', symbol: '₦' },
+  { value: 'GHS', label: 'GHS — Ghanaian Cedi', symbol: '₵' },
+  { value: 'ZAR', label: 'ZAR — South African Rand', symbol: 'R' },
   { value: 'USD', label: 'USD — US Dollar', symbol: '$' },
   { value: 'EUR', label: 'EUR — Euro', symbol: '€' },
   { value: 'GBP', label: 'GBP — British Pound', symbol: '£' },
-  { value: 'NGN', label: 'NGN — Nigerian Naira', symbol: '₦' },
-  { value: 'KES', label: 'KES — Kenyan Shilling', symbol: 'KES' },
-  { value: 'ZAR', label: 'ZAR — South African Rand', symbol: 'R' },
-  { value: 'GHS', label: 'GHS — Ghanaian Cedi', symbol: '₵' },
-  { value: 'UGX', label: 'UGX — Ugandan Shilling', symbol: 'UGX' },
-  { value: 'TZS', label: 'TZS — Tanzanian Shilling', symbol: 'TZS' },
 ] as const;
 
 const TABS: Array<{
@@ -313,6 +366,21 @@ function toWirePayload(settings: CartSettings): Record<string, unknown> {
   return payload;
 }
 
+/**
+ * Display symbol for a currency code, resolved against the local
+ * `CURRENCIES` registry. Falls back to the code itself so a
+ * registry-less deployment still renders something readable.
+ *
+ * ⚠ This is a *client-side* derivation. The backend does not
+ *   persist or return a symbol; if the registry here diverges from
+ *   `lib/currencies.ts` server-side, the labels on this page and the
+ *   amounts on receipts will disagree. Keep them in sync.
+ */
+function symbolForCurrency(currencyCode: string): string {
+  const match = CURRENCIES.find((c) => c.value === currencyCode);
+  return match?.symbol ?? currencyCode;
+}
+
 // ============================================
 // MAIN COMPONENT
 // ============================================
@@ -355,6 +423,16 @@ export default function CartSettingsPage() {
   const isDirty = useMemo(
     () => hasManagedChanges(settings, original),
     [settings, original],
+  );
+
+  /**
+   * Symbol shown next to currency-labelled inputs. Derived from the
+   * current `currencyCode`; updates live as the user changes the
+   * dropdown.
+   */
+  const currencySymbol = useMemo(
+    () => symbolForCurrency(settings.currencyCode),
+    [settings.currencyCode],
   );
 
   // ============================================
@@ -451,13 +529,25 @@ export default function CartSettingsPage() {
           // Empty input becomes 0, not NaN.
           const parsed = value === '' ? 0 : parseFloat(value);
           let num = Number.isFinite(parsed) ? parsed : 0;
-          // `min={0}` on the input is advisory; clamp real values.
-          if (
+
+          // Clamp to the field's bounds. `min`/`max` on the HTML input
+          // are advisory only — this is where the value actually gets
+          // constrained before it reaches the wire.
+          const bounds = BOUNDED_FIELDS[name as keyof CartSettings];
+          if (bounds) {
+            if (typeof bounds.min === 'number' && num < bounds.min) {
+              num = bounds.min;
+            }
+            if (typeof bounds.max === 'number' && num > bounds.max) {
+              num = bounds.max;
+            }
+          } else if (
             NON_NEGATIVE_FIELDS.has(name as keyof CartSettings) &&
             num < 0
           ) {
             num = 0;
           }
+
           return { ...prev, [name]: num };
         }
         return { ...prev, [name]: value };
@@ -469,14 +559,20 @@ export default function CartSettingsPage() {
     [],
   );
 
+  /**
+   * Currency dropdown handler.
+   *
+   * ⚠ Only `currencyCode` is written. The display symbol is derived
+   *   on render via `symbolForCurrency(settings.currencyCode)` — it
+   *   is not stored on the settings row and is not sent to the
+   *   backend. Phase 1 removed the persisted `currencySymbol` column.
+   */
   const handleCurrencyChange = useCallback(
     (e: React.ChangeEvent<HTMLSelectElement>) => {
       const value = e.target.value;
-      const currency = CURRENCIES.find((c) => c.value === value);
       setSettings((prev) => ({
         ...prev,
         currencyCode: value,
-        currencySymbol: currency?.symbol ?? '$',
       }));
       setSuccess(false);
     },
@@ -518,16 +614,17 @@ export default function CartSettingsPage() {
 
         if (!isMountedRef.current) return;
 
+        // Merge the server's response over the current settings.
+        //
+        // Precedence: defaults → current settings → server response.
+        // The middle layer only matters when the response omits a field
+        // — in which case keeping the current value is the safer
+        // default than blanking it.
         const updated =
-          unwrap<CartSettings>(response) ?? {
-            ...original,
-            ...payload,
-          };
-
-        // Re-merge with the server's response so any server-normalized
-        // values land in the form.
+          unwrap<CartSettings>(response) ?? {};
         const merged: CartSettings = {
           ...DEFAULT_SETTINGS,
+          ...settings,
           ...updated,
         };
         setSettings(merged);
@@ -553,8 +650,18 @@ export default function CartSettingsPage() {
         if (isMountedRef.current) setSaving(false);
       }
     },
-    [canManageSettings, isDirty, settings, original],
+    [canManageSettings, isDirty, settings],
   );
+
+  const handleCancel = useCallback(() => {
+    if (isDirty) {
+      const ok = window.confirm(
+        'You have unsaved changes. Discard them and go back?',
+      );
+      if (!ok) return;
+    }
+    router.push('/admin/cart');
+  }, [isDirty, router]);
 
   // ============================================
   // PERMISSION GUARD
@@ -621,7 +728,7 @@ export default function CartSettingsPage() {
           <div className="flex items-center gap-4">
             <button
               type="button"
-              onClick={() => router.push('/admin/cart')}
+              onClick={handleCancel}
               className="p-2 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-colors"
               aria-label="Back"
             >
@@ -932,14 +1039,14 @@ export default function CartSettingsPage() {
               <Section title="Shipping Settings" icon={Truck}>
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                   <NumberField
-                    label={`Free Shipping Threshold (${settings.currencySymbol})`}
+                    label={`Free Shipping Threshold (${currencySymbol})`}
                     name="freeShippingThreshold"
                     value={settings.freeShippingThreshold}
                     onChange={handleChange}
                     min={0}
                   />
                   <NumberField
-                    label={`Shipping Cost (${settings.currencySymbol})`}
+                    label={`Shipping Cost (${currencySymbol})`}
                     name="shippingCost"
                     value={settings.shippingCost}
                     onChange={handleChange}
@@ -1033,7 +1140,7 @@ export default function CartSettingsPage() {
             <div className="flex items-center gap-3 w-full sm:w-auto">
               <button
                 type="button"
-                onClick={() => router.push('/admin/cart')}
+                onClick={handleCancel}
                 className="px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors text-gray-700 dark:text-gray-300 w-full sm:w-auto"
               >
                 Cancel

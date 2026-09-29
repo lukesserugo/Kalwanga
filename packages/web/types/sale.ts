@@ -466,6 +466,17 @@ export interface SalesAnalyticsResponse {
 // SETTINGS INTERFACES
 // ============================================
 
+/**
+ * Sales settings as returned by `GET /sales/settings`.
+ *
+ * ⚠ `currencySymbol` was removed. Phase 1 dropped the persisted
+ *   column from `SalesSettings`; the display symbol is now derived
+ *   from `currencyCode` via `lib/currencies.ts` on the read path.
+ *   The backend service computes it at read time with
+ *   `currencyService.tryGetCurrency(currencyCode)?.symbol`, but the
+ *   client should not rely on that — derive it locally when a
+ *   symbol is needed for rendering.
+ */
 export interface SalesSettings {
   taxRate: number;
   discountEnabled: boolean;
@@ -476,8 +487,8 @@ export interface SalesSettings {
   emailReceipts: boolean;
   receiptFooter: string;
   defaultPaymentMethod: string;
-  currencySymbol: string;
   currencyCode: string;
+  // ⚠ `currencySymbol` intentionally absent — see JSDoc above.
   invoicePrefix: string;
   receiptPrefix: string;
 }

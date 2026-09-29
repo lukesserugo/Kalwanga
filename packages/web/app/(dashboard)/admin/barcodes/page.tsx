@@ -27,15 +27,7 @@ import { barcodeService } from '../../../../services/barcodeService';
 import { toast } from '../../../../utils/toast-manager';
 import { PermissionResource } from '../../../../types/enums';
 import { ProductBarcode } from '../../../../components/barcode/ProductBarcode';
-
-interface Product {
-  id: string;
-  name: string;
-  sku: string;
-  barcode?: string;
-  unitPrice: number;
-  images?: string[];
-}
+import type { Product } from '../../../../types/product';
 
 export default function BarcodesPage() {
   const router = useRouter();

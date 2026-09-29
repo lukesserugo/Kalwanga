@@ -6,7 +6,6 @@ import { api } from './api';
 // TYPES
 // ============================================
 
-// Export User interface so it can be imported by useAuth
 export interface User {
   id: string;
   email: string;
@@ -18,7 +17,6 @@ export interface User {
   permissions?: string[];
   createdAt?: string;
   updatedAt?: string;
-  // Extra fields that the backend's `shapeUser()` includes.
   clerkId?: string;
   phoneNumber?: string | null;
   avatar?: string | null;
@@ -43,7 +41,7 @@ interface RegisterRequest {
   lastName: string;
   phoneNumber?: string;
   businessUnitId?: string;
-  role?: string; // Add role support
+  role?: string;
 }
 
 interface RegisterResponse {
@@ -51,14 +49,6 @@ interface RegisterResponse {
   user: User;
 }
 
-/**
- * Optional overrides for the `/auth/sync` endpoint.
- *
- * The backend derives identity from the Clerk JWT — these fields are
- * only used when the JWT is missing something (e.g. no email claim in
- * the current session template). Callers can usually call
- * `syncClerkUser()` with no arguments.
- */
 interface SyncClerkUserInput {
   clerkId?: string;
   email?: string;
@@ -68,11 +58,6 @@ interface SyncClerkUserInput {
   avatar?: string;
 }
 
-/**
- * The shape returned by `POST /auth/sync`. Matches the shaped user
- * from the backend (`shapeUser()` in `authService.ts`) plus a couple
- * of convenience fields.
- */
 export interface SyncedUser {
   id: string;
   clerkId: string;
@@ -93,17 +78,20 @@ export interface SyncedUser {
 }
 
 /**
- * Strip `undefined` and empty-string values from an object before
- * sending it as a request body.
+ * Strip `undefined`, `null`, and empty-string values from an object
+ * before sending it as a request body.
  *
- * Why: the backend's Zod schema for `/auth/sync` accepts strings only.
- * Sending `{ email: undefined }` is fine, but sending `{ email: "" }`
- * is also fine yet wasteful — the backend would then skip overwriting
- * an existing email with a blank string anyway. Stripping empties up
- * front keeps the payload minimal and lets the backend fall back to
- * the JWT for missing fields.
+ * ⚠ The constraint is `object`, not `Record<string, unknown>`.
+ *   `Record<string, unknown>` requires the argument to have a
+ *   string index signature; plain interfaces with named optional
+ *   fields (`SyncClerkUserInput`, etc.) do not have one, so
+ *   `pruneEmpty(someInterface)` was rejected with TS2345.
+ *
+ *   `T extends object` accepts any non-primitive, and the cast
+ *   `key as keyof T` inside the loop keeps the return type precise
+ *   (`Partial<T>`, not `Record<string, unknown>`).
  */
-function pruneEmpty<T extends Record<string, unknown>>(input: T): Partial<T> {
+function pruneEmpty<T extends object>(input: T): Partial<T> {
   const out: Partial<T> = {};
   for (const [key, value] of Object.entries(input)) {
     if (value === undefined || value === null) continue;
@@ -141,7 +129,6 @@ export const authService = {
     try {
       await api.post('/auth/logout');
     } finally {
-      // Even if the API call fails, clear local state.
       if (typeof window !== 'undefined') {
         localStorage.removeItem('auth_token');
         localStorage.removeItem('user');
@@ -153,35 +140,9 @@ export const authService = {
   /**
    * Sync the currently-authenticated Clerk user with the local
    * `users` table.
-   *
-   * Called from `useAuth` on every session. Idempotent: safe to call
-   * repeatedly. Returns the canonical `User` row from the database,
-   * which includes the CUID (`id`) that every foreign key in the
-   * schema expects.
-   *
-   * Why this exists:
-   *   Clerk is the identity provider, but the app stores its own
-   *   `User` rows in Postgres. Without this call a freshly-signed-in
-   *   Clerk user has no local row, so any endpoint that resolves a
-   *   `userId` foreign key will fail with `USER_NOT_SYNCED`.
-   *
-   * The backend's `syncClerkUser()` handler resolves the identity in
-   * this order:
-   *   1. Match by `clerkId` → refresh mutable profile fields.
-   *   2. Match by `email`   → adopt the row (rebind `clerkId`).
-   *   3. No match           → create a fresh row.
-   *
-   * All three branches preserve the existing `role` and `permissions`.
-   *
-   * @param input — optional overrides. The backend reads identity from
-   *                the verified Clerk JWT first; these are fallbacks
-   *                for claims the current session template omits.
    */
   async syncClerkUser(input?: SyncClerkUserInput): Promise<SyncedUser> {
-    // Strip undefined/empty values so the backend can fall back to the
-    // JWT for any field the caller didn't supply.
     const body = input ? pruneEmpty(input) : {};
-
     const response = await api.post<SyncedUser>('/auth/sync', body);
     return response;
   },

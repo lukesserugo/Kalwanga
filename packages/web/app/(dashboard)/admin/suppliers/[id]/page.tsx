@@ -7,62 +7,74 @@ import { useParams, useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
-  ArrowLeft, Edit, Trash2, Truck, Mail, Phone, MapPin,
-  User, Star, StarHalf, Package, Building, Loader2, Lock,
-  Calendar, ShoppingBag, AlertCircle, X, Globe, DollarSign,
-  Clock, CheckCircle, XCircle, CreditCard, TrendingUp,
-  Users, FileText, ExternalLink, Copy, Printer, Database,
-  ChevronDown, ChevronUp, Info, HelpCircle
+  ArrowLeft,
+  Edit,
+  Trash2,
+  Truck,
+  Mail,
+  Phone,
+  MapPin,
+  User,
+  Star,
+  StarHalf,
+  Package,
+  Building,
+  Loader2,
+  CheckCircle,
+  Clock,
+  AlertCircle,
+  X,
+  Globe,
+  DollarSign,
+  ExternalLink,
+  Copy,
+  Printer,
+  Database,
+  FileText,
+  ShoppingBag,
 } from 'lucide-react';
 import { useAuth } from '../../../../../hooks/useAuth';
 import { usePermission } from '../../../../../hooks/usePermission';
 import { supplierService } from '../../../../../services/supplierService';
-import { companyService } from '../../../../../services/companyService';
 import { toast } from '../../../../../utils/toast-manager';
 import { formatDate, formatCurrency } from '../../../../../utils/formatters';
 import { PermissionResource } from '../../../../../types/enums';
-import { api } from '../../../../../services/api';
 
 // ============================================
 // TYPES
 // ============================================
 
-interface Company {
-  id: string;
-  name: string;
-  email: string;
-  phone: string;
-  isActive: boolean;
-}
-
+/**
+ * Shape returned by `supplierService.getSupplierById`.
+ *
+ * The frontend service types this as `Supplier`, which carries every
+ * field the backend's `getSupplierById` includes on the response. We
+ * keep this page's local shape aligned with that — no invented
+ * fields like `businessUnitId` (the backend returns `businessUnit`
+ * as a nested object), and no separate `Company` lookup.
+ */
 interface SupplierDetail {
   id: string;
   name: string;
   contactPerson?: string | null;
-  email: string;
-  phone: string;
+  email?: string | null;
+  phone?: string | null;
   address?: string | null;
   taxId?: string | null;
   notes?: string | null;
   rating?: number | null;
   isActive: boolean;
-  businessUnitId: string;
-  businessUnitName?: string;
-  companyId?: string;
-  companyName?: string;
-  productCount?: number;
-  totalSpent?: number;
-  totalPurchases?: number;
-  lastOrderDate?: string | null;
-  createdAt: string;
-  updatedAt: string;
+  companyId?: string | null;
   website?: string | null;
   paymentTerms?: string | null;
   deliveryTerms?: string | null;
   creditLimit?: number | null;
-  completedOrders?: number;
-  pendingOrders?: number;
-  averageOrderValue?: number;
+  createdAt: string;
+  updatedAt: string;
+
+  // Included by the backend's `getSupplierById` via Prisma relations:
+  businessUnit?: { id: string; name: string; code?: string } | null;
+  company?: { id: string; name: string } | null;
   products?: Array<{
     id: string;
     name: string;
@@ -76,6 +88,14 @@ interface SupplierDetail {
     status: string;
     createdAt: string;
   }>;
+
+  // Computed by the backend's `getSupplierById` return mapper:
+  productCount?: number;
+  purchaseOrderCount?: number;
+  totalPurchases?: number;
+  completedOrders?: number;
+  pendingOrders?: number;
+  averageOrderValue?: number;
 }
 
 // ============================================
@@ -105,7 +125,9 @@ const InfoRow: React.FC<{
   <div className="flex items-start gap-2 text-gray-600 dark:text-gray-400 py-1.5 border-b border-gray-100 dark:border-gray-700/50 last:border-0">
     {icon && <span className="flex-shrink-0 mt-0.5">{icon}</span>}
     <span className="text-sm flex-1">{label}:</span>
-    <span className="text-sm font-medium text-gray-900 dark:text-white text-right">{value || '-'}</span>
+    <span className="text-sm font-medium text-gray-900 dark:text-white text-right">
+      {value || '-'}
+    </span>
   </div>
 );
 
@@ -113,20 +135,35 @@ const StatBadge: React.FC<{
   label: string;
   value: number | string;
   icon?: React.ReactNode;
-  color?: 'brand' | 'brand-accent' | 'secondary' | 'success' | 'warning' | 'danger' | 'gray';
+  color?:
+    | 'brand'
+    | 'brand-accent'
+    | 'secondary'
+    | 'success'
+    | 'warning'
+    | 'danger'
+    | 'gray';
 }> = ({ label, value, icon, color = 'brand' }) => {
   const colorClasses = {
-    brand: 'bg-brand-50 dark:bg-brand-900/20 text-brand-700 dark:text-brand-300 border-brand-200 dark:border-brand-800',
-    'brand-accent': 'bg-brand-accent-50 dark:bg-brand-accent-900/20 text-brand-accent-700 dark:text-brand-accent-300 border-brand-accent-200 dark:border-brand-accent-800',
-    secondary: 'bg-secondary-50 dark:bg-secondary-900/20 text-secondary-700 dark:text-secondary-300 border-secondary-200 dark:border-secondary-800',
-    success: 'bg-success-50 dark:bg-success-900/20 text-success-700 dark:text-success-300 border-success-200 dark:border-success-800',
-    warning: 'bg-warning-50 dark:bg-warning-900/20 text-warning-700 dark:text-warning-300 border-warning-200 dark:border-warning-800',
-    danger: 'bg-danger-50 dark:bg-danger-900/20 text-danger-700 dark:text-danger-300 border-danger-200 dark:border-danger-800',
+    brand:
+      'bg-brand-50 dark:bg-brand-900/20 text-brand-700 dark:text-brand-300 border-brand-200 dark:border-brand-800',
+    'brand-accent':
+      'bg-brand-accent-50 dark:bg-brand-accent-900/20 text-brand-accent-700 dark:text-brand-accent-300 border-brand-accent-200 dark:border-brand-accent-800',
+    secondary:
+      'bg-secondary-50 dark:bg-secondary-900/20 text-secondary-700 dark:text-secondary-300 border-secondary-200 dark:border-secondary-800',
+    success:
+      'bg-success-50 dark:bg-success-900/20 text-success-700 dark:text-success-300 border-success-200 dark:border-success-800',
+    warning:
+      'bg-warning-50 dark:bg-warning-900/20 text-warning-700 dark:text-warning-300 border-warning-200 dark:border-warning-800',
+    danger:
+      'bg-danger-50 dark:bg-danger-900/20 text-danger-700 dark:text-danger-300 border-danger-200 dark:border-danger-800',
     gray: 'bg-gray-50 dark:bg-gray-700/50 text-gray-700 dark:text-gray-300 border-gray-200 dark:border-gray-600',
   };
 
   return (
-    <div className={`flex items-center gap-2 px-3 py-1.5 rounded-lg border ${colorClasses[color]}`}>
+    <div
+      className={`flex items-center gap-2 px-3 py-1.5 rounded-lg border ${colorClasses[color]}`}
+    >
       {icon}
       <span className="text-xs font-medium">{label}:</span>
       <span className="text-xs font-bold tabular-nums">{value}</span>
@@ -136,7 +173,11 @@ const StatBadge: React.FC<{
 
 const ProductsTable: React.FC<{ products: any[] }> = ({ products }) => {
   if (!products || products.length === 0) {
-    return <p className="text-sm text-gray-500 dark:text-gray-400">No products from this supplier</p>;
+    return (
+      <p className="text-sm text-gray-500 dark:text-gray-400">
+        No products from this supplier
+      </p>
+    );
   }
 
   return (
@@ -151,9 +192,16 @@ const ProductsTable: React.FC<{ products: any[] }> = ({ products }) => {
         </thead>
         <tbody className="divide-y divide-gray-100 dark:divide-gray-700/50">
           {products.slice(0, 10).map((product) => (
-            <tr key={product.id} className="hover:bg-gray-50 dark:hover:bg-gray-700/30 transition-colors">
-              <td className="px-3 py-2 text-gray-900 dark:text-white">{product.name}</td>
-              <td className="px-3 py-2 text-gray-500 dark:text-gray-400 font-mono">{product.sku || 'N/A'}</td>
+            <tr
+              key={product.id}
+              className="hover:bg-gray-50 dark:hover:bg-gray-700/30 transition-colors"
+            >
+              <td className="px-3 py-2 text-gray-900 dark:text-white">
+                {product.name}
+              </td>
+              <td className="px-3 py-2 text-gray-500 dark:text-gray-400 font-mono">
+                {product.sku || 'N/A'}
+              </td>
               <td className="px-3 py-2 text-right font-medium text-gray-900 dark:text-white tabular-nums">
                 {formatCurrency(product.unitPrice || 0)}
               </td>
@@ -163,7 +211,10 @@ const ProductsTable: React.FC<{ products: any[] }> = ({ products }) => {
         {products.length > 10 && (
           <tfoot>
             <tr>
-              <td colSpan={3} className="px-3 py-2 text-center text-gray-400 text-xs tabular-nums">
+              <td
+                colSpan={3}
+                className="px-3 py-2 text-center text-gray-400 text-xs tabular-nums"
+              >
                 Showing 10 of {products.length} products
               </td>
             </tr>
@@ -176,20 +227,34 @@ const ProductsTable: React.FC<{ products: any[] }> = ({ products }) => {
 
 const OrdersTable: React.FC<{ orders: any[] }> = ({ orders }) => {
   if (!orders || orders.length === 0) {
-    return <p className="text-sm text-gray-500 dark:text-gray-400">No purchase orders from this supplier</p>;
+    return (
+      <p className="text-sm text-gray-500 dark:text-gray-400">
+        No purchase orders from this supplier
+      </p>
+    );
   }
 
   const getStatusColor = (status: string) => {
     const colors: Record<string, string> = {
-      'COMPLETED': 'bg-success-100 text-success-700 dark:bg-success-900/30 dark:text-success-300',
-      'PENDING': 'bg-warning-100 text-warning-700 dark:bg-warning-900/30 dark:text-warning-300',
-      'CANCELLED': 'bg-danger-100 text-danger-700 dark:bg-danger-900/30 dark:text-danger-300',
-      'APPROVED': 'bg-brand-100 text-brand-700 dark:bg-brand-900/30 dark:text-brand-300',
-      'DRAFT': 'bg-gray-100 text-gray-700 dark:bg-gray-700/50 dark:text-gray-300',
-      'RECEIVED': 'bg-secondary-100 text-secondary-700 dark:bg-secondary-900/30 dark:text-secondary-300',
-      'PARTIALLY_RECEIVED': 'bg-brand-accent-100 text-brand-accent-700 dark:bg-brand-accent-900/30 dark:text-brand-accent-300',
+      COMPLETED:
+        'bg-success-100 text-success-700 dark:bg-success-900/30 dark:text-success-300',
+      PENDING:
+        'bg-warning-100 text-warning-700 dark:bg-warning-900/30 dark:text-warning-300',
+      CANCELLED:
+        'bg-danger-100 text-danger-700 dark:bg-danger-900/30 dark:text-danger-300',
+      APPROVED:
+        'bg-brand-100 text-brand-700 dark:bg-brand-900/30 dark:text-brand-300',
+      DRAFT:
+        'bg-gray-100 text-gray-700 dark:bg-gray-700/50 dark:text-gray-300',
+      RECEIVED:
+        'bg-secondary-100 text-secondary-700 dark:bg-secondary-900/30 dark:text-secondary-300',
+      PARTIALLY_RECEIVED:
+        'bg-brand-accent-100 text-brand-accent-700 dark:bg-brand-accent-900/30 dark:text-brand-accent-300',
     };
-    return colors[status] || 'bg-gray-100 text-gray-700 dark:bg-gray-700/50 dark:text-gray-300';
+    return (
+      colors[status] ||
+      'bg-gray-100 text-gray-700 dark:bg-gray-700/50 dark:text-gray-300'
+    );
   };
 
   return (
@@ -205,14 +270,25 @@ const OrdersTable: React.FC<{ orders: any[] }> = ({ orders }) => {
         </thead>
         <tbody className="divide-y divide-gray-100 dark:divide-gray-700/50">
           {orders.slice(0, 10).map((order) => (
-            <tr key={order.id} className="hover:bg-gray-50 dark:hover:bg-gray-700/30 transition-colors">
-              <td className="px-3 py-2 font-medium text-gray-900 dark:text-white">{order.orderNumber}</td>
-              <td className="px-3 py-2 text-gray-500 dark:text-gray-400">{formatDate(order.createdAt)}</td>
+            <tr
+              key={order.id}
+              className="hover:bg-gray-50 dark:hover:bg-gray-700/30 transition-colors"
+            >
+              <td className="px-3 py-2 font-medium text-gray-900 dark:text-white">
+                {order.orderNumber}
+              </td>
+              <td className="px-3 py-2 text-gray-500 dark:text-gray-400">
+                {formatDate(order.createdAt)}
+              </td>
               <td className="px-3 py-2 text-right font-medium text-gray-900 dark:text-white tabular-nums">
                 {formatCurrency(order.total || 0)}
               </td>
               <td className="px-3 py-2">
-                <span className={`px-2 py-1 rounded-full text-xs font-medium ${getStatusColor(order.status)}`}>
+                <span
+                  className={`px-2 py-1 rounded-full text-xs font-medium ${getStatusColor(
+                    order.status,
+                  )}`}
+                >
                   {order.status || 'DRAFT'}
                 </span>
               </td>
@@ -222,7 +298,10 @@ const OrdersTable: React.FC<{ orders: any[] }> = ({ orders }) => {
         {orders.length > 10 && (
           <tfoot>
             <tr>
-              <td colSpan={4} className="px-3 py-2 text-center text-gray-400 text-xs tabular-nums">
+              <td
+                colSpan={4}
+                className="px-3 py-2 text-center text-gray-400 text-xs tabular-nums"
+              >
                 Showing 10 of {orders.length} orders
               </td>
             </tr>
@@ -242,7 +321,12 @@ export default function SupplierDetailPage() {
   const router = useRouter();
   const id = params?.id as string;
   const { user } = useAuth();
-  const { canEdit, canDelete, canManage, isLoading: permissionLoading } = usePermission();
+  const {
+    canEdit,
+    canDelete,
+    canManage,
+    isLoading: permissionLoading,
+  } = usePermission();
 
   const [supplier, setSupplier] = useState<SupplierDetail | null>(null);
   const [loading, setLoading] = useState(true);
@@ -250,112 +334,83 @@ export default function SupplierDetailPage() {
   const [deleting, setDeleting] = useState(false);
   const [isClient, setIsClient] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [expandedSections, setExpandedSections] = useState<Record<string, boolean>>({
-    contact: true,
-    business: true,
-    products: true,
-    orders: true,
-  });
-  const [companies, setCompanies] = useState<Company[]>([]);
-  const [loadingCompanies, setLoadingCompanies] = useState(false);
 
-  const companyId = useMemo(() => user?.companyId || 'default', [user]);
-
-  const canEditSupplier = useMemo(() =>
-    canEdit(PermissionResource.SUPPLIER) || canManage(PermissionResource.SUPPLIER),
-    [canEdit, canManage]
+  const canEditSupplier = useMemo(
+    () =>
+      canEdit(PermissionResource.SUPPLIER) ||
+      canManage(PermissionResource.SUPPLIER),
+    [canEdit, canManage],
   );
-  const canDeleteSupplier = useMemo(() =>
-    canDelete(PermissionResource.SUPPLIER) || canManage(PermissionResource.SUPPLIER),
-    [canDelete, canManage]
+  const canDeleteSupplier = useMemo(
+    () =>
+      canDelete(PermissionResource.SUPPLIER) ||
+      canManage(PermissionResource.SUPPLIER),
+    [canDelete, canManage],
   );
 
   useEffect(() => {
     setIsClient(true);
   }, []);
 
-  useEffect(() => {
-    if (isClient && id) {
-      loadSupplier();
-      fetchCompanies();
-    }
-  }, [id, isClient]);
+  // ============================================
+  // LOAD SUPPLIER
+  // ============================================
 
-  const fetchCompanies = async () => {
-    setLoadingCompanies(true);
-    try {
-      const response: any = await api.get('/companies');
-      let companiesData: Company[] = [];
+  const loadSupplier = useCallback(async () => {
+    if (!id) return;
 
-      if (response) {
-        if (Array.isArray(response)) {
-          companiesData = response;
-        } else if (response.data) {
-          const data = response.data;
-          if (Array.isArray(data)) {
-            companiesData = data;
-          } else if (data.data && Array.isArray(data.data)) {
-            companiesData = data.data;
-          } else if (data.companies && Array.isArray(data.companies)) {
-            companiesData = data.companies;
-          }
-        } else if (response.companies && Array.isArray(response.companies)) {
-          companiesData = response.companies;
-        }
-      }
-
-      const activeCompanies = companiesData.filter((c: Company) => c.isActive !== false);
-      setCompanies(activeCompanies);
-
-      // Store company ID if not already stored
-      if (activeCompanies.length > 0 && !localStorage.getItem('companyId')) {
-        const firstCompany = activeCompanies[0];
-        companyService.setCompanyId(firstCompany.id);
-        localStorage.setItem('companyId', firstCompany.id);
-      }
-    } catch (error) {
-      console.error('Failed to fetch companies:', error);
-    } finally {
-      setLoadingCompanies(false);
-    }
-  };
-
-  const loadSupplier = async () => {
     try {
       setLoading(true);
       setError(null);
-      const data = await supplierService.getSupplierById(id, companyId);
 
-      // Get the company name from the fetched companies
-      const company = companies.find((c: Company) => c.id === data.companyId);
-      if (company) {
-        data.companyName = company.name;
-      }
+      // The backend resolves the company scope from `req.user.companyId`
+      // when we omit it. Do NOT send a sentinel.
+      const data = await supplierService.getSupplierById(id);
 
-      setSupplier(data);
-    } catch (error: any) {
-      console.error('Failed to load supplier:', error);
-      if (error?.response?.status === 404) {
+      // The service returns `Supplier`, which carries the nested
+      // `businessUnit`, `company`, `products`, and `purchaseOrders`
+      // relations the detail endpoint includes. No extra lookup.
+      setSupplier(data as unknown as SupplierDetail);
+    } catch (err: any) {
+      console.error('Failed to load supplier:', err);
+      if (err?.response?.status === 404) {
         setError('Supplier not found');
       } else {
-        setError('Failed to load supplier. Please try again.');
+        setError(
+          err?.response?.data?.message ||
+            'Failed to load supplier. Please try again.',
+        );
       }
       toast.error('Failed to load supplier');
+      setSupplier(null);
     } finally {
       setLoading(false);
     }
-  };
+  }, [id]);
+
+  useEffect(() => {
+    if (isClient && id) {
+      loadSupplier();
+    }
+  }, [id, isClient, loadSupplier]);
+
+  // ============================================
+  // DELETE
+  // ============================================
 
   const handleDelete = async () => {
     if (!supplier) return;
     setDeleting(true);
     try {
-      await supplierService.deleteSupplier(supplier.id, companyId);
+      await supplierService.deleteSupplier(supplier.id);
       toast.success('Supplier deleted successfully');
-      router.push('/admin/catalog/suppliers');
-    } catch (error: any) {
-      console.error('Failed to delete supplier:', error);
-      const errorMessage = error?.response?.data?.message || error?.message || 'Failed to delete supplier';
+      router.push('/admin/suppliers');
+    } catch (err: any) {
+      console.error('Failed to delete supplier:', err);
+      const errorMessage =
+        err?.response?.data?.message ||
+        err?.message ||
+        'Failed to delete supplier';
       toast.error(errorMessage);
     } finally {
       setDeleting(false);
@@ -363,12 +418,9 @@ export default function SupplierDetailPage() {
     }
   };
 
-  const toggleSection = (section: string) => {
-    setExpandedSections(prev => ({
-      ...prev,
-      [section]: !prev[section],
-    }));
-  };
+  // ============================================
+  // HELPERS
+  // ============================================
 
   const copyToClipboard = (text: string) => {
     navigator.clipboard.writeText(text);
@@ -383,32 +435,50 @@ export default function SupplierDetailPage() {
     return (
       <div className="flex items-center gap-0.5">
         {[...Array(fullStars)].map((_, i) => (
-          <Star key={`full-${i}`} className="w-4 h-4 text-warning-400 fill-warning-400" />
+          <Star
+            key={`full-${i}`}
+            className="w-4 h-4 text-warning-400 fill-warning-400"
+          />
         ))}
-        {hasHalfStar && <StarHalf className="w-4 h-4 text-warning-400 fill-warning-400" />}
+        {hasHalfStar && (
+          <StarHalf className="w-4 h-4 text-warning-400 fill-warning-400" />
+        )}
         {[...Array(emptyStars)].map((_, i) => (
-          <Star key={`empty-${i}`} className="w-4 h-4 text-gray-300 dark:text-gray-600" />
+          <Star
+            key={`empty-${i}`}
+            className="w-4 h-4 text-gray-300 dark:text-gray-600"
+          />
         ))}
         {rating > 0 && (
-          <span className="text-sm text-gray-500 ml-1 tabular-nums">{rating.toFixed(1)}</span>
+          <span className="text-sm text-gray-500 ml-1 tabular-nums">
+            {rating.toFixed(1)}
+          </span>
         )}
       </div>
     );
   };
 
-  // Loading state
+  // ============================================
+  // LOADING
+  // ============================================
+
   if (permissionLoading || !isClient || loading) {
     return (
       <div className="flex items-center justify-center min-h-[60vh] bg-gray-50 dark:bg-gray-900">
         <div className="text-center">
           <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-brand-500 dark:border-brand-400 mx-auto"></div>
-          <p className="mt-4 text-gray-600 dark:text-gray-400">Loading supplier...</p>
+          <p className="mt-4 text-gray-600 dark:text-gray-400">
+            Loading supplier...
+          </p>
         </div>
       </div>
     );
   }
 
-  // Error state
+  // ============================================
+  // ERROR
+  // ============================================
+
   if (error || !supplier) {
     return (
       <div className="flex flex-col items-center justify-center min-h-[60vh] bg-gray-50 dark:bg-gray-900 p-8">
@@ -420,7 +490,7 @@ export default function SupplierDetailPage() {
           The supplier you're looking for doesn't exist or has been removed.
         </p>
         <Link
-          href="/admin/catalog/suppliers"
+          href="/admin/suppliers"
           className="mt-4 inline-flex items-center gap-2 px-4 py-2 bg-brand-500 text-white rounded-lg hover:bg-brand-600 transition-colors focus-ring"
         >
           <ArrowLeft className="w-4 h-4" />
@@ -430,12 +500,19 @@ export default function SupplierDetailPage() {
     );
   }
 
-  // Calculate stats
-  const totalPurchases = supplier.totalPurchases || supplier.totalSpent || 0;
-  const completedOrders = supplier.completedOrders || 0;
-  const pendingOrders = supplier.pendingOrders || 0;
-  const averageOrderValue = supplier.averageOrderValue || 0;
-  const productCount = supplier.productCount || 0;
+  // ============================================
+  // DERIVED
+  // ============================================
+
+  const totalPurchases =
+    supplier.totalPurchases ?? supplier.averageOrderValue ?? 0;
+  const completedOrders = supplier.completedOrders ?? 0;
+  const pendingOrders = supplier.pendingOrders ?? 0;
+  const averageOrderValue = supplier.averageOrderValue ?? 0;
+  const productCount =
+    supplier.productCount ?? (supplier.products?.length || 0);
+  const purchaseOrderCount =
+    supplier.purchaseOrderCount ?? (supplier.purchaseOrders?.length || 0);
 
   return (
     <div className="min-h-screen bg-gray-50 dark:bg-gray-900 p-4 sm:p-6 transition-colors duration-200">
@@ -444,7 +521,7 @@ export default function SupplierDetailPage() {
         <div className="flex flex-wrap items-start justify-between gap-4">
           <div className="flex items-center gap-4">
             <Link
-              href="/admin/catalog/suppliers"
+              href="/admin/suppliers"
               className="p-2 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-colors focus-ring"
             >
               <ArrowLeft className="w-5 h-5 text-gray-600 dark:text-gray-400" />
@@ -455,20 +532,22 @@ export default function SupplierDetailPage() {
                   <Truck className="w-6 h-6 sm:w-7 sm:h-7 text-brand-500" />
                   {supplier.name}
                 </h1>
-                <span className={`px-2 py-1 rounded-full text-xs font-medium ${
-                  supplier.isActive
-                    ? 'bg-success-100 text-success-700 dark:bg-success-900/30 dark:text-success-300'
-                    : 'bg-gray-100 text-gray-500 dark:bg-gray-700/50 dark:text-gray-400'
-                }`}>
+                <span
+                  className={`px-2 py-1 rounded-full text-xs font-medium ${
+                    supplier.isActive
+                      ? 'bg-success-100 text-success-700 dark:bg-success-900/30 dark:text-success-300'
+                      : 'bg-gray-100 text-gray-500 dark:bg-gray-700/50 dark:text-gray-400'
+                  }`}
+                >
                   {supplier.isActive ? 'Active' : 'Inactive'}
                 </span>
               </div>
               <div className="flex items-center gap-3 mt-1 flex-wrap">
                 {renderStars(supplier.rating || 0)}
-                {supplier.businessUnitName && (
+                {supplier.businessUnit?.name && (
                   <span className="text-sm text-gray-500 dark:text-gray-400 flex items-center gap-1">
                     <Building className="w-4 h-4" />
-                    {supplier.businessUnitName}
+                    {supplier.businessUnit.name}
                   </span>
                 )}
                 {supplier.contactPerson && (
@@ -544,7 +623,9 @@ export default function SupplierDetailPage() {
         >
           <div className="space-y-1">
             <div className="flex items-center justify-between py-1.5 border-b border-gray-100 dark:border-gray-700/50">
-              <span className="text-sm text-gray-500 dark:text-gray-400">Company ID:</span>
+              <span className="text-sm text-gray-500 dark:text-gray-400">
+                Company ID:
+              </span>
               <div className="flex items-center gap-2">
                 <code className="text-sm font-mono text-gray-900 dark:text-white">
                   {supplier.companyId || 'N/A'}
@@ -554,22 +635,27 @@ export default function SupplierDetailPage() {
                     onClick={() => copyToClipboard(supplier.companyId!)}
                     className="p-1 hover:bg-gray-100 dark:hover:bg-gray-700 rounded transition-colors focus-ring"
                     title="Copy Company ID"
+                    aria-label="Copy Company ID"
                   >
                     <Copy className="w-3.5 h-3.5 text-gray-400" />
                   </button>
                 )}
               </div>
             </div>
-            {supplier.companyName && (
+            {supplier.company?.name && (
               <InfoRow
                 label="Company Name"
-                value={supplier.companyName}
+                value={supplier.company.name}
                 icon={<Building className="w-4 h-4 text-gray-400" />}
               />
             )}
             <InfoRow
               label="Business Unit"
-              value={supplier.businessUnitName || supplier.businessUnitId || 'N/A'}
+              value={
+                supplier.businessUnit?.name ||
+                supplier.businessUnit?.id ||
+                'N/A'
+              }
               icon={<Building className="w-4 h-4 text-gray-400" />}
             />
           </div>
@@ -591,18 +677,32 @@ export default function SupplierDetailPage() {
             <InfoRow
               label="Email"
               value={
-                <a href={`mailto:${supplier.email}`} className="text-brand-600 dark:text-brand-400 hover:underline focus-ring rounded">
-                  {supplier.email}
-                </a>
+                supplier.email ? (
+                  <a
+                    href={`mailto:${supplier.email}`}
+                    className="text-brand-600 dark:text-brand-400 hover:underline focus-ring rounded"
+                  >
+                    {supplier.email}
+                  </a>
+                ) : (
+                  '-'
+                )
               }
               icon={<Mail className="w-4 h-4 text-gray-400" />}
             />
             <InfoRow
               label="Phone"
               value={
-                <a href={`tel:${supplier.phone}`} className="text-brand-600 dark:text-brand-400 hover:underline focus-ring rounded">
-                  {supplier.phone}
-                </a>
+                supplier.phone ? (
+                  <a
+                    href={`tel:${supplier.phone}`}
+                    className="text-brand-600 dark:text-brand-400 hover:underline focus-ring rounded"
+                  >
+                    {supplier.phone}
+                  </a>
+                ) : (
+                  '-'
+                )
               }
               icon={<Phone className="w-4 h-4 text-gray-400" />}
             />
@@ -618,7 +718,11 @@ export default function SupplierDetailPage() {
                 label="Website"
                 value={
                   <a
-                    href={supplier.website.startsWith('http') ? supplier.website : `https://${supplier.website}`}
+                    href={
+                      supplier.website.startsWith('http')
+                        ? supplier.website
+                        : `https://${supplier.website}`
+                    }
                     target="_blank"
                     rel="noopener noreferrer"
                     className="text-brand-600 dark:text-brand-400 hover:underline flex items-center gap-1 focus-ring rounded"
@@ -644,21 +748,40 @@ export default function SupplierDetailPage() {
                 <InfoRow label="Tax ID" value={supplier.taxId} />
               )}
               {supplier.paymentTerms && (
-                <InfoRow label="Payment Terms" value={supplier.paymentTerms} />
+                <InfoRow
+                  label="Payment Terms"
+                  value={supplier.paymentTerms}
+                />
               )}
               {supplier.deliveryTerms && (
-                <InfoRow label="Delivery Terms" value={supplier.deliveryTerms} />
+                <InfoRow
+                  label="Delivery Terms"
+                  value={supplier.deliveryTerms}
+                />
               )}
             </div>
             <div className="space-y-1">
-              {supplier.creditLimit !== undefined && supplier.creditLimit !== null && supplier.creditLimit > 0 && (
-                <InfoRow label="Credit Limit" value={formatCurrency(supplier.creditLimit)} />
-              )}
+              {typeof supplier.creditLimit === 'number' &&
+                supplier.creditLimit > 0 && (
+                  <InfoRow
+                    label="Credit Limit"
+                    value={formatCurrency(supplier.creditLimit)}
+                  />
+                )}
               {averageOrderValue > 0 && (
-                <InfoRow label="Avg. Order Value" value={formatCurrency(averageOrderValue)} />
+                <InfoRow
+                  label="Avg. Order Value"
+                  value={formatCurrency(averageOrderValue)}
+                />
               )}
-              <InfoRow label="Created" value={formatDate(supplier.createdAt)} />
-              <InfoRow label="Updated" value={formatDate(supplier.updatedAt)} />
+              <InfoRow
+                label="Created"
+                value={formatDate(supplier.createdAt)}
+              />
+              <InfoRow
+                label="Updated"
+                value={formatDate(supplier.updatedAt)}
+              />
             </div>
           </div>
         </InfoCard>
@@ -669,7 +792,9 @@ export default function SupplierDetailPage() {
             title="Notes"
             icon={<FileText className="w-5 h-5 text-warning-500" />}
           >
-            <p className="text-gray-600 dark:text-gray-400 whitespace-pre-wrap">{supplier.notes}</p>
+            <p className="text-gray-600 dark:text-gray-400 whitespace-pre-wrap">
+              {supplier.notes}
+            </p>
           </InfoCard>
         )}
 
@@ -694,12 +819,12 @@ export default function SupplierDetailPage() {
 
         {/* Orders Section */}
         <InfoCard
-          title={`Purchase Orders (${(supplier.purchaseOrders || []).length})`}
+          title={`Purchase Orders (${purchaseOrderCount})`}
           icon={<ShoppingBag className="w-5 h-5 text-success-500" />}
         >
           <div className="mt-2">
             <OrdersTable orders={supplier.purchaseOrders || []} />
-            {(supplier.purchaseOrders || []).length > 10 && (
+            {purchaseOrderCount > 10 && (
               <Link
                 href={`/admin/suppliers/${id}/orders`}
                 className="mt-3 inline-flex items-center gap-1 text-sm text-brand-600 dark:text-brand-400 hover:underline focus-ring rounded"
@@ -715,7 +840,10 @@ export default function SupplierDetailPage() {
         <AnimatePresence>
           {showDeleteModal && (
             <div className="fixed inset-0 z-modal flex items-center justify-center p-4">
-              <div className="fixed inset-0 bg-black/50 backdrop-blur-sm" onClick={() => setShowDeleteModal(false)} />
+              <div
+                className="fixed inset-0 bg-black/50 backdrop-blur-sm"
+                onClick={() => setShowDeleteModal(false)}
+              />
               <motion.div
                 initial={{ opacity: 0, scale: 0.95 }}
                 animate={{ opacity: 1, scale: 1 }}
@@ -725,6 +853,7 @@ export default function SupplierDetailPage() {
                 <button
                   onClick={() => setShowDeleteModal(false)}
                   className="absolute top-4 right-4 p-1 hover:bg-gray-100 dark:hover:bg-gray-700 rounded transition-colors focus-ring"
+                  aria-label="Close"
                 >
                   <X className="w-5 h-5" />
                 </button>
@@ -733,15 +862,24 @@ export default function SupplierDetailPage() {
                     <AlertCircle className="w-6 h-6 text-danger-600 dark:text-danger-400" />
                   </div>
                   <div>
-                    <h3 className="text-lg font-bold text-gray-900 dark:text-white">Delete Supplier</h3>
-                    <p className="text-sm text-gray-500 dark:text-gray-400">This action cannot be undone</p>
+                    <h3 className="text-lg font-bold text-gray-900 dark:text-white">
+                      Delete Supplier
+                    </h3>
+                    <p className="text-sm text-gray-500 dark:text-gray-400">
+                      This action cannot be undone
+                    </p>
                   </div>
                 </div>
                 <p className="text-gray-600 dark:text-gray-300 mb-6">
-                  Are you sure you want to delete <strong className="text-gray-900 dark:text-white">{supplier.name}</strong>?
+                  Are you sure you want to delete{' '}
+                  <strong className="text-gray-900 dark:text-white">
+                    {supplier.name}
+                  </strong>
+                  ?
                   {productCount > 0 && (
                     <span className="block mt-2 text-danger-600">
-                      ⚠️ This supplier has {productCount} associated product{productCount !== 1 ? 's' : ''}.
+                      ⚠️ This supplier has {productCount} associated product
+                      {productCount !== 1 ? 's' : ''}.
                     </span>
                   )}
                   {totalPurchases > 0 && (
@@ -762,7 +900,11 @@ export default function SupplierDetailPage() {
                     disabled={deleting}
                     className="px-4 py-2 bg-danger-600 text-white rounded-lg hover:bg-danger-700 flex items-center gap-2 disabled:opacity-50 transition-colors focus-ring"
                   >
-                    {deleting ? <Loader2 className="w-4 h-4 animate-spin" /> : <Trash2 className="w-4 h-4" />}
+                    {deleting ? (
+                      <Loader2 className="w-4 h-4 animate-spin" />
+                    ) : (
+                      <Trash2 className="w-4 h-4" />
+                    )}
                     {deleting ? 'Deleting...' : 'Delete Supplier'}
                   </button>
                 </div>

@@ -160,14 +160,51 @@ function hoursSince(iso: string | undefined | null): number {
 
 /**
  * The `api` wrapper may or may not unwrap `response.data`. Accept both.
+ *
+ * Handles three shapes:
+ *   1. `{ carts, total, ... }`             — canonical
+ *   2. `{ data: { carts, total, ... } }`   — enveloped
+ *   3. `[...]`                             — bare array
  */
-function unwrapApiResponse<T>(response: unknown): T | null {
-  if (response == null) return null;
-  if (typeof response === 'object' && 'data' in (response as any)) {
-    const inner = (response as any).data;
-    if (inner !== undefined && inner !== null) return inner as T;
+function unwrapAbandonedResponse(response: any): {
+  carts: AbandonedCart[];
+  total: number;
+  page: number;
+  totalPages: number;
+  limit: number;
+} {
+  if (!response) {
+    return { carts: [], total: 0, page: 1, totalPages: 1, limit: 20 };
   }
-  return response as T;
+
+  if (Array.isArray(response)) {
+    return {
+      carts: response as AbandonedCart[],
+      total: response.length,
+      page: 1,
+      totalPages: 1,
+      limit: response.length || 20,
+    };
+  }
+
+  const payload =
+    response.data && typeof response.data === 'object' && !Array.isArray(response.data)
+      ? response.data
+      : response;
+
+  const carts = Array.isArray(payload.carts)
+    ? (payload.carts as AbandonedCart[])
+    : Array.isArray(payload)
+    ? (payload as AbandonedCart[])
+    : [];
+
+  return {
+    carts,
+    total: typeof payload.total === 'number' ? payload.total : carts.length,
+    page: typeof payload.page === 'number' ? payload.page : 1,
+    totalPages: typeof payload.totalPages === 'number' ? payload.totalPages : 1,
+    limit: typeof payload.limit === 'number' ? payload.limit : 20,
+  };
 }
 
 // ============================================
@@ -258,16 +295,13 @@ export default function AdminAbandonedCartsPage() {
         const response = await cartService.getAbandonedCarts(params);
         if (!isMountedRef.current) return;
 
-        const rawCarts: AbandonedCart[] = Array.isArray(response)
-          ? response
-          : response?.carts ?? [];
-
-        setCarts(rawCarts);
+        const normalized = unwrapAbandonedResponse(response);
+        setCarts(normalized.carts);
         setPagination({
-          total: response?.total ?? rawCarts.length,
-          page: response?.page ?? pagination.page,
-          totalPages: response?.totalPages ?? 1,
-          limit: response?.limit ?? pagination.limit,
+          total: normalized.total,
+          page: normalized.page,
+          totalPages: normalized.totalPages,
+          limit: normalized.limit,
         });
       } catch (err: any) {
         if (!isMountedRef.current) return;

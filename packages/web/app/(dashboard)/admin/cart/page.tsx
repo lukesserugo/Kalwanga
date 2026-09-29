@@ -223,12 +223,22 @@ export default function AdminCartPage() {
         const response = await cartService.getAbandonedCarts(params);
         if (!isMountedRef.current) return;
 
-        // The backend returns `{ carts, total, page, totalPages, limit }`
-        // for this endpoint. Coerce defensively in case a wrapper
-        // returns the array directly.
-        const rawCarts: any[] = Array.isArray(response)
-          ? response
-          : response?.carts ?? [];
+        // The backend returns `{ carts, total, page, totalPages, limit }`.
+        // The `api` wrapper may wrap that in a `{ success, data }`
+        // envelope, and some callers see the array directly. Coerce
+        // defensively — a mismatched unwrap here produces an empty
+        // table without an error, which is worse than a thrown one.
+        const root: any = response ?? {};
+        const payload: any =
+          root.data && typeof root.data === 'object' && !Array.isArray(root.data)
+            ? root.data
+            : root;
+
+        const rawCarts: any[] = Array.isArray(payload)
+          ? payload
+          : Array.isArray(payload.carts)
+          ? payload.carts
+          : [];
 
         // Client-side search fallback: the backend `/cart/abandoned`
         // endpoint does not accept a `search` param. Apply the filter
@@ -255,8 +265,8 @@ export default function AdminCartPage() {
         setCarts(cartList);
         setPagination((prev) => ({
           ...prev,
-          total: response?.total ?? cartList.length,
-          totalPages: response?.totalPages ?? 1,
+          total: payload.total ?? cartList.length,
+          totalPages: payload.totalPages ?? 1,
         }));
 
         // Stats reflect the current page only. A dedicated

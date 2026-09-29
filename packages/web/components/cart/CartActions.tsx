@@ -43,7 +43,7 @@ export function CartActions({
     baseButton +
     ' border border-gray-300 dark:border-gray-600 ' +
     'text-gray-700 dark:text-gray-300 ' +
-    'hover:bg-orange-50 dark:hover:bg-gray-700 ' +
+    'hover:bg-gray-100 dark:hover:bg-gray-700 ' +
     'focus:ring-brand-400';
 
   const dangerButton =
@@ -60,6 +60,7 @@ export function CartActions({
           type="button"
           onClick={onSync}
           disabled={anyBusy || disabled || !hasItems}
+          aria-busy={isSyncing}
           className={neutralButton}
           title="Sync cart quantities with current inventory"
         >
@@ -74,6 +75,7 @@ export function CartActions({
         type="button"
         onClick={onClear}
         disabled={anyBusy || disabled || !hasItems}
+        aria-busy={isClearing}
         className={dangerButton}
         title="Remove all items from the cart"
       >
@@ -86,6 +88,7 @@ export function CartActions({
           type="button"
           onClick={onSaveForLater}
           disabled={anyBusy || disabled}
+          aria-busy={isSaving}
           className={neutralButton}
           title="Save this cart to restore later"
         >
@@ -102,6 +105,7 @@ export function CartActions({
             type="button"
             onClick={onRestore}
             disabled={anyBusy || disabled}
+            aria-busy={isRestoring}
             className={neutralButton}
             title="Restore the last saved cart"
           >

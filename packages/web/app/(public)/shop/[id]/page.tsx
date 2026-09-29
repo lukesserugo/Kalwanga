@@ -1,4 +1,4 @@
-// D:\Projects\Kalwanga\packages\web\app\shop\[id]\page.tsx
+// D:\Projects\Kalwanga\packages\web\app\(public)\shop\[id]\page.tsx
 
 'use client';
 
@@ -58,7 +58,7 @@ import {
 import { WishlistButton } from '../../../../components/products/WishlistButton';
 import { RecentlyViewed } from '../../../../components/products/RecentlyViewed';
 import { ProductReviews } from '../../../../components/products/ProductReviews';
-import { useThemeStore } from '../../../../components/stores/themeStore';
+import { useThemeStore } from '../../../stores/themeStore';
 import { useAuth } from '../../../../hooks/useAuth';
 import { ProductCard } from '../../../../components/products/ProductCard';
 import { cartService } from '../../../../services/cartService';
@@ -197,28 +197,30 @@ function toLocalProduct(raw: any): Product {
         }
       : null,
     variants: Array.isArray(raw.variants)
-      ? raw.variants.map((v: any): Variant => ({
-          id: v.id,
-          name: v.name,
-          sku: v.sku,
-          price: v.price || 0,
-          stock: v.stock || 0,
-          isActive: v.isActive !== undefined ? v.isActive : true,
-          images: v.images || [],
-          attributes: v.attributes || {},
-          barcode: v.barcode ?? null,
-          inventoryId: v.inventoryId ?? null,
-          inventory: v.inventory
-            ? {
-                id: v.inventory.id,
-                quantity: v.inventory.quantity || 0,
-                reserved: v.inventory.reserved || 0,
-                available:
-                  (v.inventory.quantity || 0) -
-                  (v.inventory.reserved || 0),
-              }
-            : null,
-        }))
+      ? raw.variants.map(
+          (v: any): Variant => ({
+            id: v.id,
+            name: v.name,
+            sku: v.sku,
+            price: v.price || 0,
+            stock: v.stock || 0,
+            isActive: v.isActive !== undefined ? v.isActive : true,
+            images: v.images || [],
+            attributes: v.attributes || {},
+            barcode: v.barcode ?? null,
+            inventoryId: v.inventoryId ?? null,
+            inventory: v.inventory
+              ? {
+                  id: v.inventory.id,
+                  quantity: v.inventory.quantity || 0,
+                  reserved: v.inventory.reserved || 0,
+                  available:
+                    (v.inventory.quantity || 0) -
+                    (v.inventory.reserved || 0),
+                }
+              : null,
+          }),
+        )
       : null,
     isActive: raw.isActive !== undefined ? raw.isActive : true,
     isDigital: raw.isDigital || false,
@@ -337,13 +339,6 @@ export default function ShopProductPage() {
   // CART HANDLERS
   // ============================================
 
-  /**
-   * Fetch the active cart from whichever service matches the current
-   * auth state. The two services hit different endpoints:
-   *
-   *   cartService       → /cart/*
-   *   guestCartService  → /cart/guest/*
-   */
   const fetchCartData = useCallback(async () => {
     try {
       const cart = isAuthenticated ? cartService : guestCartService;
@@ -363,11 +358,6 @@ export default function ShopProductPage() {
     }
   }, [isAuthenticated]);
 
-  /**
-   * Add item to cart. No price is sent — the server looks it up.
-   * A 401 on an authenticated cart means the session expired; the
-   * shopper is redirected to login.
-   */
   const handleAddToCart = useCallback(async (): Promise<boolean> => {
     if (!product) return false;
 
@@ -411,10 +401,6 @@ export default function ShopProductPage() {
     router,
   ]);
 
-  /**
-   * Buy Now. Adds to cart then routes to checkout. Guests are first
-   * sent to login so the checkout page has an authenticated user.
-   */
   const handleBuyNow = useCallback(async () => {
     if (!product) return;
     const ok = await handleAddToCart();
@@ -434,29 +420,23 @@ export default function ShopProductPage() {
   // DATA FETCHING
   // ============================================
 
-  const loadRelatedProducts = useCallback(
-    async (productId: string) => {
-      if (relatedLoadedRef.current) return;
+  const loadRelatedProducts = useCallback(async (productId: string) => {
+    if (relatedLoadedRef.current) return;
 
-      try {
-        const data = await productService.getRelatedProducts(
-          productId,
-          4,
-        );
-        if (!isMountedRef.current) return;
-        setRelatedProducts((data || []).map(toLocalProduct));
-        relatedLoadedRef.current = true;
-      } catch (err: any) {
-        if (
-          err?.response?.status !== 401 &&
-          err?.response?.status !== 403
-        ) {
-          console.warn('Related products unavailable:', err?.message);
-        }
+    try {
+      const data = await productService.getRelatedProducts(productId, 4);
+      if (!isMountedRef.current) return;
+      setRelatedProducts((data || []).map(toLocalProduct));
+      relatedLoadedRef.current = true;
+    } catch (err: any) {
+      if (
+        err?.response?.status !== 401 &&
+        err?.response?.status !== 403
+      ) {
+        console.warn('Related products unavailable:', err?.message);
       }
-    },
-    [],
-  );
+    }
+  }, []);
 
   const recordView = useCallback(
     async (productId: string) => {
@@ -491,7 +471,7 @@ export default function ShopProductPage() {
       setLightboxImages(transformedProduct.images || []);
       productLoadedRef.current = true;
 
-      recordView(id);
+      void recordView(id);
 
       await loadRelatedProducts(id);
       await fetchCartData();
@@ -501,9 +481,7 @@ export default function ShopProductPage() {
       setProduct(null);
       const status = err?.response?.status;
       setError(
-        status === 404
-          ? 'Product not found'
-          : 'Failed to load product',
+        status === 404 ? 'Product not found' : 'Failed to load product',
       );
     } finally {
       if (isMountedRef.current) setLoading(false);
@@ -532,11 +510,11 @@ export default function ShopProductPage() {
     setShowLightbox(false);
     setLightboxIndex(0);
 
-    fetchProduct();
+    void fetchProduct();
   }, [id, fetchProduct]);
 
   useEffect(() => {
-    fetchCartData();
+    void fetchCartData();
   }, [fetchCartData]);
 
   useEffect(() => {
@@ -653,9 +631,21 @@ export default function ShopProductPage() {
           <div class="container">
             <div class="product-name">${safeName}</div>
             <div class="sku">SKU: ${safeSku}</div>
-            ${product.inventoryId ? '<div class="linked-badge">Linked to Inventory</div>' : ''}
-            ${barcodeInfo.barcodeUrl ? `<img src="${barcodeInfo.barcodeUrl}" alt="Barcode" class="barcode-img" onerror="this.style.display='none'" />` : ''}
-            ${barcodeInfo.qrCodeUrl ? `<img src="${barcodeInfo.qrCodeUrl}" alt="QR Code" class="qr-img" onerror="this.style.display='none'" />` : ''}
+            ${
+              product.inventoryId
+                ? '<div class="linked-badge">Linked to Inventory</div>'
+                : ''
+            }
+            ${
+              barcodeInfo.barcodeUrl
+                ? `<img src="${barcodeInfo.barcodeUrl}" alt="Barcode" class="barcode-img" onerror="this.style.display='none'" />`
+                : ''
+            }
+            ${
+              barcodeInfo.qrCodeUrl
+                ? `<img src="${barcodeInfo.qrCodeUrl}" alt="QR Code" class="qr-img" onerror="this.style.display='none'" />`
+                : ''
+            }
             <div class="price">${formatCurrency(product.unitPrice || 0)}</div>
             <div class="info">
               <span>${safeBarcode}</span>
@@ -753,8 +743,7 @@ export default function ShopProductPage() {
     }
     return {
       status: 'In Stock',
-      color:
-        'bg-gradient-to-r from-emerald-500 to-green-600 text-white',
+      color: 'bg-gradient-to-r from-emerald-500 to-green-600 text-white',
     };
   }, [product, stockMetrics]);
 
@@ -764,8 +753,7 @@ export default function ShopProductPage() {
   const selectedVariantData = useMemo(
     () =>
       selectedVariant
-        ? product?.variants?.find((v) => v.id === selectedVariant) ??
-          null
+        ? product?.variants?.find((v) => v.id === selectedVariant) ?? null
         : null,
     [selectedVariant, product?.variants],
   );
@@ -800,6 +788,52 @@ export default function ShopProductPage() {
     [product?.reviewCount],
   );
 
+  /**
+   * Map a `Product` to the shape `ProductCard` expects.
+   *
+   * ⚠ `ProductCardProduct` narrows `description` to `string | undefined`
+   *   — it does NOT accept `null`. Our local `Product` type declares
+   *   `description?: string | null` (matching the wire shape). Passing
+   *   the local `Product` straight into `ProductCard` was the TS2322
+   *   at line 823.
+   *
+   *   This adapter converts every `null` to `undefined` so the object
+   *   is assignable to `ProductCardProduct`. It's the single place
+   *   in this file where the shape conversion happens — add new
+   *   null-bearing fields here as the ProductCard contract grows.
+   */
+  const toProductCardProduct = useCallback(
+    (source: Product) => ({
+      id: source.id,
+      name: source.name,
+      sku: source.sku,
+      description: source.description ?? undefined,
+      unitPrice: source.unitPrice,
+      costPrice: source.costPrice ?? undefined,
+      barcode: source.barcode ?? undefined,
+      images: source.images ?? [],
+      category: source.category ?? undefined,
+      categoryId: source.categoryId ?? undefined,
+      supplier: source.supplier ?? undefined,
+      inventory: source.inventory ?? undefined,
+      variants: source.variants ?? undefined,
+      isActive: source.isActive,
+      isDigital: source.isDigital ?? false,
+      weight: source.weight ?? undefined,
+      taxRate: source.taxRate ?? undefined,
+      minStock: source.minStock ?? undefined,
+      attributes: source.attributes ?? undefined,
+      rating: source.rating ?? undefined,
+      reviewCount: source.reviewCount ?? undefined,
+      tags: source.tags ?? [],
+      featured: source.featured ?? false,
+      inventoryId: source.inventoryId ?? undefined,
+      createdAt: source.createdAt,
+      updatedAt: source.updatedAt,
+    }),
+    [],
+  );
+
   const relatedProductCards = useMemo(() => {
     if (relatedProducts.length === 0) return null;
 
@@ -832,10 +866,7 @@ export default function ShopProductPage() {
               transition={{ delay: index * 0.1 }}
             >
               <ProductCard
-                product={{
-                  ...relatedProduct,
-                  images: relatedProduct.images || [],
-                }}
+                product={toProductCardProduct(relatedProduct) as any}
                 index={index}
                 variant="default"
                 showWishlist={true}
@@ -846,7 +877,7 @@ export default function ShopProductPage() {
         </div>
       </motion.div>
     );
-  }, [relatedProducts]);
+  }, [relatedProducts, toProductCardProduct]);
 
   // ============================================
   // RENDER — loading skeleton
@@ -1589,6 +1620,7 @@ export default function ShopProductPage() {
                                           toggleAttribute(attrKey)
                                         }
                                         className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 transition-colors"
+                                        aria-label={`Toggle ${attrKey}`}
                                       >
                                         <ChevronRight
                                           className={`w-4 h-4 transition-transform ${

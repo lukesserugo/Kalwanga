@@ -7,22 +7,16 @@ import { useAuth } from '../../hooks/useAuth';
 import { PERMISSIONS } from '../../types/permissions';
 import { UserRole } from '../../types/enums';
 import { userService } from '../../services/userService';
-import { User, UserActivity, UserPermission, UserGroup, UserGroupMember } from '../../types/user';
+import { User } from '../../types/user';
+import type { UserActivity } from '../../services/userService';
 import {
   ArrowLeft, Edit, Trash2, Mail, Phone, Shield, Building,
   Calendar, Clock, Activity, UserCheck, UserX, Loader2,
   CheckCircle, XCircle, AlertCircle, Download,
-  Printer, Mail as MailIcon, PhoneCall, Key,
-  Users, ChevronDown, ChevronUp, Copy, Check, RefreshCw,
-  Plus, Lock, Search, Filter, MoreVertical, MapPin,
-  Briefcase, BadgeCheck, UserPlus, UserMinus, Eye, EyeOff,
-  Smartphone, Globe, Hash, Info, Settings, LogOut, LogIn,
-  FileText, CreditCard, ShoppingCart, Package, TrendingUp,
-  BarChart3, PieChart, DollarSign, Percent, Tag, Store,
-  ClipboardList, Truck, Boxes, Layers, FolderTree,
-  UsersRound, Network, GitBranch, GitMerge, FolderOpen,
-  FolderClosed, FolderPlus, Star, Heart, ThumbsUp,
-  MessageSquare, Share2, Bookmark
+  Printer, PhoneCall, Key,
+  UsersRound, ChevronDown, ChevronUp, Copy, Check, RefreshCw,
+  Plus, Lock, Search, Settings, LogOut, LogIn,
+  FileText, Store, Hash, Info,
 } from 'lucide-react';
 import { toast } from 'react-hot-toast';
 
@@ -69,8 +63,8 @@ interface GroupItem {
 
 export function UserDetail({ userId }: UserDetailProps) {
   const router = useRouter();
-  const { can, isSuperAdmin, user: currentUser } = useAuth();
-  
+  const { can, isSuperAdmin } = useAuth();
+
   // State management
   const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
@@ -100,7 +94,6 @@ export function UserDetail({ userId }: UserDetailProps) {
   const canEdit = useMemo(() => can(PERMISSIONS.USER_EDIT) || isSuperAdmin, [can, isSuperAdmin]);
   const canDelete = useMemo(() => can(PERMISSIONS.USER_DELETE) || isSuperAdmin, [can, isSuperAdmin]);
   const canManage = useMemo(() => can(PERMISSIONS.USER_MANAGE) || isSuperAdmin, [can, isSuperAdmin]);
-  const canViewPermissions = useMemo(() => can(PERMISSIONS.USER_VIEW) || isSuperAdmin, [can, isSuperAdmin]);
   const canAssignBusinessUnits = useMemo(() => can(PERMISSIONS.USER_EDIT) || isSuperAdmin, [can, isSuperAdmin]);
   const canManageGroups = useMemo(() => can(PERMISSIONS.USER_MANAGE) || isSuperAdmin, [can, isSuperAdmin]);
 
@@ -118,11 +111,11 @@ export function UserDetail({ userId }: UserDetailProps) {
     try {
       setLoading(true);
       setError(null);
-      
+
       let data: User;
-      
+
       const isClerkId = userId.startsWith('user_') || userId.startsWith('clerk_');
-      
+
       if (isClerkId) {
         try {
           data = await userService.getUserByIdentifier(userId);
@@ -138,25 +131,15 @@ export function UserDetail({ userId }: UserDetailProps) {
           data = await userService.getUserByIdentifier(userId);
         }
       }
-      
+
       setUser(data);
-      setSelectedRole(data.role);
-      
-      // Load groups from user data
-      if (data.groupMemberships && data.groupMemberships.length > 0) {
-        const userGroups: GroupItem[] = data.groupMemberships.map((gm: any) => ({
-          id: gm.group?.id || gm.groupId,
-          name: gm.group?.name || 'Unknown Group',
-          description: gm.group?.description,
-          color: gm.group?.color,
-          icon: gm.group?.icon,
-          role: gm.role,
-          isLead: gm.isLead,
-          joinedAt: gm.joinedAt,
-          memberCount: gm.group?.memberCount || gm.group?._count?.members || 0,
-          permissions: gm.group?.permissions || [],
-        }));
-        setGroups(userGroups);
+      setSelectedRole(data.role as UserRole);
+
+      // Load groups from user data — User has businessUnits, not groupMemberships.
+      // If groups are exposed elsewhere in the payload, adapt here.
+      if (data.businessUnits && data.businessUnits.length > 0) {
+        // businessUnits are not groups; leave `groups` empty unless the
+        // API returns groupMemberships on the user object.
       }
     } catch (error: any) {
       console.error('Failed to load user:', error);
@@ -182,29 +165,7 @@ export function UserDetail({ userId }: UserDetailProps) {
       })));
     } catch (error) {
       console.error('Failed to load activities:', error);
-      setActivities([
-        {
-          id: '1',
-          action: 'LOGIN',
-          description: 'User logged in',
-          timestamp: new Date().toISOString(),
-          user: 'System',
-        },
-        {
-          id: '2',
-          action: 'UPDATE',
-          description: 'Profile updated',
-          timestamp: new Date(Date.now() - 3600000).toISOString(),
-          user: 'Self',
-        },
-        {
-          id: '3',
-          action: 'ROLE_CHANGE',
-          description: 'Role changed to ADMIN',
-          timestamp: new Date(Date.now() - 7200000).toISOString(),
-          user: 'Admin',
-        },
-      ]);
+      setActivities([]);
     }
   }, [userId]);
 
@@ -226,11 +187,7 @@ export function UserDetail({ userId }: UserDetailProps) {
       setPermissions(formattedPermissions);
     } catch (error) {
       console.error('Failed to load permissions:', error);
-      setPermissions([
-        { id: 'user:view', name: 'View Users', resource: 'user', action: 'view', description: 'View user details', category: 'user' },
-        { id: 'user:edit', name: 'Edit Users', resource: 'user', action: 'edit', description: 'Edit user details', category: 'user' },
-        { id: 'category:view', name: 'View Categories', resource: 'category', action: 'view', description: 'View categories', category: 'category' },
-      ]);
+      setPermissions([]);
     }
   }, [userId]);
 
@@ -397,7 +354,7 @@ export function UserDetail({ userId }: UserDetailProps) {
       const newPermissions = currentPermissions.includes(permissionId)
         ? currentPermissions.filter(p => p !== permissionId)
         : [...currentPermissions, permissionId];
-      
+
       await userService.updateUserPermissions(user.id, newPermissions);
       toast.success('Permissions updated');
       await loadUser();
@@ -447,15 +404,15 @@ export function UserDetail({ userId }: UserDetailProps) {
   const filteredAvailableGroups = useMemo(() => {
     const assignedGroupIds = new Set(groups.map(g => g.id));
     let available = availableGroups.filter(g => !assignedGroupIds.has(g.id));
-    
+
     if (groupSearchQuery) {
       const query = groupSearchQuery.toLowerCase();
-      available = available.filter(g => 
+      available = available.filter(g =>
         g.name.toLowerCase().includes(query) ||
         g.description?.toLowerCase().includes(query)
       );
     }
-    
+
     return available;
   }, [availableGroups, groups, groupSearchQuery]);
 
@@ -518,17 +475,17 @@ export function UserDetail({ userId }: UserDetailProps) {
   }, []);
 
   const formatDate = useCallback((date: string) => {
-    return new Date(date).toLocaleDateString('en-US', { 
-      year: 'numeric', 
-      month: 'long', 
-      day: 'numeric' 
+    return new Date(date).toLocaleDateString('en-US', {
+      year: 'numeric',
+      month: 'long',
+      day: 'numeric'
     });
   }, []);
 
   const formatDateTime = useCallback((date: string) => {
-    return new Date(date).toLocaleString('en-US', { 
-      year: 'numeric', 
-      month: 'short', 
+    return new Date(date).toLocaleString('en-US', {
+      year: 'numeric',
+      month: 'short',
       day: 'numeric',
       hour: '2-digit',
       minute: '2-digit'
@@ -538,7 +495,7 @@ export function UserDetail({ userId }: UserDetailProps) {
   // Filter permissions based on search
   const filteredPermissions = useMemo(() => {
     if (!searchQuery) return permissions;
-    return permissions.filter(p => 
+    return permissions.filter(p =>
       p.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
       p.resource.toLowerCase().includes(searchQuery.toLowerCase()) ||
       p.action.toLowerCase().includes(searchQuery.toLowerCase())
@@ -675,7 +632,7 @@ export function UserDetail({ userId }: UserDetailProps) {
                 <XCircle className="w-5 h-5 text-gray-500" />
               </button>
             </div>
-            
+
             <div className="relative mb-4">
               <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-gray-400" />
               <input
@@ -686,7 +643,7 @@ export function UserDetail({ userId }: UserDetailProps) {
                 className="w-full pl-10 pr-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white text-sm"
               />
             </div>
-            
+
             <div className="flex-1 overflow-y-auto space-y-2">
               {filteredAvailableGroups.length === 0 ? (
                 <p className="text-center text-gray-500 dark:text-gray-400 py-8">
@@ -746,7 +703,7 @@ export function UserDetail({ userId }: UserDetailProps) {
                   {user.role.replace('_', ' ')}
                 </span>
                 <span className={`px-3 py-1 rounded-full text-xs font-medium border flex items-center gap-1 ${
-                  user.isActive 
+                  user.isActive
                     ? 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400 border-green-200 dark:border-green-700'
                     : 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400 border-red-200 dark:border-red-700'
                 }`}>
@@ -787,7 +744,7 @@ export function UserDetail({ userId }: UserDetailProps) {
           >
             <RefreshCw className={`w-4 h-4 ${isRefreshing ? 'animate-spin' : ''}`} />
           </button>
-          
+
           {canManage && user.role !== 'SUPER_ADMIN' && (
             <>
               {user.isActive ? (
@@ -811,7 +768,7 @@ export function UserDetail({ userId }: UserDetailProps) {
               )}
             </>
           )}
-          
+
           {canEdit && (
             <button
               onClick={handleEdit}
@@ -821,7 +778,7 @@ export function UserDetail({ userId }: UserDetailProps) {
               Edit
             </button>
           )}
-          
+
           {canDelete && user.role !== 'SUPER_ADMIN' && (
             <button
               onClick={handleDelete}
@@ -934,7 +891,7 @@ export function UserDetail({ userId }: UserDetailProps) {
                   <p className="text-sm text-gray-500 dark:text-gray-400">Email</p>
                   <p className="font-medium text-gray-900 dark:text-white">{user.email}</p>
                 </div>
-                <button 
+                <button
                   onClick={handleCopyEmail}
                   className="p-1 hover:bg-gray-200 dark:hover:bg-gray-600 rounded transition-colors"
                   title="Copy email"
@@ -949,7 +906,7 @@ export function UserDetail({ userId }: UserDetailProps) {
                   <p className="font-medium text-gray-900 dark:text-white">{user.phoneNumber || 'N/A'}</p>
                 </div>
                 {user.phoneNumber && (
-                  <a 
+                  <a
                     href={`tel:${user.phoneNumber}`}
                     className="p-1 hover:bg-gray-200 dark:hover:bg-gray-600 rounded transition-colors"
                     title="Call"
@@ -1060,7 +1017,7 @@ export function UserDetail({ userId }: UserDetailProps) {
                 </div>
                 <span className="text-sm text-gray-500">{filteredPermissions.length} permissions</span>
                 {canManage && (
-                  <button 
+                  <button
                     onClick={() => setShowPermissionDetails(!showPermissionDetails)}
                     className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors text-sm flex items-center gap-1"
                   >
@@ -1070,7 +1027,7 @@ export function UserDetail({ userId }: UserDetailProps) {
                 )}
               </div>
             </div>
-            
+
             {showPermissionDetails ? (
               <div className="space-y-4">
                 {Object.entries(groupedPermissions).map(([resource, perms]) => (
@@ -1126,7 +1083,7 @@ export function UserDetail({ userId }: UserDetailProps) {
                 )}
               </>
             )}
-            
+
             {filteredPermissions.length === 0 && (
               <div className="text-center py-8">
                 <Shield className="w-12 h-12 mx-auto text-gray-300 dark:text-gray-600 mb-2" />
@@ -1154,7 +1111,7 @@ export function UserDetail({ userId }: UserDetailProps) {
                 </button>
               )}
             </div>
-            
+
             {groups.length === 0 ? (
               <div className="text-center py-8">
                 <UsersRound className="w-12 h-12 mx-auto text-gray-300 dark:text-gray-600 mb-2" />
@@ -1183,9 +1140,11 @@ export function UserDetail({ userId }: UserDetailProps) {
                               Group Lead
                             </span>
                           )}
-                          <span className="text-xs text-gray-400">
-                            Joined: {formatDate(group.joinedAt)}
-                          </span>
+                          {group.joinedAt && (
+                            <span className="text-xs text-gray-400">
+                              Joined: {formatDate(group.joinedAt)}
+                            </span>
+                          )}
                         </div>
                         {group.permissions && group.permissions.length > 0 && (
                           <div className="flex flex-wrap gap-1 mt-1">
@@ -1248,8 +1207,8 @@ export function UserDetail({ userId }: UserDetailProps) {
                         {bu.role.replace('_', ' ')}
                       </span>
                       <span className={`px-2 py-0.5 rounded-full text-xs font-medium border ${
-                        bu.isActive 
-                          ? 'bg-green-100 text-green-700 border-green-200' 
+                        bu.isActive
+                          ? 'bg-green-100 text-green-700 border-green-200'
                           : 'bg-red-100 text-red-700 border-red-200'
                       }`}>
                         {bu.isActive ? 'Active' : 'Inactive'}
@@ -1258,7 +1217,7 @@ export function UserDetail({ userId }: UserDetailProps) {
                   </div>
                 </div>
                 {canAssignBusinessUnits && (
-                  <button 
+                  <button
                     className="text-red-600 hover:text-red-700 dark:text-red-400 text-sm font-medium"
                     onClick={async () => {
                       if (confirm('Remove user from this business unit?')) {
@@ -1294,20 +1253,20 @@ export function UserDetail({ userId }: UserDetailProps) {
             <div className="flex items-center justify-between">
               <h3 className="text-lg font-medium text-gray-900 dark:text-white">Recent Activity</h3>
               <div className="flex items-center gap-2">
-                <button 
+                <button
                   className="p-2 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-colors"
                   title="Download"
                 >
                   <Download className="w-4 h-4" />
                 </button>
-                <button 
+                <button
                   className="p-2 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-colors"
                   title="Print"
                   onClick={() => window.print()}
                 >
                   <Printer className="w-4 h-4" />
                 </button>
-                <button 
+                <button
                   onClick={() => {
                     setShowAuditTrail(!showAuditTrail);
                     if (!showAuditTrail) loadAuditTrail();
@@ -1319,7 +1278,7 @@ export function UserDetail({ userId }: UserDetailProps) {
                 </button>
               </div>
             </div>
-            
+
             {/* Audit Trail Section */}
             {showAuditTrail && (
               <div className="mb-4 p-4 bg-gray-50 dark:bg-gray-700/50 rounded-lg border border-gray-200 dark:border-gray-600">
@@ -1351,7 +1310,7 @@ export function UserDetail({ userId }: UserDetailProps) {
                 )}
               </div>
             )}
-            
+
             <div className="space-y-3">
               {activities.map((activity) => (
                 <div key={activity.id} className="flex items-start gap-3 p-3 bg-gray-50 dark:bg-gray-700/50 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors">
@@ -1369,7 +1328,7 @@ export function UserDetail({ userId }: UserDetailProps) {
                         By: {activity.user}
                       </span>
                       <span className={`px-2 py-0.5 rounded-full text-xs font-medium border ${
-                        activity.action === 'LOGIN' 
+                        activity.action === 'LOGIN'
                           ? 'bg-green-100 text-green-700 border-green-200'
                           : activity.action === 'DELETE'
                           ? 'bg-red-100 text-red-700 border-red-200'

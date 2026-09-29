@@ -37,10 +37,8 @@ import {
   Boxes,
   Tags,
   HeartHandshake,
-  Scan,
   Printer,
   Mail,
-  Phone,
   MapPin,
   Calendar,
   Clock,
@@ -50,7 +48,7 @@ import {
   CheckCircle2,
   Sparkles,
 } from 'lucide-react';
-import { useThemeStore } from '../stores/themeStore';
+import { useThemeStore } from '../../stores/themeStore';
 
 // ============================================
 // FEATURE CATEGORIES

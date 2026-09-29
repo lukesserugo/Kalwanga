@@ -2,60 +2,91 @@
 
 'use client';
 
-import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
+import React, {
+  useState,
+  useEffect,
+  useCallback,
+  useMemo,
+} from 'react';
 import { useRouter } from 'next/navigation';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   History, TrendingUp, TrendingDown, RefreshCw,
-  Search, Filter, Download, Calendar, User,
+  Search, Filter, Download, User,
   Package, ArrowUp, ArrowDown, Lock,
-  ChevronLeft, ChevronRight, X, AlertCircle,
-  Barcode, QrCode, Scan, Copy, Check, Eye,
-  Loader2, Shield, Building2, Clock, FileText,
-  Printer, ExternalLink, MoreVertical, Grid,
-  List, LayoutGrid, ChevronDown, ChevronUp,
-  Info, HelpCircle, DollarSign, Tag, Hash,
-  Link2, Globe, Star, Award, Archive,
+  X, AlertCircle,
+  Barcode, Scan, Copy, Check, Eye,
+  Loader2, Shield, Clock,
   Plus, Minus,
 } from 'lucide-react';
 import { useAuth } from '../../../../../hooks/useAuth';
 import { usePermission } from '../../../../../hooks/usePermission';
-import { inventoryService, InventoryTransaction } from '../../../../../services/inventoryService';
+import {
+  inventoryService,
+  type InventoryTransaction,
+} from '../../../../../services/inventoryService';
 import { barcodeService } from '../../../../../services/barcodeService';
 import { productService } from '../../../../../services/productService';
 import { toast } from '../../../../../utils/toast-manager';
-import { formatCurrency, formatDate, formatNumber } from '../../../../../utils/formatters';
+import {
+  formatCurrency,
+  formatDate,
+  formatNumber,
+} from '../../../../../utils/formatters';
 import { PermissionResource } from '../../../../../types/enums';
 
 // ============================================
 // TYPES
 // ============================================
+//
+// The backend is the single source of truth. `InventoryTransaction`
+// from `services/inventoryService` mirrors the backend's
+// `inventoryTransaction` Prisma row joined with `product`, `variant`,
+// `user`, and `inventory`. We extend it locally to describe the
+// relations that the backend already includes on the GET /inventory/
+// transactions route.
+//
+// Every optional relation is marked optional because the backend's
+// `include` may legitimately omit it (e.g. a transaction whose
+// product was hard-deleted).
 
-interface Transaction extends InventoryTransaction {
-  product?: {
-    id: string;
-    name: string;
-    sku: string;
-    barcode?: string | null;
-    unitPrice?: number;
-    images?: string[];
-    category?: { id: string; name: string };
-  };
-  variant?: {
-    id: string;
-    name: string;
-    sku: string;
-  };
-  user?: {
-    id: string;
-    firstName: string;
-    lastName: string;
-    email?: string;
-  };
-  inventory?: {
-    id: string;
-    location?: string;
-  };
+interface TransactionUser {
+  id: string;
+  firstName: string | null;
+  lastName: string | null;
+  email?: string | null;
+}
+
+interface TransactionProduct {
+  id: string;
+  name: string;
+  sku: string;
+  barcode?: string | null;
+  unitPrice?: number | null;
+  images?: string[];
+  category?: { id: string; name: string } | null;
+}
+
+interface TransactionVariant {
+  id: string;
+  name: string;
+  sku: string;
+}
+
+interface TransactionInventory {
+  id: string;
+  location?: string | null;
+}
+
+interface Transaction
+  extends Omit<
+    InventoryTransaction,
+    'product' | 'variant' | 'user' | 'inventory'
+  > {
+  product?: TransactionProduct;
+  variant?: TransactionVariant;
+  user?: TransactionUser;
+  inventory?: TransactionInventory;
 }
 
 interface BarcodeLookupResult {
@@ -109,20 +140,172 @@ const TRANSACTION_TYPES = [
   { value: 'LOST', label: 'Lost' },
 ];
 
-const TYPE_COLORS: Record<string, { bg: string; text: string; icon: React.ElementType }> = {
-  PURCHASE: { bg: 'bg-success-100 dark:bg-success-950/30', text: 'text-success-800 dark:text-success-300', icon: TrendingUp },
-  RESTOCK: { bg: 'bg-brand-100 dark:bg-brand-950/30', text: 'text-brand-800 dark:text-brand-300', icon: Package },
-  SALE: { bg: 'bg-brand-accent-100 dark:bg-brand-accent-950/30', text: 'text-brand-accent-800 dark:text-brand-accent-300', icon: TrendingDown },
-  ISSUE: { bg: 'bg-warning-100 dark:bg-warning-950/30', text: 'text-warning-800 dark:text-warning-300', icon: ArrowUp },
-  RETURN: { bg: 'bg-teal-100 dark:bg-teal-950/30', text: 'text-teal-800 dark:text-teal-300', icon: RefreshCw },
-  ADJUSTMENT_IN: { bg: 'bg-success-100 dark:bg-success-950/30', text: 'text-success-800 dark:text-success-300', icon: Plus },
-  ADJUSTMENT_OUT: { bg: 'bg-brand-accent-100 dark:bg-brand-accent-950/30', text: 'text-brand-accent-800 dark:text-brand-accent-300', icon: Minus },
-  TRANSFER_IN: { bg: 'bg-indigo-100 dark:bg-indigo-950/30', text: 'text-indigo-800 dark:text-indigo-300', icon: ArrowDown },
-  TRANSFER_OUT: { bg: 'bg-secondary-100 dark:bg-secondary-950/30', text: 'text-secondary-800 dark:text-secondary-300', icon: ArrowUp },
-  INITIAL: { bg: 'bg-gray-100 dark:bg-gray-700/50', text: 'text-gray-800 dark:text-gray-300', icon: Package },
-  DAMAGED: { bg: 'bg-brand-accent-100 dark:bg-brand-accent-950/30', text: 'text-brand-accent-800 dark:text-brand-accent-300', icon: AlertCircle },
-  LOST: { bg: 'bg-gray-100 dark:bg-gray-700/50', text: 'text-gray-800 dark:text-gray-300', icon: AlertCircle },
+const TYPE_COLORS: Record<
+  string,
+  { bg: string; text: string; icon: React.ElementType }
+> = {
+  PURCHASE: {
+    bg: 'bg-success-100 dark:bg-success-950/30',
+    text: 'text-success-800 dark:text-success-300',
+    icon: TrendingUp,
+  },
+  RESTOCK: {
+    bg: 'bg-brand-100 dark:bg-brand-950/30',
+    text: 'text-brand-800 dark:text-brand-300',
+    icon: Package,
+  },
+  SALE: {
+    bg: 'bg-brand-accent-100 dark:bg-brand-accent-950/30',
+    text: 'text-brand-accent-800 dark:text-brand-accent-300',
+    icon: TrendingDown,
+  },
+  ISSUE: {
+    bg: 'bg-warning-100 dark:bg-warning-950/30',
+    text: 'text-warning-800 dark:text-warning-300',
+    icon: ArrowUp,
+  },
+  RETURN: {
+    bg: 'bg-teal-100 dark:bg-teal-950/30',
+    text: 'text-teal-800 dark:text-teal-300',
+    icon: RefreshCw,
+  },
+  ADJUSTMENT_IN: {
+    bg: 'bg-success-100 dark:bg-success-950/30',
+    text: 'text-success-800 dark:text-success-300',
+    icon: Plus,
+  },
+  ADJUSTMENT_OUT: {
+    bg: 'bg-brand-accent-100 dark:bg-brand-accent-950/30',
+    text: 'text-brand-accent-800 dark:text-brand-accent-300',
+    icon: Minus,
+  },
+  TRANSFER_IN: {
+    bg: 'bg-indigo-100 dark:bg-indigo-950/30',
+    text: 'text-indigo-800 dark:text-indigo-300',
+    icon: ArrowDown,
+  },
+  TRANSFER_OUT: {
+    bg: 'bg-secondary-100 dark:bg-secondary-950/30',
+    text: 'text-secondary-800 dark:text-secondary-300',
+    icon: ArrowUp,
+  },
+  INITIAL: {
+    bg: 'bg-gray-100 dark:bg-gray-700/50',
+    text: 'text-gray-800 dark:text-gray-300',
+    icon: Package,
+  },
+  DAMAGED: {
+    bg: 'bg-brand-accent-100 dark:bg-brand-accent-950/30',
+    text: 'text-brand-accent-800 dark:text-brand-accent-300',
+    icon: AlertCircle,
+  },
+  LOST: {
+    bg: 'bg-gray-100 dark:bg-gray-700/50',
+    text: 'text-gray-800 dark:text-gray-300',
+    icon: AlertCircle,
+  },
 };
+
+// ============================================
+// HELPERS
+// ============================================
+
+/**
+ * Unwrap the many shapes the frontend's `api` / service helpers
+ * return. The backend always responds with `{ success, data, pagination? }`,
+ * but the transport can double-wrap.
+ */
+function unwrapResponse<T = any>(response: any): {
+  data: T | null;
+  pagination: any;
+} {
+  if (!response || typeof response !== 'object') {
+    return { data: response as T, pagination: null };
+  }
+  const pagination =
+    (response as any).pagination ?? (response as any).data?.pagination ?? null;
+  const data =
+    'data' in response && (response as any).data !== undefined
+      ? (response as any).data
+      : response;
+  return { data, pagination };
+}
+
+function unwrapPayload<T = any>(response: any): T | null {
+  if (!response) return null;
+  if (typeof response !== 'object') return response as T;
+  if ('data' in response && response.data !== undefined) return response.data;
+  return response as T;
+}
+
+/**
+ * Normalize a raw transaction row from the backend. All optional
+ * relations are made explicit — the caller never has to guard for
+ * `undefined` when reading `product.name` etc.
+ */
+function normalizeTransaction(raw: any): Transaction {
+  const product: TransactionProduct | undefined = raw.product
+    ? {
+        id: String(raw.product.id ?? ''),
+        name: String(raw.product.name ?? 'Unknown Product'),
+        sku: String(raw.product.sku ?? 'N/A'),
+        barcode: raw.product.barcode ?? null,
+        unitPrice:
+          typeof raw.product.unitPrice === 'number'
+            ? raw.product.unitPrice
+            : null,
+        images: Array.isArray(raw.product.images)
+          ? raw.product.images
+          : [],
+        category: raw.product.category ?? null,
+      }
+    : undefined;
+
+  const variant: TransactionVariant | undefined = raw.variant
+    ? {
+        id: String(raw.variant.id ?? ''),
+        name: String(raw.variant.name ?? 'Unknown Variant'),
+        sku: String(raw.variant.sku ?? 'N/A'),
+      }
+    : undefined;
+
+  const user: TransactionUser | undefined = raw.user
+    ? {
+        id: String(raw.user.id ?? ''),
+        firstName: raw.user.firstName ?? null,
+        lastName: raw.user.lastName ?? null,
+        email: raw.user.email ?? null,
+      }
+    : undefined;
+
+  const inventory: TransactionInventory | undefined = raw.inventory
+    ? {
+        id: String(raw.inventory.id ?? ''),
+        location: raw.inventory.location ?? null,
+      }
+    : undefined;
+
+  return {
+    id: String(raw.id ?? ''),
+    transactionType: raw.transactionType ?? raw.type ?? 'UNKNOWN',
+    quantity:
+      typeof raw.quantity === 'number' ? raw.quantity : 0,
+    notes: raw.notes ?? null,
+    reference: raw.reference ?? null,
+    productId: raw.productId ?? raw.product?.id ?? '',
+    variantId: raw.variantId ?? raw.variant?.id ?? null,
+    inventoryId: raw.inventoryId ?? raw.inventory?.id ?? '',
+    businessUnitId: raw.businessUnitId ?? '',
+    userId: raw.userId ?? raw.user?.id ?? '',
+    createdAt:
+      raw.createdAt ?? raw.transactionDate ?? new Date().toISOString(),
+    updatedAt: raw.updatedAt ?? raw.createdAt ?? new Date().toISOString(),
+    product,
+    variant,
+    user,
+    inventory,
+  } as Transaction;
+}
 
 // ============================================
 // SUB-COMPONENTS
@@ -132,9 +315,11 @@ const TypeBadge: React.FC<{ type: string }> = ({ type }) => {
   const config = TYPE_COLORS[type] || TYPE_COLORS['INITIAL'];
   const Icon = config.icon;
   return (
-    <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium ${config.bg} ${config.text}`}>
+    <span
+      className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium ${config.bg} ${config.text}`}
+    >
       <Icon className="w-3 h-3" />
-      {type.replace('_', ' ')}
+      {type.replace(/_/g, ' ')}
     </span>
   );
 };
@@ -147,32 +332,70 @@ const StatCard: React.FC<{
   subtext?: string;
 }> = ({ label, value, icon: Icon, color, subtext }) => {
   const colorClasses: Record<string, { bg: string; text: string }> = {
-    brand: { bg: 'bg-brand-50 dark:bg-brand-950/20', text: 'text-brand-600 dark:text-brand-400' },
-    success: { bg: 'bg-success-50 dark:bg-success-950/20', text: 'text-success-600 dark:text-success-400' },
-    warning: { bg: 'bg-warning-50 dark:bg-warning-950/20', text: 'text-warning-600 dark:text-warning-400' },
-    danger: { bg: 'bg-brand-accent-50 dark:bg-brand-accent-950/20', text: 'text-brand-accent-600 dark:text-brand-accent-400' },
-    secondary: { bg: 'bg-secondary-50 dark:bg-secondary-950/20', text: 'text-secondary-600 dark:text-secondary-400' },
-    indigo: { bg: 'bg-indigo-50 dark:bg-indigo-950/20', text: 'text-indigo-600 dark:text-indigo-400' },
-    teal: { bg: 'bg-teal-50 dark:bg-teal-950/20', text: 'text-teal-600 dark:text-teal-400' },
-    orange: { bg: 'bg-brand-50 dark:bg-brand-950/20', text: 'text-brand-600 dark:text-brand-400' },
+    brand: {
+      bg: 'bg-brand-50 dark:bg-brand-950/20',
+      text: 'text-brand-600 dark:text-brand-400',
+    },
+    success: {
+      bg: 'bg-success-50 dark:bg-success-950/20',
+      text: 'text-success-600 dark:text-success-400',
+    },
+    warning: {
+      bg: 'bg-warning-50 dark:bg-warning-950/20',
+      text: 'text-warning-600 dark:text-warning-400',
+    },
+    danger: {
+      bg: 'bg-brand-accent-50 dark:bg-brand-accent-950/20',
+      text: 'text-brand-accent-600 dark:text-brand-accent-400',
+    },
+    secondary: {
+      bg: 'bg-secondary-50 dark:bg-secondary-950/20',
+      text: 'text-secondary-600 dark:text-secondary-400',
+    },
+    indigo: {
+      bg: 'bg-indigo-50 dark:bg-indigo-950/20',
+      text: 'text-indigo-600 dark:text-indigo-400',
+    },
+    teal: {
+      bg: 'bg-teal-50 dark:bg-teal-950/20',
+      text: 'text-teal-600 dark:text-teal-400',
+    },
+    orange: {
+      bg: 'bg-brand-50 dark:bg-brand-950/20',
+      text: 'text-brand-600 dark:text-brand-400',
+    },
   };
 
   return (
     <motion.div
       initial={{ opacity: 0, y: 20 }}
       animate={{ opacity: 1, y: 0 }}
-      className={`${colorClasses[color]?.bg || colorClasses.brand.bg} rounded-xl p-4 border border-gray-200 dark:border-gray-700 hover:shadow-md transition-shadow`}
+      className={`${
+        colorClasses[color]?.bg || colorClasses.brand.bg
+      } rounded-xl p-4 border border-gray-200 dark:border-gray-700 hover:shadow-md transition-shadow`}
     >
       <div className="flex items-start justify-between">
         <div>
           <p className="text-sm text-gray-500 dark:text-gray-400">{label}</p>
-          <p className={`text-2xl font-bold ${colorClasses[color]?.text || colorClasses.brand.text} mt-1 tabular-nums`}>
+          <p
+            className={`text-2xl font-bold ${
+              colorClasses[color]?.text || colorClasses.brand.text
+            } mt-1 tabular-nums`}
+          >
             {value}
           </p>
-          {subtext && <p className="text-xs text-gray-400 dark:text-gray-500 mt-1">{subtext}</p>}
+          {subtext && (
+            <p className="text-xs text-gray-400 dark:text-gray-500 mt-1">
+              {subtext}
+            </p>
+          )}
         </div>
         <div className={`p-2 rounded-lg bg-white dark:bg-gray-700/50`}>
-          <Icon className={`w-5 h-5 ${colorClasses[color]?.text || colorClasses.brand.text}`} />
+          <Icon
+            className={`w-5 h-5 ${
+              colorClasses[color]?.text || colorClasses.brand.text
+            }`}
+          />
         </div>
       </div>
     </motion.div>
@@ -204,12 +427,14 @@ export default function TransactionsPage() {
   const router = useRouter();
   const { user, isAuthenticated } = useAuth();
   const { hasPermission } = usePermission();
-  
+
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [transactions, setTransactions] = useState<Transaction[]>([]);
-  const [filteredTransactions, setFilteredTransactions] = useState<Transaction[]>([]);
+  const [filteredTransactions, setFilteredTransactions] = useState<
+    Transaction[]
+  >([]);
   const [stats, setStats] = useState<TransactionStats>({
     total: 0,
     totalIn: 0,
@@ -221,7 +446,8 @@ export default function TransactionsPage() {
   });
   const [searchQuery, setSearchQuery] = useState('');
   const [barcodeSearch, setBarcodeSearch] = useState('');
-  const [barcodeLookupResult, setBarcodeLookupResult] = useState<BarcodeLookupResult | null>(null);
+  const [barcodeLookupResult, setBarcodeLookupResult] =
+    useState<BarcodeLookupResult | null>(null);
   const [lookingUpBarcode, setLookingUpBarcode] = useState(false);
   const [copied, setCopied] = useState(false);
   const [filters, setFilters] = useState<TransactionFilters>({
@@ -243,123 +469,68 @@ export default function TransactionsPage() {
   });
   const [exporting, setExporting] = useState(false);
   const [showFilters, setShowFilters] = useState(false);
-  const [selectedTransaction, setSelectedTransaction] = useState<Transaction | null>(null);
+  const [selectedTransaction, setSelectedTransaction] =
+    useState<Transaction | null>(null);
   const [showDetailModal, setShowDetailModal] = useState(false);
 
-  const businessUnitId = user?.businessUnits?.[0]?.businessUnitId || 
-                          (user?.businessUnits?.[0] as any)?.id || 
-                          localStorage.getItem('businessUnitId') || '';
-
-  const canViewTransactions = hasPermission(`${PermissionResource.INVENTORY}:view`) || user?.role === 'SUPER_ADMIN';
-  const canExport = hasPermission(`${PermissionResource.INVENTORY}:export`) || user?.role === 'SUPER_ADMIN';
-
-  if (!isAuthenticated) {
-    return (
-      <div className="flex flex-col items-center justify-center min-h-[60vh] p-8">
-        <div className="w-24 h-24 bg-gray-100 dark:bg-gray-700 rounded-full flex items-center justify-center mb-4">
-          <Lock className="w-12 h-12 text-gray-400" />
-        </div>
-        <h2 className="text-2xl font-bold text-gray-700 dark:text-gray-300">Please Login</h2>
-        <p className="text-gray-500 dark:text-gray-400 mt-2">You need to be logged in to view transactions.</p>
-      </div>
-    );
-  }
-
-  if (!canViewTransactions) {
-    return (
-      <div className="flex flex-col items-center justify-center min-h-[60vh] p-8">
-        <div className="w-24 h-24 bg-gray-100 dark:bg-gray-700 rounded-full flex items-center justify-center mb-4">
-          <Shield className="w-12 h-12 text-gray-400" />
-        </div>
-        <h2 className="text-2xl font-bold text-gray-700 dark:text-gray-300">Access Restricted</h2>
-        <p className="text-gray-500 dark:text-gray-400 mt-2 text-center max-w-md">
-          You don't have permission to view transactions. Please contact your administrator.
-        </p>
-        <button
-          onClick={() => router.push('/admin/inventory')}
-          className="mt-4 px-6 py-2 bg-brand-600 text-white rounded-lg hover:bg-brand-700 transition-colors shadow-brand focus-ring"
-        >
-          Back to Inventory
-        </button>
-      </div>
-    );
-  }
+  const canViewTransactions =
+    hasPermission(`${PermissionResource.INVENTORY}:view`) ||
+    user?.role === 'SUPER_ADMIN';
+  const canExport =
+    hasPermission(`${PermissionResource.INVENTORY}:export`) ||
+    user?.role === 'SUPER_ADMIN';
 
   const loadTransactions = useCallback(async () => {
-    if (!businessUnitId) {
-      setLoading(false);
-      return;
-    }
-
     try {
       setLoading(true);
       setError(null);
 
       const params: any = {
-        businessUnitId,
         page: pagination.page,
         limit: pagination.limit,
       };
-      
+
       if (filters.type) params.transactionType = filters.type;
       if (filters.startDate) params.startDate = filters.startDate;
       if (filters.endDate) params.endDate = filters.endDate;
       if (filters.productId) params.productId = filters.productId;
       if (filters.userId) params.userId = filters.userId;
-      if (filters.location) params.location = filters.location;
 
-      const data = await inventoryService.getInventoryTransactions(params);
-      
-      const mappedTransactions = (data.data || []).map((tx: any) => ({
-        id: tx.id || '',
-        transactionType: tx.transactionType || tx.type || 'UNKNOWN',
-        quantity: tx.quantity || 0,
-        notes: tx.notes || null,
-        reference: tx.reference || null,
-        productId: tx.productId || tx.product?.id || '',
-        variantId: tx.variantId || tx.variant?.id || null,
-        inventoryId: tx.inventoryId || tx.inventory?.id || '',
-        businessUnitId: tx.businessUnitId || '',
-        userId: tx.userId || tx.user?.id || '',
-        createdAt: tx.createdAt || tx.transactionDate || new Date().toISOString(),
-        updatedAt: tx.updatedAt || tx.createdAt || new Date().toISOString(),
-        product: tx.product ? {
-          id: tx.product.id || '',
-          name: tx.product.name || 'Unknown Product',
-          sku: tx.product.sku || 'N/A',
-          barcode: tx.product.barcode || null,
-          unitPrice: tx.product.unitPrice || 0,
-          images: tx.product.images || [],
-          category: tx.product.category,
-        } : undefined,
-        variant: tx.variant ? {
-          id: tx.variant.id || '',
-          name: tx.variant.name || 'Unknown Variant',
-          sku: tx.variant.sku || 'N/A',
-        } : undefined,
-        user: tx.user ? {
-          id: tx.user.id || '',
-          firstName: tx.user.firstName || 'System',
-          lastName: tx.user.lastName || '',
-          email: tx.user.email || '',
-        } : undefined,
-        inventory: tx.inventory ? {
-          id: tx.inventory.id || '',
-          location: tx.inventory.location,
-        } : undefined,
-      }));
+      // `getInventoryTransactions` returns
+      // `{ data: InventoryTransaction[], total, page, limit, totalPages, stats? }`
+      const response = await inventoryService.getInventoryTransactions(
+        params,
+      );
 
-      setTransactions(mappedTransactions);
-      setFilteredTransactions(mappedTransactions);
-      
-      const totalIn = mappedTransactions.filter(t => t.quantity > 0).reduce((sum, t) => sum + t.quantity, 0);
-      const totalOut = mappedTransactions.filter(t => t.quantity < 0).reduce((sum, t) => sum + Math.abs(t.quantity), 0);
-      const uniqueProducts = new Set(mappedTransactions.map(t => t.productId)).size;
-      const uniqueUsers = new Set(mappedTransactions.map(t => t.userId)).size;
-      const totalValue = mappedTransactions.reduce((sum, t) => sum + (t.quantity * (t.product?.unitPrice || 0)), 0);
+      const { data, pagination: envelope } = unwrapResponse<any[]>(response);
+      const rows = Array.isArray(data)
+        ? data
+        : Array.isArray(response)
+          ? (response as any[])
+          : [];
+
+      const mapped = rows.map(normalizeTransaction);
+
+      setTransactions(mapped);
+      setFilteredTransactions(mapped);
+
+      const totalIn = mapped
+        .filter((t) => t.quantity > 0)
+        .reduce((sum, t) => sum + t.quantity, 0);
+      const totalOut = mapped
+        .filter((t) => t.quantity < 0)
+        .reduce((sum, t) => sum + Math.abs(t.quantity), 0);
+      const uniqueProducts = new Set(mapped.map((t) => t.productId)).size;
+      const uniqueUsers = new Set(
+        mapped.map((t) => t.userId).filter(Boolean),
+      ).size;
+      const totalValue = mapped.reduce(
+        (sum, t) => sum + t.quantity * (t.product?.unitPrice || 0),
+        0,
+      );
 
       setStats({
-        total: data.total || mappedTransactions.length,
+        total: (response as any)?.total ?? envelope?.total ?? mapped.length,
         totalIn,
         totalOut,
         netChange: totalIn - totalOut,
@@ -368,22 +539,49 @@ export default function TransactionsPage() {
         totalValue,
       });
 
-      setPagination(prev => ({
+      setPagination((prev) => ({
         ...prev,
-        total: data.total || 0,
-        totalPages: data.totalPages || 1,
+        total:
+          (response as any)?.total ??
+          envelope?.total ??
+          prev.total ??
+          mapped.length,
+        totalPages:
+          (response as any)?.totalPages ??
+          envelope?.totalPages ??
+          prev.totalPages ??
+          1,
       }));
-
-    } catch (error: any) {
-      console.error('Failed to load transactions:', error);
-      const errorMsg = error?.message || 'Failed to load transactions';
+    } catch (err: any) {
+      console.error('Failed to load transactions:', err);
+      const errorMsg =
+        err?.response?.data?.message ||
+        err?.message ||
+        'Failed to load transactions';
       setError(errorMsg);
       toast.error(errorMsg);
     } finally {
       setLoading(false);
       setRefreshing(false);
     }
-  }, [businessUnitId, filters, pagination.page, pagination.limit]);
+  }, [filters, pagination.page, pagination.limit]);
+
+  useEffect(() => {
+    if (isAuthenticated && canViewTransactions) {
+      loadTransactions();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [
+    isAuthenticated,
+    canViewTransactions,
+    filters.type,
+    filters.startDate,
+    filters.endDate,
+    filters.productId,
+    filters.userId,
+    pagination.page,
+    pagination.limit,
+  ]);
 
   const handleRefresh = async () => {
     setRefreshing(true);
@@ -401,53 +599,62 @@ export default function TransactionsPage() {
     setError(null);
     try {
       const result = await barcodeService.getProductByBarcode(barcodeSearch);
-      
-      if (result && result.productId) {
-        try {
-          const product = await productService.getProductById(result.productId);
-          
-          if (product && product.id) {
-            setBarcodeLookupResult({
-              barcode: barcodeSearch,
-              productId: product.id,
-              productName: product.name || 'Unknown Product',
-              sku: product.sku || 'N/A',
-              unitPrice: product.unitPrice || 0,
-              image: product.images?.[0],
-            });
-            setFilters(prev => ({ ...prev, productId: product.id }));
-            toast.success(`Found product: ${product.name || 'Unknown Product'}`);
-          } else {
-            setBarcodeLookupResult({
-              barcode: barcodeSearch,
-              productId: result.productId,
-              productName: 'Unknown Product',
-              sku: 'N/A',
-            });
-            setFilters(prev => ({ ...prev, productId: result.productId }));
-            toast.warning('Product found but details could not be loaded');
-          }
-        } catch (productError) {
-          console.warn('Could not fetch product details:', productError);
+      const payload = unwrapPayload<any>(result);
+      const productId =
+        payload?.productId ?? payload?.product?.id ?? payload?.id ?? null;
+
+      if (!productId) {
+        setBarcodeLookupResult(null);
+        toast.warning('No product found for this barcode');
+        return;
+      }
+
+      try {
+        const product = await productService.getProductById(productId);
+        const prod = unwrapPayload<any>(product) ?? product;
+
+        if (prod && prod.id) {
           setBarcodeLookupResult({
             barcode: barcodeSearch,
-            productId: result.productId,
+            productId: prod.id,
+            productName: prod.name || 'Unknown Product',
+            sku: prod.sku || 'N/A',
+            unitPrice:
+              typeof prod.unitPrice === 'number' ? prod.unitPrice : 0,
+            image: Array.isArray(prod.images) ? prod.images[0] : undefined,
+          });
+          setFilters((prev) => ({ ...prev, productId: prod.id }));
+          toast.success(`Found product: ${prod.name || 'Unknown Product'}`);
+        } else {
+          setBarcodeLookupResult({
+            barcode: barcodeSearch,
+            productId,
             productName: 'Unknown Product',
             sku: 'N/A',
           });
-          setFilters(prev => ({ ...prev, productId: result.productId }));
+          setFilters((prev) => ({ ...prev, productId }));
           toast.warning('Product found but details could not be loaded');
         }
-      } else {
-        setBarcodeLookupResult(null);
-        toast.warning('No product found for this barcode');
+      } catch (productErr) {
+        console.warn('Could not fetch product details:', productErr);
+        setBarcodeLookupResult({
+          barcode: barcodeSearch,
+          productId,
+          productName: 'Unknown Product',
+          sku: 'N/A',
+        });
+        setFilters((prev) => ({ ...prev, productId }));
+        toast.warning('Product found but details could not be loaded');
       }
-    } catch (error: any) {
-      console.error('Failed to lookup barcode:', error);
-      if (error?.response?.status === 404) {
+    } catch (err: any) {
+      console.error('Failed to lookup barcode:', err);
+      if (err?.response?.status === 404) {
         toast.warning('No product found for this barcode');
       } else {
-        const errorMsg = error?.message || 'Failed to lookup barcode';
+        const errorMsg =
+          err?.response?.data?.message ||
+          err?.message ||
+          'Failed to lookup barcode';
         setError(errorMsg);
         toast.error(errorMsg);
       }
@@ -472,7 +679,7 @@ export default function TransactionsPage() {
   const clearBarcodeSearch = () => {
     setBarcodeSearch('');
     setBarcodeLookupResult(null);
-    setFilters(prev => ({ ...prev, productId: '' }));
+    setFilters((prev) => ({ ...prev, productId: '' }));
   };
 
   const applyFilters = useCallback(() => {
@@ -480,30 +687,41 @@ export default function TransactionsPage() {
 
     if (searchQuery.trim()) {
       const query = searchQuery.toLowerCase().trim();
-      filtered = filtered.filter(tx =>
-        tx.product?.name?.toLowerCase().includes(query) ||
-        tx.product?.sku?.toLowerCase().includes(query) ||
-        (tx.product?.barcode && tx.product.barcode.toLowerCase().includes(query)) ||
-        tx.reference?.toLowerCase().includes(query)
-      );
+      filtered = filtered.filter((tx) => {
+        const name = tx.product?.name?.toLowerCase() || '';
+        const sku = tx.product?.sku?.toLowerCase() || '';
+        const barcode = tx.product?.barcode?.toLowerCase() || '';
+        const ref = tx.reference?.toLowerCase() || '';
+        return (
+          name.includes(query) ||
+          sku.includes(query) ||
+          barcode.includes(query) ||
+          ref.includes(query)
+        );
+      });
     }
 
     if (filters.hasBarcode === 'yes') {
-      filtered = filtered.filter(tx => !!tx.product?.barcode);
+      filtered = filtered.filter((tx) => !!tx.product?.barcode);
     } else if (filters.hasBarcode === 'no') {
-      filtered = filtered.filter(tx => !tx.product?.barcode);
+      filtered = filtered.filter((tx) => !tx.product?.barcode);
     }
 
     if (filters.minQuantity > 0) {
-      filtered = filtered.filter(tx => Math.abs(tx.quantity) >= filters.minQuantity);
+      filtered = filtered.filter(
+        (tx) => Math.abs(tx.quantity) >= filters.minQuantity,
+      );
     }
     if (filters.maxQuantity > 0) {
-      filtered = filtered.filter(tx => Math.abs(tx.quantity) <= filters.maxQuantity);
+      filtered = filtered.filter(
+        (tx) => Math.abs(tx.quantity) <= filters.maxQuantity,
+      );
     }
 
     if (filters.location) {
-      filtered = filtered.filter(tx =>
-        tx.inventory?.location?.toLowerCase().includes(filters.location.toLowerCase())
+      const q = filters.location.toLowerCase();
+      filtered = filtered.filter((tx) =>
+        (tx.inventory?.location || '').toLowerCase().includes(q),
       );
     }
 
@@ -523,11 +741,17 @@ export default function TransactionsPage() {
     setExporting(true);
     setError(null);
     try {
-      await inventoryService.exportInventory(businessUnitId, 'csv');
+      // `exportInventory` returns a Blob that the browser should
+      // trigger a download for. The service already knows how to
+      // resolve BU when we pass `undefined`.
+      await inventoryService.exportInventory(undefined, 'csv');
       toast.success('Transactions exported successfully');
-    } catch (error: any) {
-      console.error('Failed to export:', error);
-      const errorMsg = error?.message || 'Failed to export transactions';
+    } catch (err: any) {
+      console.error('Failed to export:', err);
+      const errorMsg =
+        err?.response?.data?.message ||
+        err?.message ||
+        'Failed to export transactions';
       setError(errorMsg);
       toast.error(errorMsg);
     } finally {
@@ -535,19 +759,65 @@ export default function TransactionsPage() {
     }
   };
 
-  useEffect(() => {
-    if (isAuthenticated && businessUnitId) {
-      loadTransactions();
-    }
-  }, [isAuthenticated, businessUnitId, loadTransactions]);
+  const hasActiveFilters = useMemo(
+    () =>
+      !!(
+        filters.type ||
+        filters.startDate ||
+        filters.endDate ||
+        filters.productId ||
+        filters.userId ||
+        filters.location ||
+        filters.minQuantity > 0 ||
+        filters.maxQuantity > 0 ||
+        filters.hasBarcode !== 'all' ||
+        searchQuery
+      ),
+    [filters, searchQuery],
+  );
 
-  if (loading && !refreshing) {
-    return <LoadingSkeleton />;
+  if (!isAuthenticated) {
+    return (
+      <div className="flex flex-col items-center justify-center min-h-[60vh] p-8">
+        <div className="w-24 h-24 bg-gray-100 dark:bg-gray-700 rounded-full flex items-center justify-center mb-4">
+          <Lock className="w-12 h-12 text-gray-400" />
+        </div>
+        <h2 className="text-2xl font-bold text-gray-700 dark:text-gray-300">
+          Please Login
+        </h2>
+        <p className="text-gray-500 dark:text-gray-400 mt-2">
+          You need to be logged in to view transactions.
+        </p>
+      </div>
+    );
   }
 
-  const hasActiveFilters = filters.type || filters.startDate || filters.endDate || filters.productId || 
-                           filters.userId || filters.location || filters.minQuantity > 0 || 
-                           filters.maxQuantity > 0 || filters.hasBarcode !== 'all' || searchQuery;
+  if (!canViewTransactions) {
+    return (
+      <div className="flex flex-col items-center justify-center min-h-[60vh] p-8">
+        <div className="w-24 h-24 bg-gray-100 dark:bg-gray-700 rounded-full flex items-center justify-center mb-4">
+          <Shield className="w-12 h-12 text-gray-400" />
+        </div>
+        <h2 className="text-2xl font-bold text-gray-700 dark:text-gray-300">
+          Access Restricted
+        </h2>
+        <p className="text-gray-500 dark:text-gray-400 mt-2 text-center max-w-md">
+          You don't have permission to view transactions. Please contact your
+          administrator.
+        </p>
+        <button
+          onClick={() => router.push('/admin/inventory')}
+          className="mt-4 px-6 py-2 bg-brand-600 text-white rounded-lg hover:bg-brand-700 transition-colors shadow-brand focus-ring"
+        >
+          Back to Inventory
+        </button>
+      </div>
+    );
+  }
+
+  if (loading && !refreshing && transactions.length === 0) {
+    return <LoadingSkeleton />;
+  }
 
   return (
     <div className="space-y-6 p-4 sm:p-6">
@@ -555,11 +825,14 @@ export default function TransactionsPage() {
         <div className="p-4 bg-brand-accent-50 dark:bg-brand-accent-950/20 border border-brand-accent-200 dark:border-brand-accent-800 rounded-xl flex items-start gap-3">
           <AlertCircle className="w-5 h-5 text-brand-accent-600 dark:text-brand-accent-400 flex-shrink-0 mt-0.5" />
           <div className="flex-1">
-            <p className="text-sm text-brand-accent-700 dark:text-brand-accent-300">{error}</p>
+            <p className="text-sm text-brand-accent-700 dark:text-brand-accent-300">
+              {error}
+            </p>
           </div>
           <button
             onClick={() => setError(null)}
             className="p-1 hover:bg-brand-accent-100 dark:hover:bg-brand-accent-800/30 rounded transition focus-ring"
+            aria-label="Dismiss error"
           >
             <X className="w-4 h-4 text-brand-accent-600 dark:text-brand-accent-400" />
           </button>
@@ -574,7 +847,8 @@ export default function TransactionsPage() {
             Transaction History
           </h1>
           <p className="text-sm text-gray-500 dark:text-gray-400 mt-1 tabular-nums">
-            {stats.total} transactions • {stats.uniqueProducts} products • {stats.uniqueUsers} users
+            {stats.total} transactions • {stats.uniqueProducts} products •{' '}
+            {stats.uniqueUsers} users
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
@@ -585,6 +859,7 @@ export default function TransactionsPage() {
                 ? 'border-brand-500 bg-brand-50 dark:bg-brand-950/20 text-brand-600 dark:text-brand-400'
                 : 'border-gray-300 dark:border-gray-600 hover:bg-brand-50 dark:hover:bg-gray-700 hover:border-brand-300 dark:hover:border-brand-700'
             }`}
+            aria-label="Toggle filters"
           >
             <Filter className="w-4 h-4" />
           </button>
@@ -592,8 +867,11 @@ export default function TransactionsPage() {
             onClick={handleRefresh}
             disabled={refreshing}
             className="p-2 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-brand-50 dark:hover:bg-gray-700 hover:border-brand-300 dark:hover:border-brand-700 transition-colors disabled:opacity-50 focus-ring"
+            aria-label="Refresh"
           >
-            <RefreshCw className={`w-4 h-4 ${refreshing ? 'animate-spin' : ''}`} />
+            <RefreshCw
+              className={`w-4 h-4 ${refreshing ? 'animate-spin' : ''}`}
+            />
           </button>
           {canExport && (
             <button
@@ -602,7 +880,9 @@ export default function TransactionsPage() {
               className="px-3 sm:px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-brand-50 dark:hover:bg-gray-700 hover:border-brand-300 dark:hover:border-brand-700 flex items-center gap-1 sm:gap-2 transition-colors disabled:opacity-50 text-sm focus-ring"
             >
               <Download className="w-4 h-4" />
-              <span className="hidden sm:inline">{exporting ? 'Exporting...' : 'Export'}</span>
+              <span className="hidden sm:inline">
+                {exporting ? 'Exporting...' : 'Export'}
+              </span>
             </button>
           )}
         </div>
@@ -630,10 +910,16 @@ export default function TransactionsPage() {
         />
         <StatCard
           label="Net Change"
-          value={stats.netChange >= 0 ? `+${stats.netChange}` : `${stats.netChange}`}
+          value={
+            stats.netChange >= 0
+              ? `+${stats.netChange}`
+              : `${stats.netChange}`
+          }
           icon={Package}
           color={stats.netChange >= 0 ? 'teal' : 'orange'}
-          subtext={stats.netChange >= 0 ? 'Positive growth' : 'Negative growth'}
+          subtext={
+            stats.netChange >= 0 ? 'Positive growth' : 'Negative growth'
+          }
         />
       </div>
 
@@ -687,12 +973,13 @@ export default function TransactionsPage() {
                 <div className="flex items-center gap-3 min-w-0">
                   <div className="w-10 h-10 bg-success-100 dark:bg-success-950/30 rounded-lg flex items-center justify-center overflow-hidden flex-shrink-0">
                     {barcodeLookupResult.image ? (
-                      <img 
-                        src={barcodeLookupResult.image} 
-                        alt={barcodeLookupResult.productName} 
+                      <img
+                        src={barcodeLookupResult.image}
+                        alt={barcodeLookupResult.productName}
                         className="w-full h-full object-cover"
                         onError={(e) => {
-                          (e.target as HTMLImageElement).style.display = 'none';
+                          (e.target as HTMLImageElement).style.display =
+                            'none';
                         }}
                       />
                     ) : (
@@ -704,24 +991,40 @@ export default function TransactionsPage() {
                       {barcodeLookupResult.productName}
                     </p>
                     <div className="flex flex-wrap items-center gap-3 text-sm text-gray-500 dark:text-gray-400">
-                      <span className="font-mono">SKU: {barcodeLookupResult.sku}</span>
+                      <span className="font-mono">
+                        SKU: {barcodeLookupResult.sku}
+                      </span>
                       <span className="flex items-center gap-1">
-                        Barcode: <span className="font-mono">{barcodeLookupResult.barcode}</span>
+                        Barcode:{' '}
+                        <span className="font-mono">
+                          {barcodeLookupResult.barcode}
+                        </span>
                         <button
                           onClick={handleCopyBarcode}
                           className="p-0.5 hover:bg-gray-200 dark:hover:bg-gray-600 rounded transition-colors focus-ring"
+                          aria-label="Copy barcode"
                         >
-                          {copied ? <Check className="w-3 h-3 text-success-500" /> : <Copy className="w-3 h-3" />}
+                          {copied ? (
+                            <Check className="w-3 h-3 text-success-500" />
+                          ) : (
+                            <Copy className="w-3 h-3" />
+                          )}
                         </button>
                       </span>
-                      {barcodeLookupResult.unitPrice && (
-                        <span className="tabular-nums">{formatCurrency(barcodeLookupResult.unitPrice)}</span>
-                      )}
+                      {barcodeLookupResult.unitPrice ? (
+                        <span className="tabular-nums">
+                          {formatCurrency(barcodeLookupResult.unitPrice)}
+                        </span>
+                      ) : null}
                     </div>
                   </div>
                 </div>
                 <button
-                  onClick={() => router.push(`/admin/inventory?search=${barcodeLookupResult.sku}`)}
+                  onClick={() =>
+                    router.push(
+                      `/admin/inventory?search=${barcodeLookupResult.sku}`,
+                    )
+                  }
                   className="px-3 py-1.5 text-sm bg-brand-600 text-white rounded-lg hover:bg-brand-700 transition-colors flex items-center gap-1 flex-shrink-0 shadow-brand focus-ring"
                 >
                   <Eye className="w-3 h-3" />
@@ -757,16 +1060,25 @@ export default function TransactionsPage() {
                 </div>
                 <select
                   value={filters.type}
-                  onChange={(e) => setFilters({ ...filters, type: e.target.value })}
+                  onChange={(e) =>
+                    setFilters({ ...filters, type: e.target.value })
+                  }
                   className="px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-sm text-gray-900 dark:text-white focus:ring-2 focus:ring-brand-500 focus:border-brand-500 transition-colors"
                 >
-                  {TRANSACTION_TYPES.map(type => (
-                    <option key={type.value} value={type.value}>{type.label}</option>
+                  {TRANSACTION_TYPES.map((type) => (
+                    <option key={type.value} value={type.value}>
+                      {type.label}
+                    </option>
                   ))}
                 </select>
                 <select
                   value={filters.hasBarcode}
-                  onChange={(e) => setFilters({ ...filters, hasBarcode: e.target.value as 'all' | 'yes' | 'no' })}
+                  onChange={(e) =>
+                    setFilters({
+                      ...filters,
+                      hasBarcode: e.target.value as 'all' | 'yes' | 'no',
+                    })
+                  }
                   className="px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-sm text-gray-900 dark:text-white focus:ring-2 focus:ring-brand-500 focus:border-brand-500 transition-colors"
                 >
                   <option value="all">All Barcodes</option>
@@ -777,33 +1089,48 @@ export default function TransactionsPage() {
                   type="text"
                   placeholder="Filter by location..."
                   value={filters.location}
-                  onChange={(e) => setFilters({ ...filters, location: e.target.value })}
+                  onChange={(e) =>
+                    setFilters({ ...filters, location: e.target.value })
+                  }
                   className="px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-sm text-gray-900 dark:text-white focus:ring-2 focus:ring-brand-500 focus:border-brand-500 transition-colors"
                 />
               </div>
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mt-3">
                 <div className="flex items-center gap-2">
-                  <span className="text-sm text-gray-500 dark:text-gray-400">Date Range:</span>
+                  <span className="text-sm text-gray-500 dark:text-gray-400">
+                    Date Range:
+                  </span>
                   <input
                     type="date"
                     value={filters.startDate}
-                    onChange={(e) => setFilters({ ...filters, startDate: e.target.value })}
+                    onChange={(e) =>
+                      setFilters({ ...filters, startDate: e.target.value })
+                    }
                     className="flex-1 px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-sm focus:ring-2 focus:ring-brand-500 focus:border-brand-500 transition-colors"
                   />
                   <span className="text-sm text-gray-500">to</span>
                   <input
                     type="date"
                     value={filters.endDate}
-                    onChange={(e) => setFilters({ ...filters, endDate: e.target.value })}
+                    onChange={(e) =>
+                      setFilters({ ...filters, endDate: e.target.value })
+                    }
                     className="flex-1 px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-sm focus:ring-2 focus:ring-brand-500 focus:border-brand-500 transition-colors"
                   />
                 </div>
                 <div className="flex items-center gap-2">
-                  <span className="text-sm text-gray-500 dark:text-gray-400">Min Qty:</span>
+                  <span className="text-sm text-gray-500 dark:text-gray-400">
+                    Min Qty:
+                  </span>
                   <input
                     type="number"
                     value={filters.minQuantity || ''}
-                    onChange={(e) => setFilters({ ...filters, minQuantity: parseInt(e.target.value) || 0 })}
+                    onChange={(e) =>
+                      setFilters({
+                        ...filters,
+                        minQuantity: parseInt(e.target.value) || 0,
+                      })
+                    }
                     min="0"
                     className="w-20 px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-sm focus:ring-2 focus:ring-brand-500 focus:border-brand-500 tabular-nums transition-colors"
                   />
@@ -811,7 +1138,12 @@ export default function TransactionsPage() {
                   <input
                     type="number"
                     value={filters.maxQuantity || ''}
-                    onChange={(e) => setFilters({ ...filters, maxQuantity: parseInt(e.target.value) || 0 })}
+                    onChange={(e) =>
+                      setFilters({
+                        ...filters,
+                        maxQuantity: parseInt(e.target.value) || 0,
+                      })
+                    }
                     min="0"
                     className="w-20 px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-sm focus:ring-2 focus:ring-brand-500 focus:border-brand-500 tabular-nums transition-colors"
                   />
@@ -853,29 +1185,50 @@ export default function TransactionsPage() {
           <table className="w-full">
             <thead className="bg-gray-50 dark:bg-gray-700/50 border-b border-gray-200 dark:border-gray-700">
               <tr>
-                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">Type</th>
-                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">Product</th>
-                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider hidden lg:table-cell">Barcode</th>
-                <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">Qty</th>
-                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider hidden md:table-cell">User</th>
-                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">Date</th>
-                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider hidden sm:table-cell">Notes</th>
+                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+                  Type
+                </th>
+                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+                  Product
+                </th>
+                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider hidden lg:table-cell">
+                  Barcode
+                </th>
+                <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+                  Qty
+                </th>
+                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider hidden md:table-cell">
+                  User
+                </th>
+                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+                  Date
+                </th>
+                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider hidden sm:table-cell">
+                  Notes
+                </th>
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-200 dark:divide-gray-700">
               {filteredTransactions.length === 0 ? (
                 <tr>
-                  <td colSpan={7} className="px-4 py-12 text-center text-gray-500 dark:text-gray-400">
+                  <td
+                    colSpan={7}
+                    className="px-4 py-12 text-center text-gray-500 dark:text-gray-400"
+                  >
                     <History className="w-12 h-12 text-gray-300 dark:text-gray-600 mx-auto mb-3" />
-                    <p className="text-lg font-medium">No transactions found</p>
-                    <p className="text-sm">Try adjusting your filters or search query</p>
+                    <p className="text-lg font-medium">
+                      No transactions found
+                    </p>
+                    <p className="text-sm">
+                      Try adjusting your filters or search query
+                    </p>
                   </td>
                 </tr>
               ) : (
                 filteredTransactions.map((tx) => {
                   const isPositive = tx.quantity > 0;
                   const hasBarcode = !!tx.product?.barcode;
-                  
+
                   return (
                     <motion.tr
                       key={tx.id}
@@ -894,12 +1247,14 @@ export default function TransactionsPage() {
                         <div className="flex items-center gap-2">
                           <div className="w-8 h-8 bg-gray-100 dark:bg-gray-700 rounded-lg flex items-center justify-center overflow-hidden flex-shrink-0">
                             {tx.product?.images?.[0] ? (
-                              <img 
-                                src={tx.product.images[0]} 
-                                alt={tx.product?.name || 'Product'} 
+                              <img
+                                src={tx.product.images[0]}
+                                alt={tx.product?.name || 'Product'}
                                 className="w-full h-full object-cover"
                                 onError={(e) => {
-                                  (e.target as HTMLImageElement).style.display = 'none';
+                                  (
+                                    e.target as HTMLImageElement
+                                  ).style.display = 'none';
                                 }}
                               />
                             ) : (
@@ -925,19 +1280,29 @@ export default function TransactionsPage() {
                             </span>
                           </div>
                         ) : (
-                          <span className="text-xs text-gray-400">No barcode</span>
+                          <span className="text-xs text-gray-400">
+                            No barcode
+                          </span>
                         )}
                       </td>
                       <td className="px-4 py-3 text-right">
-                        <span className={`font-semibold tabular-nums ${isPositive ? 'text-success-600 dark:text-success-400' : 'text-brand-accent-600 dark:text-brand-accent-400'}`}>
-                          {isPositive ? '+' : ''}{tx.quantity}
+                        <span
+                          className={`font-semibold tabular-nums ${
+                            isPositive
+                              ? 'text-success-600 dark:text-success-400'
+                              : 'text-brand-accent-600 dark:text-brand-accent-400'
+                          }`}
+                        >
+                          {isPositive ? '+' : ''}
+                          {tx.quantity}
                         </span>
                       </td>
                       <td className="px-4 py-3 hidden md:table-cell">
                         <div className="flex items-center gap-2">
                           <User className="w-4 h-4 text-gray-400 flex-shrink-0" />
                           <span className="text-sm text-gray-700 dark:text-gray-300 truncate max-w-[100px]">
-                            {tx.user?.firstName || 'System'} {tx.user?.lastName || ''}
+                            {tx.user?.firstName || 'System'}{' '}
+                            {tx.user?.lastName || ''}
                           </span>
                         </div>
                       </td>
@@ -959,22 +1324,42 @@ export default function TransactionsPage() {
           <div className="px-4 py-3 border-t border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-700/30 flex flex-wrap items-center justify-between gap-2 text-sm">
             <div className="flex flex-wrap items-center gap-4">
               <span className="text-gray-600 dark:text-gray-400 tabular-nums">
-                Total: <strong className="text-gray-900 dark:text-white">{formatNumber(filteredTransactions.length)}</strong>
-              </span>
-              <span className="text-gray-600 dark:text-gray-400 tabular-nums">
-                Net: <strong className={`${stats.netChange >= 0 ? 'text-success-600 dark:text-success-400' : 'text-brand-accent-600 dark:text-brand-accent-400'}`}>
-                  {stats.netChange >= 0 ? '+' : ''}{stats.netChange}
+                Total:{' '}
+                <strong className="text-gray-900 dark:text-white">
+                  {formatNumber(filteredTransactions.length)}
                 </strong>
               </span>
               <span className="text-gray-600 dark:text-gray-400 tabular-nums">
-                In: <strong className="text-success-600 dark:text-success-400">{formatNumber(stats.totalIn)}</strong>
+                Net:{' '}
+                <strong
+                  className={`${
+                    stats.netChange >= 0
+                      ? 'text-success-600 dark:text-success-400'
+                      : 'text-brand-accent-600 dark:text-brand-accent-400'
+                  }`}
+                >
+                  {stats.netChange >= 0 ? '+' : ''}
+                  {stats.netChange}
+                </strong>
               </span>
               <span className="text-gray-600 dark:text-gray-400 tabular-nums">
-                Out: <strong className="text-brand-accent-600 dark:text-brand-accent-400">{formatNumber(stats.totalOut)}</strong>
+                In:{' '}
+                <strong className="text-success-600 dark:text-success-400">
+                  {formatNumber(stats.totalIn)}
+                </strong>
+              </span>
+              <span className="text-gray-600 dark:text-gray-400 tabular-nums">
+                Out:{' '}
+                <strong className="text-brand-accent-600 dark:text-brand-accent-400">
+                  {formatNumber(stats.totalOut)}
+                </strong>
               </span>
               {barcodeLookupResult && (
                 <span className="text-gray-600 dark:text-gray-400">
-                  Filtered by: <strong className="text-brand-600 dark:text-brand-400">{barcodeLookupResult.productName}</strong>
+                  Filtered by:{' '}
+                  <strong className="text-brand-600 dark:text-brand-400">
+                    {barcodeLookupResult.productName}
+                  </strong>
                 </span>
               )}
             </div>
@@ -987,11 +1372,17 @@ export default function TransactionsPage() {
         {pagination.totalPages > 1 && (
           <div className="px-4 py-3 border-t border-gray-200 dark:border-gray-700 flex flex-wrap items-center justify-between gap-3">
             <span className="text-sm text-gray-500 dark:text-gray-400 tabular-nums">
-              Showing {filteredTransactions.length} of {pagination.total} transactions
+              Showing {filteredTransactions.length} of {pagination.total}{' '}
+              transactions
             </span>
             <div className="flex gap-2">
               <button
-                onClick={() => setPagination(prev => ({ ...prev, page: Math.max(1, prev.page - 1) }))}
+                onClick={() =>
+                  setPagination((prev) => ({
+                    ...prev,
+                    page: Math.max(1, prev.page - 1),
+                  }))
+                }
                 disabled={pagination.page <= 1}
                 className="px-3 py-1 text-sm border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-brand-50 dark:hover:bg-gray-700 hover:border-brand-300 dark:hover:border-brand-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors focus-ring"
               >
@@ -1001,7 +1392,12 @@ export default function TransactionsPage() {
                 Page {pagination.page} of {pagination.totalPages}
               </span>
               <button
-                onClick={() => setPagination(prev => ({ ...prev, page: Math.min(prev.totalPages, prev.page + 1) }))}
+                onClick={() =>
+                  setPagination((prev) => ({
+                    ...prev,
+                    page: Math.min(prev.totalPages, prev.page + 1),
+                  }))
+                }
                 disabled={pagination.page >= pagination.totalPages}
                 className="px-3 py-1 text-sm border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-brand-50 dark:hover:bg-gray-700 hover:border-brand-300 dark:hover:border-brand-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors focus-ring"
               >
@@ -1016,7 +1412,10 @@ export default function TransactionsPage() {
       <AnimatePresence>
         {showDetailModal && selectedTransaction && (
           <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-            <div className="fixed inset-0 bg-black/50 backdrop-blur-sm" onClick={() => setShowDetailModal(false)} />
+            <div
+              className="fixed inset-0 bg-black/50 backdrop-blur-sm"
+              onClick={() => setShowDetailModal(false)}
+            />
             <motion.div
               initial={{ opacity: 0, scale: 0.95, y: 20 }}
               animate={{ opacity: 1, scale: 1, y: 0 }}
@@ -1026,6 +1425,7 @@ export default function TransactionsPage() {
               <button
                 onClick={() => setShowDetailModal(false)}
                 className="absolute top-4 right-4 p-1 hover:bg-gray-100 dark:hover:bg-gray-700 rounded transition-colors focus-ring"
+                aria-label="Close modal"
               >
                 <X className="w-5 h-5 text-gray-500 dark:text-gray-400" />
               </button>
@@ -1035,65 +1435,99 @@ export default function TransactionsPage() {
                   <History className="w-6 h-6 text-brand-500" />
                 </div>
                 <div>
-                  <h3 className="text-xl font-bold text-gray-900 dark:text-white">Transaction Details</h3>
-                  <p className="text-sm text-gray-500 dark:text-gray-400">Transaction ID: {selectedTransaction.id}</p>
+                  <h3 className="text-xl font-bold text-gray-900 dark:text-white">
+                    Transaction Details
+                  </h3>
+                  <p className="text-sm text-gray-500 dark:text-gray-400">
+                    Transaction ID: {selectedTransaction.id}
+                  </p>
                 </div>
               </div>
 
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div className="p-3 bg-gray-50 dark:bg-gray-700/50 rounded-lg">
-                  <p className="text-xs text-gray-500 dark:text-gray-400">Type</p>
+                  <p className="text-xs text-gray-500 dark:text-gray-400">
+                    Type
+                  </p>
                   <TypeBadge type={selectedTransaction.transactionType} />
                 </div>
                 <div className="p-3 bg-gray-50 dark:bg-gray-700/50 rounded-lg">
-                  <p className="text-xs text-gray-500 dark:text-gray-400">Quantity</p>
-                  <p className={`text-lg font-bold tabular-nums ${selectedTransaction.quantity > 0 ? 'text-success-600 dark:text-success-400' : 'text-brand-accent-600 dark:text-brand-accent-400'}`}>
-                    {selectedTransaction.quantity > 0 ? '+' : ''}{selectedTransaction.quantity}
+                  <p className="text-xs text-gray-500 dark:text-gray-400">
+                    Quantity
+                  </p>
+                  <p
+                    className={`text-lg font-bold tabular-nums ${
+                      selectedTransaction.quantity > 0
+                        ? 'text-success-600 dark:text-success-400'
+                        : 'text-brand-accent-600 dark:text-brand-accent-400'
+                    }`}
+                  >
+                    {selectedTransaction.quantity > 0 ? '+' : ''}
+                    {selectedTransaction.quantity}
                   </p>
                 </div>
                 <div className="p-3 bg-gray-50 dark:bg-gray-700/50 rounded-lg sm:col-span-2">
-                  <p className="text-xs text-gray-500 dark:text-gray-400">Product</p>
+                  <p className="text-xs text-gray-500 dark:text-gray-400">
+                    Product
+                  </p>
                   <p className="text-lg font-medium text-gray-900 dark:text-white">
                     {selectedTransaction.product?.name || 'Unknown Product'}
                   </p>
-                  <p className="text-sm text-gray-500 dark:text-gray-400">SKU: {selectedTransaction.product?.sku || 'N/A'}</p>
+                  <p className="text-sm text-gray-500 dark:text-gray-400">
+                    SKU: {selectedTransaction.product?.sku || 'N/A'}
+                  </p>
                   {selectedTransaction.product?.barcode && (
                     <div className="flex items-center gap-2 mt-1">
                       <Barcode className="w-4 h-4 text-success-500" />
-                      <span className="font-mono text-sm text-gray-600 dark:text-gray-300">{selectedTransaction.product.barcode}</span>
+                      <span className="font-mono text-sm text-gray-600 dark:text-gray-300">
+                        {selectedTransaction.product.barcode}
+                      </span>
                     </div>
                   )}
                 </div>
                 <div className="p-3 bg-gray-50 dark:bg-gray-700/50 rounded-lg">
-                  <p className="text-xs text-gray-500 dark:text-gray-400">User</p>
+                  <p className="text-xs text-gray-500 dark:text-gray-400">
+                    User
+                  </p>
                   <div className="flex items-center gap-2 mt-1">
                     <User className="w-4 h-4 text-gray-400" />
                     <span className="text-sm text-gray-900 dark:text-white">
-                      {selectedTransaction.user?.firstName || 'System'} {selectedTransaction.user?.lastName || ''}
+                      {selectedTransaction.user?.firstName || 'System'}{' '}
+                      {selectedTransaction.user?.lastName || ''}
                     </span>
                   </div>
                 </div>
                 <div className="p-3 bg-gray-50 dark:bg-gray-700/50 rounded-lg">
-                  <p className="text-xs text-gray-500 dark:text-gray-400">Date & Time</p>
+                  <p className="text-xs text-gray-500 dark:text-gray-400">
+                    Date & Time
+                  </p>
                   <div className="flex items-center gap-2 mt-1">
                     <Clock className="w-4 h-4 text-gray-400" />
-                    <span className="text-sm text-gray-900 dark:text-white">{formatDate(selectedTransaction.createdAt)}</span>
+                    <span className="text-sm text-gray-900 dark:text-white">
+                      {formatDate(selectedTransaction.createdAt)}
+                    </span>
                   </div>
                 </div>
                 <div className="p-3 bg-gray-50 dark:bg-gray-700/50 rounded-lg">
-                  <p className="text-xs text-gray-500 dark:text-gray-400">Location</p>
+                  <p className="text-xs text-gray-500 dark:text-gray-400">
+                    Location
+                  </p>
                   <p className="text-sm text-gray-900 dark:text-white">
                     {selectedTransaction.inventory?.location || 'N/A'}
                   </p>
                 </div>
                 <div className="p-3 bg-gray-50 dark:bg-gray-700/50 rounded-lg">
-                  <p className="text-xs text-gray-500 dark:text-gray-400">Reference</p>
+                  <p className="text-xs text-gray-500 dark:text-gray-400">
+                    Reference
+                  </p>
                   <p className="font-mono text-sm text-gray-600 dark:text-gray-300">
                     {selectedTransaction.reference || 'N/A'}
                   </p>
                 </div>
                 <div className="p-3 bg-gray-50 dark:bg-gray-700/50 rounded-lg sm:col-span-2">
-                  <p className="text-xs text-gray-500 dark:text-gray-400">Notes</p>
+                  <p className="text-xs text-gray-500 dark:text-gray-400">
+                    Notes
+                  </p>
                   <p className="text-sm text-gray-700 dark:text-gray-300">
                     {selectedTransaction.notes || 'No notes'}
                   </p>
@@ -1111,7 +1545,9 @@ export default function TransactionsPage() {
                   <button
                     onClick={() => {
                       setShowDetailModal(false);
-                      router.push(`/admin/inventory/${selectedTransaction.productId}`);
+                      router.push(
+                        `/admin/inventory/${selectedTransaction.productId}`,
+                      );
                     }}
                     className="px-4 py-2 bg-brand-600 text-white rounded-lg hover:bg-brand-700 flex items-center gap-2 transition-colors shadow-brand focus-ring"
                   >

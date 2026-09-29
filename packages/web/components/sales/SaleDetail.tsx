@@ -1,13 +1,15 @@
-// src/components/sales/SaleDetail.tsx
+// packages/web/components/sales/SaleDetail.tsx
+'use client';
 
 import React, {
-  useState,
-  useEffect,
   useCallback,
+  useEffect,
   useMemo,
   useRef,
+  useState,
 } from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
+import Link from 'next/link';
+import { useParams } from 'next/navigation';
 import {
   ArrowLeft,
   Printer,
@@ -35,169 +37,15 @@ import {
   Star,
   Sparkles,
 } from 'lucide-react';
-import { saleService, DISCOUNT_TYPE_LABELS } from '../../services/saleService';
-import type { DiscountType } from '../../services/saleService';
+
+import {
+  saleService,
+  DISCOUNT_TYPE_LABELS,
+} from '../../services/saleService';
+import type { DiscountType, SaleBreakdown } from '../../services/saleService';
+import type { Sale } from '../../types/sale';
 import { toast } from '../../utils/toast-manager';
 import { formatCurrency, formatDate } from '../../utils/formatters';
-
-// ============================================
-// TYPES
-// ============================================
-
-interface SaleItem {
-  id: string;
-  productId: string;
-  product: {
-    id: string;
-    name: string;
-    sku: string;
-    unitPrice: number;
-    images?: string[];
-    barcode?: string;
-    category?: { id: string; name: string };
-  };
-  variantId?: string;
-  variant?: {
-    id: string;
-    name: string;
-    sku: string;
-    price: number;
-    attributes: any;
-  };
-  quantity: number;
-  unitPrice: number;
-  discount: number;
-  total: number;
-  notes?: string;
-}
-
-interface SalePayment {
-  id: string;
-  paymentMethod: string;
-  amount: number;
-  status: string;
-  reference?: string;
-  processedAt: string;
-  user?: {
-    id: string;
-    firstName: string;
-    lastName: string;
-  };
-}
-
-interface SaleReturn {
-  id: string;
-  returnNumber: string;
-  total: number;
-  status: string;
-  createdAt: string;
-  items: Array<{
-    id: string;
-    productId: string;
-    quantity: number;
-    unitPrice: number;
-    total: number;
-    reason?: string;
-    product: { name: string; sku: string };
-  }>;
-}
-
-interface SaleRefund {
-  id: string;
-  refundNumber: string;
-  total: number;
-  status: string;
-  createdAt: string;
-  items: Array<{
-    id: string;
-    productId: string;
-    quantity: number;
-    unitPrice: number;
-    total: number;
-    reason?: string;
-    product: { name: string; sku: string };
-  }>;
-}
-
-interface SaleData {
-  id: string;
-  receiptNumber: string;
-  subtotal: number;
-  tax: number;
-  discount: number;
-  total: number;
-  paidAmount: number;
-  changeAmount: number;
-  notes?: string;
-  status: string;
-  saleDate: string;
-  createdAt: string;
-  updatedAt: string;
-
-  // ── Promotion / loyalty breakdown ────────────────────────────
-  // Persisted on the backend for every create path. All optional so
-  // this shape stays compatible with sales created before the
-  // migration added the columns.
-  discountType?: DiscountType | string | null;
-  promotionCode?: string | null;
-  promotionDiscount?: number;
-  loyaltyPointsUsed?: number;
-  loyaltyDiscount?: number;
-
-  customer?: {
-    id: string;
-    firstName: string;
-    lastName: string;
-    email: string;
-    phoneNumber: string;
-    loyaltyLevel: string;
-    loyaltyPoints: number;
-    totalSpent: number;
-  };
-  user: {
-    id: string;
-    firstName: string;
-    lastName: string;
-    email: string;
-  };
-  businessUnit: {
-    id: string;
-    name: string;
-    address?: string;
-    phone?: string;
-    email?: string;
-  };
-  items: SaleItem[];
-  payments: SalePayment[];
-  returns?: SaleReturn[];
-  refunds?: SaleRefund[];
-  invoice?: {
-    id: string;
-    invoiceNumber: string;
-    status: string;
-    total: number;
-    balanceDue: number;
-    dueDate?: string;
-  };
-  receipt?: {
-    id: string;
-    receiptNumber: string;
-    status: string;
-    format: string;
-    sentAt?: string;
-    printedAt?: string;
-  };
-  cashRegister?: {
-    id: string;
-    name: string;
-  };
-  cashRegisterSession?: {
-    id: string;
-    openedAt: string;
-    closedAt?: string;
-    status: string;
-  };
-}
 
 // ============================================
 // STATIC MAPS — Tailwind can't see dynamic classes
@@ -255,6 +103,12 @@ const STATUS_MAP: Record<
       'bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-300',
     icon: TrendingDown,
   },
+  DELETED: {
+    label: 'Deleted',
+    className:
+      'bg-gray-100 text-gray-500 dark:bg-gray-700 dark:text-gray-400',
+    icon: XCircle,
+  },
 };
 
 const STAT_CARD_COLORS: Record<string, string> = {
@@ -275,24 +129,129 @@ const STAT_CARD_COLORS: Record<string, string> = {
 const RETURN_STATUS_STYLES: Record<string, string> = {
   APPROVED:
     'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-300',
+  PROCESSED:
+    'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-300',
   PENDING:
     'bg-yellow-100 text-yellow-700 dark:bg-yellow-900/30 dark:text-yellow-300',
+  REJECTED:
+    'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-300',
+  CANCELLED:
+    'bg-gray-100 text-gray-700 dark:bg-gray-700 dark:text-gray-300',
 };
 const DEFAULT_RETURN_STATUS_STYLE =
   'bg-gray-100 text-gray-700 dark:bg-gray-700 dark:text-gray-300';
+
+const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+// ============================================
+// HELPERS
+// ============================================
+
+function extractErrorMessage(error: unknown, fallback: string): string {
+  if (!error) return fallback;
+  const anyErr = error as any;
+  const data = anyErr?.response?.data;
+
+  if (data) {
+    if (typeof data.error === 'string') return data.error;
+    if (data.error?.message) return String(data.error.message);
+    if (data.message) return String(data.message);
+    if (Array.isArray(data.errors) && data.errors.length > 0) {
+      return data.errors
+        .map((e: any) => `${e.field ?? 'field'}: ${e.message ?? 'invalid'}`)
+        .join(', ');
+    }
+  }
+
+  if (anyErr?.message) return String(anyErr.message);
+  return fallback;
+}
+
+/**
+ * Escape a value for HTML interpolation in the print window. The
+ * print window is same-origin with the app, so an unescaped product
+ * or customer name containing `<` or `>` is a script-injection
+ * vector as well as a rendering hazard.
+ */
+function escapeHtml(value: unknown): string {
+  if (value === null || value === undefined) return '';
+  return String(value)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+
+function parseMoney(input: string): number {
+  if (!input) return 0;
+  const n = parseFloat(input);
+  return Number.isFinite(n) ? n : 0;
+}
+
+function round2(value: number): number {
+  if (!Number.isFinite(value)) return 0;
+  return Math.round(value * 100) / 100;
+}
+
+/**
+ * `Sale.saleDate` is `string | Date` on the canonical type. All the
+ * formatters in this component expect a string, so coerce once here.
+ */
+function toIsoString(value: string | Date | null | undefined): string {
+  if (!value) return '';
+  if (value instanceof Date) return value.toISOString();
+  return String(value);
+}
+
+/**
+ * Compute the customer's loyalty tier from their total spend.
+ *
+ * `loyaltyLevel` is NOT a column on the `Customer` model, and NOT
+ * declared on the frontend `Customer` type (see
+ * `packages/web/types/customer.ts`). The backend computes it at
+ * read time in `SaleService.calculateLoyaltyLevel(totalSpent)` — see
+ * `packages/backend/src/services/saleService.ts`.
+ *
+ * The thresholds below mirror that helper exactly:
+ *
+ *   totalSpent >= 10000 → DIAMOND
+ *   totalSpent >= 5000  → PLATINUM
+ *   totalSpent >= 2000  → GOLD
+ *   totalSpent >= 500   → SILVER
+ *   otherwise           → BRONZE
+ *
+ * If the backend's thresholds change, update this table to match.
+ */
+function calculateLoyaltyLevel(totalSpent: number): string {
+  if (!Number.isFinite(totalSpent) || totalSpent < 0) return 'BRONZE';
+  if (totalSpent >= 10000) return 'DIAMOND';
+  if (totalSpent >= 5000) return 'PLATINUM';
+  if (totalSpent >= 2000) return 'GOLD';
+  if (totalSpent >= 500) return 'SILVER';
+  return 'BRONZE';
+}
 
 // ============================================
 // SUB-COMPONENTS
 // ============================================
 
 const StatusBadge: React.FC<{ status: string }> = ({ status }) => {
-  const config = STATUS_MAP[status] ?? STATUS_MAP.PENDING;
+  const config = STATUS_MAP[status];
+  if (!config) {
+    return (
+      <span className="px-2.5 py-0.5 rounded-full text-xs font-medium flex items-center gap-1 bg-gray-100 text-gray-700 dark:bg-gray-700 dark:text-gray-300">
+        <AlertCircle className="w-3 h-3" aria-hidden="true" />
+        {status || 'Unknown'}
+      </span>
+    );
+  }
   const Icon = config.icon;
   return (
     <span
       className={`px-2.5 py-0.5 rounded-full text-xs font-medium flex items-center gap-1 ${config.className}`}
     >
-      <Icon className="w-3 h-3" />
+      <Icon className="w-3 h-3" aria-hidden="true" />
       {config.label}
     </span>
   );
@@ -304,46 +263,33 @@ const StatCard: React.FC<{
   icon: React.ElementType;
   color: string;
   subtext?: string;
-}> = ({ label, value, icon: Icon, color, subtext }) => {
-  return (
-    <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 p-4 hover:shadow-md transition-shadow">
-      <div className="flex items-center justify-between">
-        <p className="text-sm text-gray-500 dark:text-gray-400">{label}</p>
-        <div
-          className={`p-1.5 rounded-lg ${
-            STAT_CARD_COLORS[color] || STAT_CARD_COLORS.blue
-          }`}
-        >
-          <Icon className="w-4 h-4" />
-        </div>
+}> = ({ label, value, icon: Icon, color, subtext }) => (
+  <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 p-4 hover:shadow-md transition-shadow">
+    <div className="flex items-center justify-between">
+      <p className="text-sm text-gray-500 dark:text-gray-400">{label}</p>
+      <div
+        className={`p-1.5 rounded-lg ${
+          STAT_CARD_COLORS[color] || STAT_CARD_COLORS.blue
+        }`}
+      >
+        <Icon className="w-4 h-4" aria-hidden="true" />
       </div>
-      <p className="text-2xl font-bold text-gray-900 dark:text-white mt-1">
-        {value}
-      </p>
-      {subtext && (
-        <p className="text-xs text-gray-400 dark:text-gray-500 mt-1">
-          {subtext}
-        </p>
-      )}
     </div>
-  );
-};
+    <p className="text-2xl font-bold text-gray-900 dark:text-white mt-1 tabular-nums">
+      {value}
+    </p>
+    {subtext && (
+      <p className="text-xs text-gray-400 dark:text-gray-500 mt-1">
+        {subtext}
+      </p>
+    )}
+  </div>
+);
 
-/**
- * Promotion / loyalty breakdown panel.
- *
- * Reads the five breakdown fields off the sale via
- * `saleService.extractBreakdown`, and returns `null` when the sale
- * has none — so it's safe to render unconditionally.
- */
 const SaleBreakdownPanel: React.FC<{
-  sale: SaleData;
+  breakdown: SaleBreakdown;
   currencySymbol?: string;
-}> = ({ sale, currencySymbol = '$' }) => {
-  if (!saleService.hasBreakdown(sale)) return null;
-
-  const breakdown = saleService.extractBreakdown(sale);
-
+}> = ({ breakdown, currencySymbol = '$' }) => {
   const promotionLabel = breakdown.discountType
     ? DISCOUNT_TYPE_LABELS[breakdown.discountType as DiscountType] ??
       String(breakdown.discountType)
@@ -352,20 +298,25 @@ const SaleBreakdownPanel: React.FC<{
   const hasPromotion = (breakdown.promotionDiscount ?? 0) > 0;
   const hasLoyalty = (breakdown.loyaltyPointsUsed ?? 0) > 0;
 
+  if (!hasPromotion && !hasLoyalty) return null;
+
   return (
     <section
       className="rounded-xl border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800/50 p-4 space-y-2 mb-6"
       aria-label="Discount breakdown"
     >
       <h3 className="text-sm font-semibold text-gray-900 dark:text-white flex items-center gap-2">
-        <Sparkles className="w-4 h-4 text-blue-500" />
+        <Sparkles className="w-4 h-4 text-blue-500" aria-hidden="true" />
         Discount breakdown
       </h3>
 
       {hasPromotion && (
         <div className="flex items-center justify-between text-sm">
           <span className="flex items-center gap-2 text-gray-600 dark:text-gray-400 flex-wrap">
-            <Tag className="w-3.5 h-3.5 text-blue-500 shrink-0" />
+            <Tag
+              className="w-3.5 h-3.5 text-blue-500 shrink-0"
+              aria-hidden="true"
+            />
             <span>{promotionLabel}</span>
             {breakdown.promotionCode && (
               <code className="px-1.5 py-0.5 rounded bg-gray-200 dark:bg-gray-700 text-[11px] font-mono tabular-nums">
@@ -383,7 +334,10 @@ const SaleBreakdownPanel: React.FC<{
       {hasLoyalty && (
         <div className="flex items-center justify-between text-sm">
           <span className="flex items-center gap-2 text-gray-600 dark:text-gray-400">
-            <Star className="w-3.5 h-3.5 text-yellow-500 fill-current shrink-0" />
+            <Star
+              className="w-3.5 h-3.5 text-yellow-500 fill-current shrink-0"
+              aria-hidden="true"
+            />
             <span className="tabular-nums">
               {breakdown.loyaltyPointsUsed} loyalty points
             </span>
@@ -403,52 +357,150 @@ const SaleBreakdownPanel: React.FC<{
 // ============================================
 
 export function SaleDetail() {
-  const { id } = useParams<{ id: string }>();
-  const navigate = useNavigate();
-  const printRef = useRef<HTMLDivElement>(null);
+  const params = useParams();
 
-  const [sale, setSale] = useState<SaleData | null>(null);
+  const id =
+    typeof params?.id === 'string'
+      ? params.id
+      : Array.isArray(params?.id)
+      ? params.id[0]
+      : null;
+
+  const mountedRef = useRef(true);
+  const fetchRequestIdRef = useRef(0);
+
+  const [sale, setSale] = useState<Sale | null>(null);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
-  const [showReturnModal, setShowReturnModal] = useState(false);
+  const [loadError, setLoadError] = useState<string | null>(null);
+
   const [showRefundModal, setShowRefundModal] = useState(false);
   const [showEmailModal, setShowEmailModal] = useState(false);
+
   const [email, setEmail] = useState('');
   const [refundReason, setRefundReason] = useState('');
-  const [submitting, setSubmitting] = useState(false);
+  const [refundAmountInput, setRefundAmountInput] = useState('');
+
+  const [isSendingEmail, setIsSendingEmail] = useState(false);
+  const [isRefunding, setIsRefunding] = useState(false);
+
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+    };
+  }, []);
 
   // ============================================
   // LOAD
   // ============================================
 
   const loadSale = useCallback(
-    async (showLoading = true) => {
-      if (!id) return;
-      try {
-        if (showLoading) setLoading(true);
-        else setRefreshing(true);
-
-        const data = await saleService.getSaleById(id);
-        setSale(data);
-      } catch (error) {
-        console.error('Failed to load sale:', error);
-        toast.error('Failed to load sale details');
-      } finally {
+    async (showLoading = true): Promise<boolean> => {
+      if (!id) {
         setLoading(false);
-        setRefreshing(false);
+        return false;
+      }
+
+      const requestId = ++fetchRequestIdRef.current;
+      if (showLoading) setLoading(true);
+      else setRefreshing(true);
+      setLoadError(null);
+
+      try {
+        const data = await saleService.getSaleById(id);
+        if (requestId !== fetchRequestIdRef.current) return false;
+        if (!mountedRef.current) return false;
+        setSale(data);
+        return true;
+      } catch (error) {
+        if (requestId !== fetchRequestIdRef.current) return false;
+        if (!mountedRef.current) return false;
+        const message = extractErrorMessage(
+          error,
+          'Failed to load sale details',
+        );
+        console.error('[SaleDetail] load failed:', message);
+        setLoadError(message);
+        toast.error(message);
+        return false;
+      } finally {
+        if (requestId === fetchRequestIdRef.current && mountedRef.current) {
+          setLoading(false);
+          setRefreshing(false);
+        }
       }
     },
-    [id]
+    [id],
   );
 
   useEffect(() => {
-    loadSale(true);
+    void loadSale(true);
   }, [loadSale]);
 
   const handleRefresh = useCallback(async () => {
-    await loadSale(false);
-    toast.success('Sale refreshed');
+    const ok = await loadSale(false);
+    if (ok) toast.success('Sale refreshed');
+    else toast.error('Failed to refresh sale');
   }, [loadSale]);
+
+  // ============================================
+  // DERIVED
+  // ============================================
+
+  const items = useMemo(() => sale?.items ?? [], [sale?.items]);
+  const payments = useMemo(() => sale?.payments ?? [], [sale?.payments]);
+  const returns = useMemo(() => sale?.returns ?? [], [sale?.returns]);
+  const refunds = useMemo(() => sale?.refunds ?? [], [sale?.refunds]);
+
+  const totalUnits = useMemo(
+    () => items.reduce((sum, item) => sum + item.quantity, 0),
+    [items],
+  );
+
+  const customerName = useMemo(() => {
+    if (!sale?.customer) return 'Guest';
+    return `${sale.customer.firstName} ${sale.customer.lastName}`.trim();
+  }, [sale?.customer]);
+
+  const customerEmail = sale?.customer?.email || 'N/A';
+  const customerPhone = sale?.customer?.phoneNumber || 'N/A';
+
+  /**
+   * The customer's loyalty level, computed locally. `loyaltyLevel` is
+   * not on the `Customer` type — see `calculateLoyaltyLevel` above.
+   */
+  const loyaltyLevel = useMemo(() => {
+    if (!sale?.customer) return null;
+    return calculateLoyaltyLevel(sale.customer.totalSpent);
+  }, [sale?.customer]);
+
+  const breakdown: SaleBreakdown = useMemo(() => {
+    if (!sale) return {};
+    return saleService.extractBreakdown(sale);
+  }, [sale]);
+
+  const hasBreakdown = useMemo(
+    () => (sale ? saleService.hasBreakdown(sale) : false),
+    [sale],
+  );
+
+  const discountSummary = useMemo(() => {
+    if (!sale) return { hasAny: false, describe: '' };
+    const describe = hasBreakdown ? saleService.describeBreakdown(sale) : '';
+    return { hasAny: hasBreakdown, describe };
+  }, [sale, hasBreakdown]);
+
+  const refundableAmount = useMemo(() => {
+    if (!sale) return 0;
+    const refundedTotal = refunds
+      .filter((r) => r.status === 'COMPLETED' || r.status === 'APPROVED')
+      .reduce((sum, r) => sum + (r.total ?? 0), 0);
+    const returnedTotal = returns
+      .filter((r) => r.status === 'APPROVED' || r.status === 'PROCESSED')
+      .reduce((sum, r) => sum + (r.total ?? 0), 0);
+    return round2(Math.max(0, sale.total - refundedTotal - returnedTotal));
+  }, [sale, refunds, returns]);
 
   // ============================================
   // PRINT
@@ -457,39 +509,95 @@ export function SaleDetail() {
   const handlePrint = useCallback(() => {
     if (!sale) return;
 
-    const printWindow = window.open('', '_blank');
+    const printWindow = window.open('', '_blank', 'noopener,noreferrer');
     if (!printWindow) {
-      toast.error('Please allow popups to print receipts');
+      toast.error('Please allow pop-ups to print receipts');
       return;
     }
+    try {
+      printWindow.opener = null;
+    } catch {
+      /* ignore */
+    }
 
-    // Build the breakdown snippet once so the template stays readable.
-    const breakdown = saleService.extractBreakdown(sale);
+    const e = escapeHtml;
+
+    const businessName = e(sale.businessUnit?.name || 'Store');
+    const businessAddress = e(sale.businessUnit?.address || '');
+    const businessPhone = e(sale.businessUnit?.phone || '');
+    const receiptNumber = e(sale.receiptNumber);
+    const saleDate = e(new Date(sale.saleDate).toLocaleString());
+    const cashierName = e(
+      `${sale.user?.firstName || ''} ${sale.user?.lastName || ''}`.trim(),
+    );
+
+    const itemRows = items
+      .map(
+        (item) => `
+          <div class="item">
+            <span class="name">${e(item.product?.name ?? 'Unknown')}</span>
+            <span class="qty">x${e(item.quantity)}</span>
+            <span class="price">$${e(item.total.toFixed(2))}</span>
+          </div>
+        `,
+      )
+      .join('');
+
     const promotionDiscount = breakdown.promotionDiscount ?? 0;
-    const promotionCode = breakdown.promotionCode ?? null;
+    const promotionCode = breakdown.promotionCode;
     const loyaltyPointsUsed = breakdown.loyaltyPointsUsed ?? 0;
     const loyaltyDiscount = breakdown.loyaltyDiscount ?? 0;
 
     const promotionLine =
       promotionDiscount > 0
-        ? `
-          <div class="total-row"><span>Promotion${
-            promotionCode ? ` (${promotionCode})` : ''
-          }</span><span>-$${promotionDiscount.toFixed(2)}</span></div>
-        `
+        ? `<div class="total-row"><span>Promotion${
+            promotionCode ? ` (${e(promotionCode)})` : ''
+          }</span><span>-$${e(promotionDiscount.toFixed(2))}</span></div>`
         : '';
 
     const loyaltyLine =
       loyaltyPointsUsed > 0
-        ? `
-          <div class="total-row"><span>${loyaltyPointsUsed} loyalty points</span><span>-$${loyaltyDiscount.toFixed(2)}</span></div>
-        `
+        ? `<div class="total-row"><span>${e(
+            loyaltyPointsUsed,
+          )} loyalty points</span><span>-$${e(
+            loyaltyDiscount.toFixed(2),
+          )}</span></div>`
         : '';
 
+    const genericDiscountLine =
+      sale.discount > 0 && promotionDiscount === 0 && loyaltyDiscount === 0
+        ? `<div class="total-row"><span>Discount</span><span>-$${e(
+            sale.discount.toFixed(2),
+          )}</span></div>`
+        : '';
+
+    const paymentRows = payments
+      .map(
+        (p) => `<p>${e(p.paymentMethod)}: $${e(p.amount.toFixed(2))}</p>`,
+      )
+      .join('');
+
+    const changeLine =
+      sale.changeAmount > 0
+        ? `<p>Change: $${e(sale.changeAmount.toFixed(2))}</p>`
+        : '';
+
+    const customerBlock = sale.customer
+      ? `
+        <div class="payment">
+          <p><strong>Customer</strong></p>
+          <p>${e(customerName)}</p>
+          <p>${e(sale.customer.email || '')}</p>
+        </div>
+      `
+      : '';
+
     printWindow.document.write(`
+      <!doctype html>
       <html>
         <head>
-          <title>Receipt #${sale.receiptNumber}</title>
+          <meta charset="utf-8" />
+          <title>Receipt #${receiptNumber}</title>
           <style>
             body { font-family: 'Courier New', monospace; padding: 20px; max-width: 300px; margin: 0 auto; background: white; }
             .header { text-align: center; border-bottom: 1px dashed #ccc; padding-bottom: 10px; }
@@ -511,173 +619,59 @@ export function SaleDetail() {
         </head>
         <body>
           <div class="header">
-            <h3>${sale.businessUnit?.name || 'Store'}</h3>
-            <p>${sale.businessUnit?.address || ''}</p>
-            <p>${sale.businessUnit?.phone || ''}</p>
-            <p style="margin-top: 5px;"><strong>Receipt #${sale.receiptNumber}</strong></p>
-            <p>${new Date(sale.saleDate).toLocaleString()}</p>
-            <p>Cashier: ${sale.user?.firstName || ''} ${sale.user?.lastName || ''}</p>
+            <h3>${businessName}</h3>
+            <p>${businessAddress}</p>
+            <p>${businessPhone}</p>
+            <p style="margin-top: 5px;"><strong>Receipt #${receiptNumber}</strong></p>
+            <p>${saleDate}</p>
+            <p>Cashier: ${cashierName}</p>
           </div>
-          <div class="items">
-            ${sale.items
-              .map(
-                (item) => `
-              <div class="item">
-                <span class="name">${item.product.name}</span>
-                <span class="qty">x${item.quantity}</span>
-                <span class="price">$${item.total.toFixed(2)}</span>
-              </div>
-            `
-              )
-              .join('')}
-          </div>
+          <div class="items">${itemRows}</div>
           <div class="total">
-            <div class="total-row"><span>Subtotal</span><span>$${sale.subtotal.toFixed(2)}</span></div>
-            <div class="total-row"><span>Tax</span><span>$${sale.tax.toFixed(2)}</span></div>
+            <div class="total-row"><span>Subtotal</span><span>$${e(
+              sale.subtotal.toFixed(2),
+            )}</span></div>
+            <div class="total-row"><span>Tax</span><span>$${e(
+              sale.tax.toFixed(2),
+            )}</span></div>
             ${promotionLine}
             ${loyaltyLine}
-            ${
-              sale.discount > 0 && promotionDiscount === 0 && loyaltyDiscount === 0
-                ? `<div class="total-row"><span>Discount</span><span>-$${sale.discount.toFixed(2)}</span></div>`
-                : ''
-            }
-            <div class="total-row grand"><span>Total</span><span>$${sale.total.toFixed(2)}</span></div>
+            ${genericDiscountLine}
+            <div class="total-row grand"><span>Total</span><span>$${e(
+              sale.total.toFixed(2),
+            )}</span></div>
           </div>
           <div class="payment">
             <p><strong>Payment</strong></p>
-            ${sale.payments
-              .map(
-                (p) => `<p>${p.paymentMethod}: $${p.amount.toFixed(2)}</p>`
-              )
-              .join('')}
-            ${
-              sale.changeAmount > 0
-                ? `<p>Change: $${sale.changeAmount.toFixed(2)}</p>`
-                : ''
-            }
+            ${paymentRows}
+            ${changeLine}
           </div>
-          ${
-            sale.customer
-              ? `
-            <div class="payment">
-              <p><strong>Customer</strong></p>
-              <p>${sale.customer.firstName} ${sale.customer.lastName}</p>
-              <p>${sale.customer.email || ''}</p>
-            </div>
-          `
-              : ''
-          }
+          ${customerBlock}
           <div class="footer">
             <p>Thank you for your business!</p>
-            <p>${sale.businessUnit?.name || ''}</p>
+            <p>${businessName}</p>
           </div>
+          <script>
+            window.addEventListener('load', function () {
+              setTimeout(function () { window.print(); }, 50);
+            });
+          <\/script>
         </body>
       </html>
     `);
     printWindow.document.close();
-    printWindow.print();
-  }, [sale]);
+  }, [sale, items, payments, breakdown, customerName]);
+
+  const handleDownloadReceipt = useCallback(() => {
+    if (!sale) return;
+    toast.info(
+      'Choose "Save as PDF" as the destination in the print dialog.',
+    );
+    handlePrint();
+  }, [sale, handlePrint]);
 
   // ============================================
-  // DOWNLOAD / EMAIL
-  // ============================================
-
-  const handleDownloadReceipt = useCallback(async () => {
-    if (!id) return;
-    try {
-      const blob = await saleService.printReceipt(id);
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = `receipt-${sale?.receiptNumber || id}.pdf`;
-      document.body.appendChild(a);
-      a.click();
-      document.body.removeChild(a);
-      URL.revokeObjectURL(url);
-      toast.success('Receipt downloaded');
-    } catch (error) {
-      console.error('Failed to download receipt:', error);
-      toast.error('Failed to download receipt');
-    }
-  }, [id, sale?.receiptNumber]);
-
-  const handleSendEmail = useCallback(async () => {
-    if (!id) return;
-    const trimmed = email.trim();
-    if (!trimmed) {
-      toast.error('Please enter an email address');
-      return;
-    }
-
-    setSubmitting(true);
-    try {
-      await saleService.sendReceiptEmail(id, trimmed);
-      toast.success(`Receipt sent to ${trimmed}`);
-      setShowEmailModal(false);
-      setEmail('');
-      await loadSale(false);
-    } catch (error) {
-      console.error('Failed to send receipt:', error);
-      toast.error('Failed to send receipt');
-    } finally {
-      setSubmitting(false);
-    }
-  }, [id, email, loadSale]);
-
-  // ============================================
-  // REFUND
-  // ============================================
-
-  const handleRefund = useCallback(
-    async (reason: string, amount?: number) => {
-      if (!id) return;
-      const trimmed = reason.trim();
-      if (!trimmed) {
-        toast.error('Please enter a reason for the refund');
-        return;
-      }
-      setSubmitting(true);
-      try {
-        await saleService.refundSale(id, trimmed, amount);
-        toast.success('Sale refunded successfully');
-        setShowRefundModal(false);
-        setRefundReason('');
-        await loadSale(false);
-      } catch (error) {
-        console.error('Failed to refund sale:', error);
-        toast.error('Failed to refund sale');
-      } finally {
-        setSubmitting(false);
-      }
-    },
-    [id, loadSale]
-  );
-
-  // ============================================
-  // DERIVED
-  // ============================================
-
-  const customerName = useMemo(() => {
-    if (!sale?.customer) return 'Guest';
-    return `${sale.customer.firstName} ${sale.customer.lastName}`.trim();
-  }, [sale?.customer]);
-
-  const customerEmail = sale?.customer?.email || 'N/A';
-  const customerPhone = sale?.customer?.phoneNumber || 'N/A';
-
-  /**
-   * A small summary of the applied discount, ready to render in the
-   * StatCard subtext.
-   */
-  const discountSummary = useMemo(() => {
-    if (!sale) return { hasAny: false, describe: '' };
-    const hasAny = saleService.hasBreakdown(sale);
-    const describe = hasAny ? saleService.describeBreakdown(sale) : '';
-    return { hasAny, describe };
-  }, [sale]);
-
-  // ============================================
-  // MODAL OPENERS (open with sensible defaults)
+  // EMAIL
   // ============================================
 
   const openEmailModal = useCallback(() => {
@@ -685,10 +679,102 @@ export function SaleDetail() {
     setShowEmailModal(true);
   }, [sale?.customer?.email]);
 
+  const handleSendEmail = useCallback(async () => {
+    if (!id || !sale) return;
+
+    const trimmed = email.trim();
+    if (!trimmed) {
+      toast.error('Please enter an email address');
+      return;
+    }
+    if (!EMAIL_PATTERN.test(trimmed)) {
+      toast.error('Please enter a valid email address');
+      return;
+    }
+
+    setIsSendingEmail(true);
+    try {
+      await saleService.sendReceiptEmail(id, trimmed);
+      if (!mountedRef.current) return;
+      toast.success(`Receipt sent to ${trimmed}`);
+      setShowEmailModal(false);
+      setEmail('');
+      await loadSale(false);
+    } catch (error) {
+      if (!mountedRef.current) return;
+      const message = extractErrorMessage(error, 'Failed to send receipt');
+      console.error('[SaleDetail] send email failed:', message);
+      toast.error(message);
+    } finally {
+      if (mountedRef.current) setIsSendingEmail(false);
+    }
+  }, [id, sale, email, loadSale]);
+
+  // ============================================
+  // REFUND
+  // ============================================
+
   const openRefundModal = useCallback(() => {
     setRefundReason('');
+    setRefundAmountInput(refundableAmount.toFixed(2));
     setShowRefundModal(true);
-  }, []);
+  }, [refundableAmount]);
+
+  const handleRefund = useCallback(async () => {
+    if (!id || !sale) return;
+
+    const trimmed = refundReason.trim();
+    if (!trimmed) {
+      toast.error('Please enter a reason for the refund');
+      return;
+    }
+
+    const amount = round2(parseMoney(refundAmountInput));
+    if (amount <= 0) {
+      toast.error('Refund amount must be greater than zero');
+      return;
+    }
+    if (amount > refundableAmount) {
+      toast.error(
+        `Refund amount cannot exceed ${formatCurrency(refundableAmount)}`,
+      );
+      return;
+    }
+
+    setIsRefunding(true);
+    try {
+      await saleService.refundSale(id, trimmed, amount);
+      if (!mountedRef.current) return;
+      toast.success(`Refunded ${formatCurrency(amount)}`);
+      setShowRefundModal(false);
+      setRefundReason('');
+      setRefundAmountInput('');
+      await loadSale(false);
+    } catch (error) {
+      if (!mountedRef.current) return;
+      const message = extractErrorMessage(error, 'Failed to refund sale');
+      console.error('[SaleDetail] refund failed:', message);
+      toast.error(message);
+    } finally {
+      if (mountedRef.current) setIsRefunding(false);
+    }
+  }, [id, sale, refundReason, refundAmountInput, refundableAmount, loadSale]);
+
+  // ============================================
+  // ESCAPE-CLOSE FOR MODALS
+  // ============================================
+
+  useEffect(() => {
+    if (!showEmailModal && !showRefundModal) return;
+    const handler = (e: KeyboardEvent) => {
+      if (e.key !== 'Escape') return;
+      if (isSendingEmail || isRefunding) return;
+      setShowEmailModal(false);
+      setShowRefundModal(false);
+    };
+    document.addEventListener('keydown', handler);
+    return () => document.removeEventListener('keydown', handler);
+  }, [showEmailModal, showRefundModal, isSendingEmail, isRefunding]);
 
   // ============================================
   // EARLY RETURNS
@@ -698,10 +784,45 @@ export function SaleDetail() {
     return (
       <div className="flex items-center justify-center min-h-[60vh]">
         <div className="text-center">
-          <Loader2 className="w-12 h-12 animate-spin text-blue-600 mx-auto mb-4" />
+          <Loader2
+            className="w-12 h-12 animate-spin text-blue-600 mx-auto mb-4"
+            aria-hidden="true"
+          />
           <p className="text-gray-500 dark:text-gray-400">
-            Loading sale details...
+            Loading sale details…
           </p>
+        </div>
+      </div>
+    );
+  }
+
+  if (loadError && !sale) {
+    return (
+      <div className="p-6 text-center">
+        <div className="w-16 h-16 bg-red-100 dark:bg-red-900/30 rounded-full flex items-center justify-center mx-auto mb-4">
+          <AlertCircle
+            className="w-8 h-8 text-red-500 dark:text-red-400"
+            aria-hidden="true"
+          />
+        </div>
+        <h3 className="text-lg font-semibold text-gray-700 dark:text-gray-300">
+          Failed to load sale
+        </h3>
+        <p className="text-gray-500 dark:text-gray-400 mt-1">{loadError}</p>
+        <div className="mt-4 flex items-center justify-center gap-3">
+          <button
+            type="button"
+            onClick={() => void loadSale(true)}
+            className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors focus-ring"
+          >
+            Retry
+          </button>
+          <Link
+            href="/sales"
+            className="px-4 py-2 bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 rounded-lg hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors focus-ring"
+          >
+            Back to Sales
+          </Link>
         </div>
       </div>
     );
@@ -711,20 +832,23 @@ export function SaleDetail() {
     return (
       <div className="p-6 text-center">
         <div className="w-16 h-16 bg-gray-100 dark:bg-gray-700 rounded-full flex items-center justify-center mx-auto mb-4">
-          <AlertCircle className="w-8 h-8 text-gray-400" />
+          <AlertCircle
+            className="w-8 h-8 text-gray-400"
+            aria-hidden="true"
+          />
         </div>
         <h3 className="text-lg font-semibold text-gray-700 dark:text-gray-300">
           Sale not found
         </h3>
         <p className="text-gray-500 dark:text-gray-400 mt-1">
-          The sale you're looking for doesn't exist.
+          The sale you&apos;re looking for doesn&apos;t exist.
         </p>
-        <button
-          onClick={() => navigate('/sales')}
-          className="mt-4 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+        <Link
+          href="/sales"
+          className="inline-block mt-4 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors focus-ring"
         >
           Back to Sales
-        </button>
+        </Link>
       </div>
     );
   }
@@ -738,12 +862,16 @@ export function SaleDetail() {
       {/* Header */}
       <div className="flex flex-wrap items-start justify-between gap-4 mb-6">
         <div className="flex items-center gap-4 min-w-0">
-          <button
-            onClick={() => navigate('/sales')}
-            className="p-2 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-colors flex-shrink-0"
+          <Link
+            href="/sales"
+            className="p-2 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-colors flex-shrink-0 focus-ring"
+            aria-label="Back to sales"
           >
-            <ArrowLeft className="w-5 h-5 text-gray-600 dark:text-gray-400" />
-          </button>
+            <ArrowLeft
+              className="w-5 h-5 text-gray-600 dark:text-gray-400"
+              aria-hidden="true"
+            />
+          </Link>
           <div className="min-w-0">
             <div className="flex flex-wrap items-center gap-3">
               <h1 className="text-2xl font-bold text-gray-900 dark:text-white truncate">
@@ -753,58 +881,68 @@ export function SaleDetail() {
             </div>
             <div className="flex flex-wrap items-center gap-3 text-sm text-gray-500 dark:text-gray-400 mt-1">
               <span className="flex items-center gap-1">
-                <Calendar className="w-3.5 h-3.5" />
-                {formatDate(sale.saleDate)}
+                <Calendar className="w-3.5 h-3.5" aria-hidden="true" />
+                {formatDate(toIsoString(sale.saleDate))}
               </span>
               <span className="flex items-center gap-1">
-                <User className="w-3.5 h-3.5" />
+                <User className="w-3.5 h-3.5" aria-hidden="true" />
                 {customerName}
               </span>
               <span className="flex items-center gap-1">
-                <CreditCard className="w-3.5 h-3.5" />
-                {sale.payments?.[0]?.paymentMethod || 'N/A'}
+                <CreditCard className="w-3.5 h-3.5" aria-hidden="true" />
+                {payments[0]?.paymentMethod || 'N/A'}
               </span>
             </div>
           </div>
         </div>
         <div className="flex flex-wrap items-center gap-2 flex-shrink-0">
           <button
-            onClick={handleRefresh}
+            type="button"
+            onClick={() => void handleRefresh()}
             disabled={refreshing}
-            className="p-2 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors disabled:opacity-50"
+            className="p-2 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors disabled:opacity-50 focus-ring"
             title="Refresh"
+            aria-label="Refresh sale"
           >
             <RefreshCw
               className={`w-4 h-4 ${refreshing ? 'animate-spin' : ''}`}
+              aria-hidden="true"
             />
           </button>
           <button
+            type="button"
             onClick={handlePrint}
-            className="p-2 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors"
+            className="p-2 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors focus-ring"
             title="Print"
+            aria-label="Print receipt"
           >
-            <Printer className="w-4 h-4" />
+            <Printer className="w-4 h-4" aria-hidden="true" />
           </button>
           <button
+            type="button"
             onClick={handleDownloadReceipt}
-            className="p-2 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors"
-            title="Download PDF"
+            className="p-2 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors focus-ring"
+            title="Save as PDF"
+            aria-label="Save as PDF"
           >
-            <Download className="w-4 h-4" />
+            <Download className="w-4 h-4" aria-hidden="true" />
           </button>
           <button
+            type="button"
             onClick={openEmailModal}
-            className="p-2 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors"
+            className="p-2 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors focus-ring"
             title="Email receipt"
+            aria-label="Email receipt"
           >
-            <Send className="w-4 h-4" />
+            <Send className="w-4 h-4" aria-hidden="true" />
           </button>
-          {(sale.status === 'COMPLETED' || sale.status === 'PENDING') && (
+          {sale.status === 'COMPLETED' && refundableAmount > 0 && (
             <button
+              type="button"
               onClick={openRefundModal}
-              className="px-4 py-2 bg-red-600 hover:bg-red-700 text-white rounded-lg flex items-center gap-2 transition-colors text-sm"
+              className="px-4 py-2 bg-red-600 hover:bg-red-700 text-white rounded-lg flex items-center gap-2 transition-colors text-sm focus-ring"
             >
-              <TrendingDown className="w-4 h-4" />
+              <TrendingDown className="w-4 h-4" aria-hidden="true" />
               Refund
             </button>
           )}
@@ -825,7 +963,7 @@ export function SaleDetail() {
           value={formatCurrency(sale.subtotal)}
           icon={ShoppingBag}
           color="blue"
-          subtext={`${sale.items.length} items`}
+          subtext={`${items.length} item${items.length === 1 ? '' : 's'}`}
         />
         <StatCard
           label="Tax"
@@ -864,7 +1002,7 @@ export function SaleDetail() {
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
         <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 p-4">
           <h3 className="text-sm font-medium text-gray-700 dark:text-gray-300 mb-3 flex items-center gap-2">
-            <User className="w-4 h-4 text-blue-500" />
+            <User className="w-4 h-4 text-blue-500" aria-hidden="true" />
             Customer Information
           </h3>
           <div className="space-y-2">
@@ -872,29 +1010,50 @@ export function SaleDetail() {
               {customerName}
             </p>
             <p className="text-sm text-gray-500 dark:text-gray-400 flex items-center gap-2">
-              <Mail className="w-3.5 h-3.5" />
-              {customerEmail}
+              <Mail
+                className="w-3.5 h-3.5 flex-shrink-0"
+                aria-hidden="true"
+              />
+              <span className="truncate">{customerEmail}</span>
             </p>
             <p className="text-sm text-gray-500 dark:text-gray-400 flex items-center gap-2">
-              <Phone className="w-3.5 h-3.5" />
+              <Phone
+                className="w-3.5 h-3.5 flex-shrink-0"
+                aria-hidden="true"
+              />
               {customerPhone}
             </p>
-            {sale.customer?.loyaltyLevel && (
+            {sale.customer && loyaltyLevel && (
               <p className="text-sm text-gray-500 dark:text-gray-400 flex items-center gap-2">
-                <Award className="w-3.5 h-3.5 text-yellow-500" />
-                {sale.customer.loyaltyLevel} •{' '}
-                {sale.customer.loyaltyPoints || 0} points
+                <Award
+                  className="w-3.5 h-3.5 text-yellow-500 flex-shrink-0"
+                  aria-hidden="true"
+                />
+                {loyaltyLevel} · {sale.customer.loyaltyPoints} points
+              </p>
+            )}
+            {sale.customer?.lastPurchaseAt && (
+              <p className="text-sm text-gray-500 dark:text-gray-400 flex items-center gap-2">
+                <Calendar
+                  className="w-3.5 h-3.5 flex-shrink-0"
+                  aria-hidden="true"
+                />
+                Last purchase:{' '}
+                {formatDate(toIsoString(sale.customer.lastPurchaseAt))}
               </p>
             )}
           </div>
         </div>
         <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 p-4">
           <h3 className="text-sm font-medium text-gray-700 dark:text-gray-300 mb-3 flex items-center gap-2">
-            <CreditCard className="w-4 h-4 text-green-500" />
+            <CreditCard
+              className="w-4 h-4 text-green-500"
+              aria-hidden="true"
+            />
             Payment Information
           </h3>
           <div className="space-y-2">
-            {sale.payments.map((payment) => (
+            {payments.map((payment) => (
               <div
                 key={payment.id}
                 className="flex items-center justify-between"
@@ -902,7 +1061,7 @@ export function SaleDetail() {
                 <span className="text-sm text-gray-600 dark:text-gray-400">
                   {payment.paymentMethod}
                 </span>
-                <span className="font-medium text-gray-900 dark:text-white">
+                <span className="font-medium text-gray-900 dark:text-white tabular-nums">
                   {formatCurrency(payment.amount)}
                 </span>
               </div>
@@ -912,7 +1071,7 @@ export function SaleDetail() {
                 <span className="text-sm text-gray-600 dark:text-gray-400">
                   Change
                 </span>
-                <span className="font-medium text-green-600 dark:text-green-400">
+                <span className="font-medium text-green-600 dark:text-green-400 tabular-nums">
                   {formatCurrency(sale.changeAmount)}
                 </span>
               </div>
@@ -930,55 +1089,63 @@ export function SaleDetail() {
       <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 overflow-hidden mb-6">
         <div className="p-4 border-b border-gray-200 dark:border-gray-700 flex items-center justify-between">
           <h3 className="font-semibold text-gray-900 dark:text-white flex items-center gap-2">
-            <Package className="w-5 h-5 text-blue-500" />
-            Items ({sale.items.length})
+            <Package
+              className="w-5 h-5 text-blue-500"
+              aria-hidden="true"
+            />
+            Items ({items.length})
           </h3>
-          <span className="text-sm text-gray-500 dark:text-gray-400">
-            Total:{' '}
-            {sale.items.reduce((sum, item) => sum + item.quantity, 0)} units
+          <span className="text-sm text-gray-500 dark:text-gray-400 tabular-nums">
+            Total: {totalUnits} unit{totalUnits === 1 ? '' : 's'}
           </span>
         </div>
         <div className="divide-y divide-gray-200 dark:divide-gray-700 max-h-[400px] overflow-y-auto">
-          {sale.items.map((item) => (
+          {items.map((item) => (
             <div
               key={item.id}
               className="p-4 flex flex-wrap items-center justify-between gap-3 hover:bg-gray-50 dark:hover:bg-gray-700/50 transition-colors"
             >
               <div className="flex items-center gap-3 min-w-0">
                 <div className="w-12 h-12 bg-gray-100 dark:bg-gray-700 rounded-lg flex items-center justify-center overflow-hidden flex-shrink-0">
-                  {item.product.images?.[0] ? (
+                  {item.product?.images?.[0] ? (
                     <img
                       src={item.product.images[0]}
                       alt={item.product.name}
                       className="w-full h-full object-cover"
+                      loading="lazy"
+                      onError={(e) => {
+                        e.currentTarget.style.display = 'none';
+                      }}
                     />
                   ) : (
-                    <Package className="w-6 h-6 text-gray-400" />
+                    <Package
+                      className="w-6 h-6 text-gray-400"
+                      aria-hidden="true"
+                    />
                   )}
                 </div>
                 <div className="min-w-0">
                   <p className="font-medium text-gray-900 dark:text-white truncate">
-                    {item.product.name}
+                    {item.product?.name ?? 'Unknown product'}
                   </p>
                   <div className="flex flex-wrap items-center gap-2 text-sm text-gray-500 dark:text-gray-400">
-                    <span>SKU: {item.product.sku}</span>
+                    <span>SKU: {item.product?.sku ?? 'N/A'}</span>
                     {item.variant && (
                       <span>Variant: {item.variant.name}</span>
                     )}
-                    <span>×{item.quantity}</span>
-                    <span>@ {formatCurrency(item.unitPrice)}</span>
+                    <span className="tabular-nums">
+                      ×{item.quantity}
+                    </span>
+                    <span className="tabular-nums">
+                      @ {formatCurrency(item.unitPrice)}
+                    </span>
                   </div>
                 </div>
               </div>
               <div className="text-right flex-shrink-0">
-                <p className="font-bold text-gray-900 dark:text-white">
+                <p className="font-bold text-gray-900 dark:text-white tabular-nums">
                   {formatCurrency(item.total)}
                 </p>
-                {item.discount > 0 && (
-                  <p className="text-xs text-green-600 dark:text-green-400">
-                    -{formatCurrency(item.discount)}
-                  </p>
-                )}
               </div>
             </div>
           ))}
@@ -989,60 +1156,59 @@ export function SaleDetail() {
               <span className="text-gray-600 dark:text-gray-400">
                 Subtotal
               </span>
-              <span className="text-gray-900 dark:text-white">
+              <span className="text-gray-900 dark:text-white tabular-nums">
                 {formatCurrency(sale.subtotal)}
               </span>
             </div>
             <div className="flex justify-between text-sm">
               <span className="text-gray-600 dark:text-gray-400">Tax</span>
-              <span className="text-gray-900 dark:text-white">
+              <span className="text-gray-900 dark:text-white tabular-nums">
                 {formatCurrency(sale.tax)}
               </span>
             </div>
-            {(saleService.extractBreakdown(sale).promotionDiscount ?? 0) > 0 && (
+            {(breakdown.promotionDiscount ?? 0) > 0 && (
               <div className="flex justify-between text-sm text-green-600 dark:text-green-400">
                 <span className="flex items-center gap-1.5">
-                  <Tag className="w-3.5 h-3.5" />
+                  <Tag className="w-3.5 h-3.5" aria-hidden="true" />
                   Promotion
-                  {saleService.extractBreakdown(sale).promotionCode && (
+                  {breakdown.promotionCode && (
                     <code className="px-1.5 py-0.5 rounded bg-green-100 dark:bg-green-950/40 text-[10px] font-mono">
-                      {saleService.extractBreakdown(sale).promotionCode}
+                      {breakdown.promotionCode}
                     </code>
                   )}
                 </span>
                 <span className="tabular-nums">
-                  -{formatCurrency(
-                    saleService.extractBreakdown(sale).promotionDiscount ?? 0
-                  )}
+                  -{formatCurrency(breakdown.promotionDiscount ?? 0)}
                 </span>
               </div>
             )}
-            {(saleService.extractBreakdown(sale).loyaltyPointsUsed ?? 0) > 0 && (
+            {(breakdown.loyaltyPointsUsed ?? 0) > 0 && (
               <div className="flex justify-between text-sm text-green-600 dark:text-green-400">
                 <span className="flex items-center gap-1.5">
-                  <Star className="w-3.5 h-3.5 fill-current" />
+                  <Star
+                    className="w-3.5 h-3.5 fill-current"
+                    aria-hidden="true"
+                  />
                   <span className="tabular-nums">
-                    {saleService.extractBreakdown(sale).loyaltyPointsUsed}{' '}
-                    loyalty points
+                    {breakdown.loyaltyPointsUsed} loyalty points
                   </span>
                 </span>
                 <span className="tabular-nums">
-                  -{formatCurrency(
-                    saleService.extractBreakdown(sale).loyaltyDiscount ?? 0
-                  )}
+                  -{formatCurrency(breakdown.loyaltyDiscount ?? 0)}
                 </span>
               </div>
             )}
-            {sale.discount > 0 &&
-              !saleService.hasBreakdown(sale) && (
-                <div className="flex justify-between text-sm text-green-600 dark:text-green-400">
-                  <span>Discount</span>
-                  <span>-{formatCurrency(sale.discount)}</span>
-                </div>
-              )}
+            {sale.discount > 0 && !hasBreakdown && (
+              <div className="flex justify-between text-sm text-green-600 dark:text-green-400">
+                <span>Discount</span>
+                <span className="tabular-nums">
+                  -{formatCurrency(sale.discount)}
+                </span>
+              </div>
+            )}
             <div className="flex justify-between font-bold text-lg pt-2 border-t border-gray-200 dark:border-gray-700">
               <span className="text-gray-900 dark:text-white">Total</span>
-              <span className="text-gray-900 dark:text-white">
+              <span className="text-gray-900 dark:text-white tabular-nums">
                 {formatCurrency(sale.total)}
               </span>
             </div>
@@ -1050,15 +1216,17 @@ export function SaleDetail() {
         </div>
       </div>
 
-      {/* Discount breakdown panel — renders only when the sale
-          carries a promotion / loyalty attribution. */}
-      <SaleBreakdownPanel sale={sale} />
+      {/* Discount breakdown panel */}
+      <SaleBreakdownPanel breakdown={breakdown} />
 
       {/* Notes */}
       {sale.notes && (
         <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 p-4 mb-6">
           <h4 className="font-medium text-gray-700 dark:text-gray-300 mb-2 flex items-center gap-2">
-            <FileText className="w-4 h-4 text-gray-500" />
+            <FileText
+              className="w-4 h-4 text-gray-500"
+              aria-hidden="true"
+            />
             Notes
           </h4>
           <p className="text-gray-600 dark:text-gray-400 whitespace-pre-wrap">
@@ -1068,16 +1236,19 @@ export function SaleDetail() {
       )}
 
       {/* Return History */}
-      {sale.returns && sale.returns.length > 0 && (
+      {returns.length > 0 && (
         <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 overflow-hidden mb-6">
           <div className="p-4 border-b border-gray-200 dark:border-gray-700">
             <h4 className="font-semibold text-gray-900 dark:text-white flex items-center gap-2">
-              <History className="w-5 h-5 text-purple-500" />
+              <History
+                className="w-5 h-5 text-purple-500"
+                aria-hidden="true"
+              />
               Return History
             </h4>
           </div>
           <div className="divide-y divide-gray-200 dark:divide-gray-700">
-            {sale.returns.map((ret) => (
+            {returns.map((ret) => (
               <div
                 key={ret.id}
                 className="p-4 flex flex-wrap items-center justify-between gap-3"
@@ -1086,8 +1257,10 @@ export function SaleDetail() {
                   <p className="font-medium text-gray-900 dark:text-white">
                     Return #{ret.returnNumber}
                   </p>
-                  <p className="text-sm text-gray-500 dark:text-gray-400">
-                    {formatDate(ret.createdAt)} • {ret.items.length} items
+                  <p className="text-sm text-gray-500 dark:text-gray-400 tabular-nums">
+                    {formatDate(toIsoString(ret.createdAt))} ·{' '}
+                    {ret.items?.length ?? 0} item
+                    {ret.items?.length === 1 ? '' : 's'}
                   </p>
                 </div>
                 <div className="flex items-center gap-3">
@@ -1099,7 +1272,7 @@ export function SaleDetail() {
                   >
                     {ret.status}
                   </span>
-                  <span className="font-bold text-gray-900 dark:text-white">
+                  <span className="font-bold text-gray-900 dark:text-white tabular-nums">
                     {formatCurrency(ret.total)}
                   </span>
                 </div>
@@ -1111,52 +1284,78 @@ export function SaleDetail() {
 
       {/* Email Modal */}
       {showEmailModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center">
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="sale-email-modal-title"
+        >
           <div
             className="fixed inset-0 bg-black/50 backdrop-blur-sm"
-            onClick={() => setShowEmailModal(false)}
+            onClick={() => !isSendingEmail && setShowEmailModal(false)}
+            aria-hidden="true"
           />
           <div className="relative bg-white dark:bg-gray-800 rounded-xl shadow-2xl max-w-md w-full p-6 m-4">
             <button
-              onClick={() => setShowEmailModal(false)}
-              className="absolute top-4 right-4 p-1 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-colors"
+              type="button"
+              onClick={() => !isSendingEmail && setShowEmailModal(false)}
+              disabled={isSendingEmail}
+              className="absolute top-4 right-4 p-1 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-colors focus-ring disabled:opacity-50"
+              aria-label="Close"
             >
-              <XCircle className="w-5 h-5 text-gray-500 dark:text-gray-400" />
+              <XCircle
+                className="w-5 h-5 text-gray-500 dark:text-gray-400"
+                aria-hidden="true"
+              />
             </button>
-            <h3 className="text-lg font-bold text-gray-900 dark:text-white mb-4">
+            <h3
+              id="sale-email-modal-title"
+              className="text-lg font-bold text-gray-900 dark:text-white mb-4"
+            >
               Send Receipt via Email
             </h3>
             <div className="space-y-4">
               <div>
-                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                <label
+                  htmlFor="receipt-email"
+                  className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1"
+                >
                   Email Address
                 </label>
                 <input
+                  id="receipt-email"
                   type="email"
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
                   placeholder="customer@email.com"
-                  className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:outline-none bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+                  disabled={isSendingEmail}
+                  autoComplete="email"
+                  className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:outline-none bg-white dark:bg-gray-700 text-gray-900 dark:text-white disabled:opacity-50"
                 />
               </div>
             </div>
             <div className="flex justify-end gap-3 mt-6">
               <button
+                type="button"
                 onClick={() => setShowEmailModal(false)}
-                className="px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors"
-                disabled={submitting}
+                className="px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors focus-ring disabled:opacity-50"
+                disabled={isSendingEmail}
               >
                 Cancel
               </button>
               <button
-                onClick={handleSendEmail}
-                disabled={submitting || !email.trim()}
-                className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg disabled:opacity-50 disabled:cursor-not-allowed transition-colors flex items-center gap-2"
+                type="button"
+                onClick={() => void handleSendEmail()}
+                disabled={isSendingEmail || !email.trim()}
+                className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg disabled:opacity-50 disabled:cursor-not-allowed transition-colors flex items-center gap-2 focus-ring"
               >
-                {submitting ? (
-                  <Loader2 className="w-4 h-4 animate-spin" />
+                {isSendingEmail ? (
+                  <Loader2
+                    className="w-4 h-4 animate-spin"
+                    aria-hidden="true"
+                  />
                 ) : (
-                  <Send className="w-4 h-4" />
+                  <Send className="w-4 h-4" aria-hidden="true" />
                 )}
                 Send Receipt
               </button>
@@ -1167,58 +1366,122 @@ export function SaleDetail() {
 
       {/* Refund Modal */}
       {showRefundModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center">
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="sale-refund-modal-title"
+        >
           <div
             className="fixed inset-0 bg-black/50 backdrop-blur-sm"
-            onClick={() => setShowRefundModal(false)}
+            onClick={() => !isRefunding && setShowRefundModal(false)}
+            aria-hidden="true"
           />
           <div className="relative bg-white dark:bg-gray-800 rounded-xl shadow-2xl max-w-md w-full p-6 m-4">
             <button
-              onClick={() => setShowRefundModal(false)}
-              className="absolute top-4 right-4 p-1 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-colors"
+              type="button"
+              onClick={() => !isRefunding && setShowRefundModal(false)}
+              disabled={isRefunding}
+              className="absolute top-4 right-4 p-1 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-colors focus-ring disabled:opacity-50"
+              aria-label="Close"
             >
-              <XCircle className="w-5 h-5 text-gray-500 dark:text-gray-400" />
+              <XCircle
+                className="w-5 h-5 text-gray-500 dark:text-gray-400"
+                aria-hidden="true"
+              />
             </button>
-            <h3 className="text-lg font-bold text-gray-900 dark:text-white mb-2">
+            <h3
+              id="sale-refund-modal-title"
+              className="text-lg font-bold text-gray-900 dark:text-white mb-2"
+            >
               Refund Sale
             </h3>
             <p className="text-sm text-gray-500 dark:text-gray-400 mb-4">
-              Total amount:{' '}
-              <span className="font-medium text-gray-900 dark:text-white">
-                {formatCurrency(sale.total)}
+              Refundable amount:{' '}
+              <span className="font-medium text-gray-900 dark:text-white tabular-nums">
+                {formatCurrency(refundableAmount)}
               </span>
+              {refundableAmount < sale.total && (
+                <span className="block text-xs text-gray-400 mt-0.5">
+                  (Sale total was {formatCurrency(sale.total)}; partial
+                  refunds and returns have been deducted.)
+                </span>
+              )}
             </p>
             <div className="space-y-4">
               <div>
-                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                <label
+                  htmlFor="refund-amount"
+                  className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1"
+                >
+                  Refund Amount
+                </label>
+                <div className="relative">
+                  <span
+                    className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-500 pointer-events-none"
+                    aria-hidden="true"
+                  >
+                    $
+                  </span>
+                  <input
+                    id="refund-amount"
+                    type="text"
+                    inputMode="decimal"
+                    value={refundAmountInput}
+                    onChange={(e) => {
+                      const next = e.target.value;
+                      if (next === '' || /^\d*(\.\d{0,2})?$/.test(next)) {
+                        setRefundAmountInput(next);
+                      }
+                    }}
+                    disabled={isRefunding}
+                    className="w-full pl-7 pr-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:outline-none bg-white dark:bg-gray-700 text-gray-900 dark:text-white tabular-nums disabled:opacity-50"
+                  />
+                </div>
+              </div>
+              <div>
+                <label
+                  htmlFor="refund-reason"
+                  className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1"
+                >
                   Reason for Refund
                 </label>
                 <textarea
+                  id="refund-reason"
                   value={refundReason}
                   onChange={(e) => setRefundReason(e.target.value)}
                   rows={3}
-                  className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:outline-none bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
-                  placeholder="Enter reason for refund..."
+                  disabled={isRefunding}
+                  className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:outline-none bg-white dark:bg-gray-700 text-gray-900 dark:text-white disabled:opacity-50 resize-none"
+                  placeholder="Enter reason for refund…"
                 />
               </div>
             </div>
             <div className="flex justify-end gap-3 mt-6">
               <button
+                type="button"
                 onClick={() => setShowRefundModal(false)}
-                className="px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors"
-                disabled={submitting}
+                className="px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors focus-ring disabled:opacity-50"
+                disabled={isRefunding}
               >
                 Cancel
               </button>
               <button
-                onClick={() => handleRefund(refundReason)}
-                disabled={submitting || !refundReason.trim()}
-                className="px-4 py-2 bg-red-600 hover:bg-red-700 text-white rounded-lg disabled:opacity-50 disabled:cursor-not-allowed transition-colors flex items-center gap-2"
+                type="button"
+                onClick={() => void handleRefund()}
+                disabled={isRefunding || !refundReason.trim()}
+                className="px-4 py-2 bg-red-600 hover:bg-red-700 text-white rounded-lg disabled:opacity-50 disabled:cursor-not-allowed transition-colors flex items-center gap-2 focus-ring"
               >
-                {submitting ? (
-                  <Loader2 className="w-4 h-4 animate-spin" />
+                {isRefunding ? (
+                  <Loader2
+                    className="w-4 h-4 animate-spin"
+                    aria-hidden="true"
+                  />
                 ) : (
-                  <TrendingDown className="w-4 h-4" />
+                  <TrendingDown
+                    className="w-4 h-4"
+                    aria-hidden="true"
+                  />
                 )}
                 Process Refund
               </button>

@@ -14,11 +14,34 @@ import {
 import {
   orderService,
   type Order,
-  type OrderPriority,
   type UpdateOrderPayload,
 } from '../../../../../../services/orderService';
 import { OrderStatus } from '../../../../../../types/enums';
 import { toast } from '../../../../../../utils/toast-manager';
+
+// ============================================
+// TYPES
+// ============================================
+//
+// ⚠ `OrderPriority` is NOT exported from `services/orderService`.
+//   That service re-exports the order response/payload types it
+//   itself consumes, but the priority union lives on the canonical
+//   `types/order` module.
+//
+//   Two options here:
+//
+//     1. `import type { OrderPriority } from '.../types/order'`
+//        — works IF the canonical module actually exports the name.
+//     2. Declare it locally (below) — works regardless.
+//
+//   We declare it locally. The backend's `createOrderSchema` and
+//   `updateOrderSchema` both constrain `priority` to exactly these
+//   four values (see `orderController.ts`), so this union is the
+//   authoritative set. If the backend ever grows a fifth value,
+//   extend it here and TypeScript will flag every call site that
+//   needs updating.
+
+type OrderPriority = 'LOW' | 'MEDIUM' | 'HIGH' | 'URGENT';
 
 // ============================================
 // CONSTANTS
@@ -38,6 +61,29 @@ const PRIORITY_OPTIONS: OrderPriority[] = [
   'HIGH',
   'URGENT',
 ];
+
+// ============================================
+// HELPERS
+// ============================================
+
+/**
+ * Normalise an arbitrary date-ish value into the string format
+ * `<input type="datetime-local">` requires: `YYYY-MM-DDTHH:MM`.
+ *
+ * ⚠ `new Date(undefined)` → Invalid Date, and calling `.toISOString()`
+ *   on it throws `RangeError: Invalid time value`. A naïve
+ *   `value ? new Date(value).toISOString() : ''` guard only catches
+ *   `null` / `undefined` — it does NOT catch a non-empty but
+ *   unparseable string. This helper returns `''` for any value that
+ *   produces an Invalid Date, so a malformed server payload doesn't
+ *   crash the edit page.
+ */
+function toDatetimeLocalValue(value: unknown): string {
+  if (!value) return '';
+  const date = new Date(value as string | number | Date);
+  if (Number.isNaN(date.getTime())) return '';
+  return date.toISOString().slice(0, 16);
+}
 
 // ============================================
 // PAGE
@@ -87,11 +133,7 @@ export default function AdminOrderEditPage() {
       setNotes(data.notes ?? '');
       setShippingAddress(data.shippingAddress ?? '');
       setExpectedDeliveryDate(
-        data.expectedDeliveryDate
-          ? new Date(data.expectedDeliveryDate)
-              .toISOString()
-              .slice(0, 16)
-          : '',
+        toDatetimeLocalValue(data.expectedDeliveryDate),
       );
     } catch (err: any) {
       if (!isMountedRef.current) return;
@@ -143,7 +185,15 @@ export default function AdminOrderEditPage() {
         if (isMountedRef.current) setSaving(false);
       }
     },
-    [order, status, priority, notes, shippingAddress, expectedDeliveryDate, router],
+    [
+      order,
+      status,
+      priority,
+      notes,
+      shippingAddress,
+      expectedDeliveryDate,
+      router,
+    ],
   );
 
   // ============================================
@@ -326,4 +376,3 @@ export default function AdminOrderEditPage() {
     </div>
   );
 }
-

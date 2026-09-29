@@ -145,6 +145,13 @@ const SYNCHRONOUS_SUCCESS_STATUSES = new Set<string>([
 // business unit says. They enforce that themselves via
 // `currencyService.resolveForCountry`.
 //
+// ⚠ Phase 2 note: The result of this function is written
+//   EXPLICITLY to `Payment.currency` on every create call in this
+//   file. Phase 1 removed the schema default from that column, so
+//   there is no longer a fallback if a call site forgets to pass
+//   it. `resolveBusinessUnitCurrency` is the single source for
+//   every Payment row created here.
+//
 // The function name and signature are preserved from the previous
 // local implementation so callers inside this file don't change.
 
@@ -289,8 +296,15 @@ interface CheckoutSummaryResponse {
    */
   currency?: string;
   /**
-   * Display symbol for `currency`, from the registry. Falls back
-   * to the ISO code when the registry has no symbol.
+   * Display symbol for `currency`, from the registry.
+   *
+   * ⚠ Phase 2: This is COMPUTED at read time via
+   *   `currencyService.tryGetCurrency(currency)?.symbol`. Phase 1
+   *   removed the persisted `currencySymbol` column from
+   *   `CartSettings` / `CheckoutSettings` / `SalesSettings`, so
+   *   there is no stored symbol to drift out of sync with the
+   *   code. If the registry has no symbol, this falls back to the
+   *   ISO code itself.
    */
   currencySymbol?: string;
 }
@@ -312,6 +326,20 @@ interface CheckoutHistoryResult {
   offset: number;
 }
 
+/**
+ * Shape returned by `getCheckoutSettings` and accepted by
+ * `updateCheckoutSettings`.
+ *
+ * ⚠ Phase 1 removed the `currencySymbol` column from
+ *   `CartSettings`, `CheckoutSettings`, and `SalesSettings`. It is
+ *   therefore NOT part of this interface anymore, NOT persisted in
+ *   `BusinessUnit.settings`, and NOT accepted on update. The symbol
+ *   is derived on read from `currencyCode` via the registry.
+ *
+ *   The write-side guards in `getCheckoutSettings` and
+ *   `updateCheckoutSettings` below strip any stale
+ *   `currencySymbol` key that a pre-Phase-1 row might still carry.
+ */
 interface CheckoutSettings {
   allowPartialPayment: boolean;
   requireCustomer: boolean;
@@ -336,8 +364,11 @@ interface CheckoutSettings {
   taxRate: number;
   notifyOnAbandonedCart: boolean;
   abandonedCartHours: number;
+  /**
+   * ISO 4217 currency code. The only persisted currency field on
+   * checkout settings — symbol is derived from this at read time.
+   */
   currencyCode: string;
-  currencySymbol: string;
   showStockBadge: boolean;
   showVariantImages: boolean;
 }
@@ -395,6 +426,10 @@ const SALE_FULL_INCLUDE = {
       address: true,
       phone: true,
       email: true,
+      // Phase 1 schema: `BusinessUnit.currency` still exists and
+      // is the authoritative column for a business unit's own
+      // currency. Included here so callers that render a receipt
+      // have the code without an extra lookup.
       currency: true,
       companyId: true,
     },
@@ -649,11 +684,13 @@ export class CheckoutService extends BaseService {
         const businessUnitId = data.businessUnitId || cart.businessUnitId;
 
         // ── Resolve currency + companyId from the business unit ──
-        // The cart has no currency; the BU does. Previously this
-        // path never resolved it, so the Prisma column default of
-        // 'USD' leaked into every POS Payment row on a UGX
-        // deployment. Now the resolved value is written on both
-        // the Payment row and its metadata.
+        // The cart has no currency; the BU does.
+        //
+        // ⚠ Phase 2: Phase 1 removed the schema default from
+        //   `Payment.currency`. This value MUST be resolved here
+        //   and written EXPLICITLY on the Payment row below. It is
+        //   also mirrored into `metadata.currency` for audit
+        //   continuity, but the column is authoritative.
         const buRecord = await tx.businessUnit.findUnique({
           where: { id: businessUnitId },
           select: { currency: true, companyId: true },
@@ -827,11 +864,12 @@ export class CheckoutService extends BaseService {
         }
 
         const enumValue = normalizePaymentMethod(data.paymentMethod);
+        // ── Phase 2: `currency` is explicit and required ─────
+        // Phase 1 removed `@default("USD")` from `Payment.currency`.
+        // The resolved value is written here; there is no fallback.
         const payment = await tx.payment.create({
           data: {
             amount: finalTotal,
-            // The Prisma column default is 'USD'. Writing the
-            // resolved currency explicitly prevents the leak.
             currency: resolvedCurrency,
             paymentMethod: enumValue as any,
             status: 'PAID',
@@ -843,6 +881,9 @@ export class CheckoutService extends BaseService {
             processedAt: new Date(),
             reference: `PAY-${receiptNumber}`,
             metadata: {
+              // Descriptive mirror only — the column above is the
+              // authoritative source. If they diverge, the column
+              // wins.
               currency: resolvedCurrency,
               paymentMethod: enumValue,
               source: 'pos',
@@ -1094,10 +1135,8 @@ export class CheckoutService extends BaseService {
           const businessUnitId = data.businessUnitId || cart.businessUnitId;
 
           // ── Resolve the currency from the business unit ─────
-          // The cart has no currency. The business unit does.
-          // `resolveBusinessUnitCurrency` delegates to
-          // `currencyService.resolveForBusiness`, which walks
-          // DB → env → registry default.
+          // Phase 2: resolved value is written explicitly on the
+          // Payment row (Phase 1 removed the schema default).
           const businessUnitRecord = await tx.businessUnit.findUnique({
             where: { id: businessUnitId },
             select: { currency: true },
@@ -1254,11 +1293,10 @@ export class CheckoutService extends BaseService {
           }
 
           const enumValue = normalizePaymentMethod(data.paymentMethod);
+          // ── Phase 2: explicit `currency` on the PENDING row ──
           const payment = await tx.payment.create({
             data: {
               amount: finalTotal,
-              // The Prisma column default is 'USD'; write the
-              // resolved value explicitly so the row is honest.
               currency: businessUnitCurrency,
               paymentMethod: enumValue as any,
               status: 'PENDING',
@@ -1275,8 +1313,7 @@ export class CheckoutService extends BaseService {
                   data.giftCardCode ?? data.gatewayId ?? null,
                 mobileMoneyProvider:
                   data.mobileMoneyProvider ?? null,
-                // Record the resolved currency so the audit trail
-                // shows what we actually charged in.
+                // Descriptive mirror — the column is authoritative.
                 currency: businessUnitCurrency,
               },
             },
@@ -2342,6 +2379,9 @@ export class CheckoutService extends BaseService {
       const resolvedCurrency = resolveBusinessUnitCurrency(
         (cart as any).businessUnit?.currency ?? null,
       );
+      // ⚠ Phase 2: The display symbol is DERIVED at read time. Phase
+      //   1 removed the persisted `currencySymbol` column from every
+      //   settings table, so the registry is the only source.
       const currencyMeta =
         currencyService.tryGetCurrency(resolvedCurrency);
 
@@ -2998,8 +3038,10 @@ export class CheckoutService extends BaseService {
           throw new AppError('Checkout is cancelled', 400);
         }
 
-        // Resolve the currency from the sale's business unit so
-        // the Payment row records what was actually charged.
+        // ── Phase 2: resolve and write currency explicitly ────
+        // Phase 1 removed the schema default from `Payment.currency`.
+        // Resolve from the sale's business unit and write it on the
+        // row; there is no fallback if this is omitted.
         const buRecord = await tx.businessUnit.findUnique({
           where: { id: checkout.businessUnitId },
           select: { currency: true },
@@ -3021,6 +3063,7 @@ export class CheckoutService extends BaseService {
             processedAt: new Date(),
             reference: `PAY-${checkout.receiptNumber}`,
             metadata: {
+              // Descriptive mirror — the column is authoritative.
               currency: resolvedCurrency,
               paymentMethod: normalizePaymentMethod(
                 paymentData.paymentMethod,
@@ -3636,8 +3679,6 @@ export class CheckoutService extends BaseService {
       const resolvedCurrency = resolveBusinessUnitCurrency(
         businessUnit?.currency ?? null,
       );
-      const currencyMeta =
-        currencyService.tryGetCurrency(resolvedCurrency);
 
       const defaultSettings: CheckoutSettings = {
         allowPartialPayment: true,
@@ -3664,15 +3705,27 @@ export class CheckoutService extends BaseService {
         notifyOnAbandonedCart: true,
         abandonedCartHours: 2,
         currencyCode: resolvedCurrency,
-        currencySymbol: currencyMeta?.symbol ?? resolvedCurrency,
+        // ⚠ Phase 2: no `currencySymbol` field. Phase 1 removed the
+        //   persisted column from every settings table; the symbol
+        //   is derived from `currencyCode` by the client via
+        //   `currencyService.tryGetCurrency(currencyCode)?.symbol`.
         showStockBadge: true,
         showVariantImages: true,
       };
 
       if (businessUnit?.settings && typeof businessUnit.settings === 'object') {
+        // ⚠ Phase 2: strip any stale `currencySymbol` key from a
+        //   pre-Phase-1 settings blob before merging. Without this,
+        //   an old row would reintroduce a field the interface no
+        //   longer declares and the schema no longer stores.
+        const stored = {
+          ...(businessUnit.settings as Record<string, unknown>),
+        };
+        delete (stored as any).currencySymbol;
+
         return {
           ...defaultSettings,
-          ...(businessUnit.settings as Record<string, unknown>),
+          ...stored,
         } as CheckoutSettings;
       }
 
@@ -3725,7 +3778,22 @@ export class CheckoutService extends BaseService {
           ? (businessUnit.settings as Record<string, unknown>)
           : {};
 
-      const merged = { ...existing, ...settings };
+      // ⚠ Phase 2: strip `currencySymbol` from BOTH sides before
+      //   merging.
+      //   • From `existing` — a pre-Phase-1 row may still carry it.
+      //   • From `settings` — a client that hasn't been updated yet
+      //     (Phase 4 / Phase 5 work) may still send it.
+      //
+      //   Persisting it would reintroduce a column the schema no
+      //   longer stores, and the interface no longer declares. Only
+      //   `currencyCode` is written.
+      const existingClean = { ...existing };
+      delete (existingClean as any).currencySymbol;
+
+      const incomingClean = { ...(settings as Record<string, unknown>) };
+      delete (incomingClean as any).currencySymbol;
+
+      const merged = { ...existingClean, ...incomingClean };
 
       await this.prisma.businessUnit.update({
         where: { id: businessUnit.id },
@@ -3735,7 +3803,12 @@ export class CheckoutService extends BaseService {
       });
 
       const currentSettings = await this.getCheckoutSettings(userId);
-      return { ...currentSettings, ...settings };
+      // Re-merge the clean incoming patch so the returned shape
+      // reflects the write — but without `currencySymbol`.
+      return {
+        ...currentSettings,
+        ...(incomingClean as Partial<CheckoutSettings>),
+      };
     } catch (error) {
       this.handleError(
         error,

@@ -133,7 +133,8 @@ function stringifyBody(body: unknown, maxLen = 500): string {
 // Currency and country are derived from the registry via
 // `currencyService`, driven by `MTN_COUNTRY` / `AIRTEL_COUNTRY`.
 // No hardcoded COUNTRY_CONFIGS table anywhere — the registry is
-// the single source of truth.
+// the single source of truth. Nothing in this file hardcodes a
+// currency; the registry decides, per deployment.
 
 function readMtnConfig(): MTNConfig {
   const country = (process.env.MTN_COUNTRY || 'UG').toUpperCase();
@@ -180,7 +181,7 @@ function readAirtelConfig(): AirtelConfig {
 }
 
 // ============================================
-// ENV PRESENCE LOGGING (unchanged behaviour)
+// ENV PRESENCE LOGGING
 // ============================================
 
 function logMtnEnvPresence(): void {
@@ -287,12 +288,14 @@ export class MTNMobileMoneyService {
     const missing = this.missingRequiredKeys();
     if (missing.length > 0) {
       logger.warn(`⚠️ Missing MTN configuration: ${missing.join(', ')}`);
-    } else {
-      const cfg = this.config;
-      logger.info('✅ MTN Mobile Money configured successfully');
-      logger.info(`   Country: ${cfg.country}, Currency: ${cfg.currency}`);
-      logger.info(`   Environment: ${cfg.environment}`);
+      return;
     }
+
+    const cfg = this.config;
+    logger.info('✅ MTN Mobile Money configured successfully');
+    logger.info(`   Country: ${cfg.country}, Currency: ${cfg.currency}`);
+    logger.info(`   Environment: ${cfg.environment}`);
+    logger.info(`   Base URL: ${cfg.baseUrl}`);
   }
 
   private getBaseUrl(): string {
@@ -348,6 +351,15 @@ export class MTNMobileMoneyService {
         )}`,
       );
       logger.error(`[MTN] raw token response body: ${stringifyBody(response.data)}`);
+      logger.error(`[MTN] token config in play:`, {
+        country: cfg.country,
+        currency: cfg.currency,
+        environment: cfg.environment,
+        baseUrl: cfg.baseUrl,
+        hasApiUserId: Boolean(cfg.apiUserId),
+        hasApiKey: Boolean(cfg.apiKey),
+        hasSubscriptionKey: Boolean(cfg.subscriptionKey),
+      });
       throw new AppError('Failed to authenticate with MTN Mobile Money', 502);
     }
 
@@ -429,7 +441,7 @@ export class MTNMobileMoneyService {
           { response },
         )}`,
       );
-      throw this.mapMtnError(response.status, response.data);
+      throw this.mapMtnError(response.status, response.data, requestBody);
     }
 
     logger.info(`✅ MTN payment initiated: ${reference}`);
@@ -444,18 +456,56 @@ export class MTNMobileMoneyService {
     };
   }
 
-  private mapMtnError(status: number, body: any): AppError {
+  /**
+   * Map an HTTP failure from MTN into an `AppError`.
+   *
+   * ⚠ The `detail` extraction order matters. MTN's MoMo API is
+   *   inconsistent across tenants and endpoint versions: some
+   *   return `{ message }`, some `{ error }`, some `{ code }`, and
+   *   the newer gateway returns `{ detail }` or `{ details }`.
+   *   Every shape we've seen in the wild is checked, and if none
+   *   match we fall back to a JSON slice so the log still carries
+   *   the raw body.
+   *
+   * ⚠ The caller's request body is threaded in so the log can
+   *   pair the failure with the payload that produced it. This is
+   *   the single most useful diagnostic when debugging "Invalid
+   *   MTN request: MTN error" — the four config fields below tell
+   *   you which environment, country, currency, and endpoint were
+   *   used.
+   */
+  private mapMtnError(
+    status: number,
+    body: any,
+    requestBody?: Record<string, unknown>,
+  ): AppError {
     const detail =
       body?.message ||
       body?.error_description ||
       body?.error ||
       body?.code ||
+      body?.detail ||
+      body?.details ||
+      body?.reason ||
+      body?.errorMessage ||
       (typeof body === 'string' && body ? body : undefined) ||
       (body ? JSON.stringify(body).slice(0, 200) : undefined) ||
       'MTN error';
 
     logger.error(`[MTN] HTTP ${status} on requesttopay: ${detail}`);
     logger.error(`[MTN] raw response body: ${stringifyBody(body)}`);
+
+    const cfg = this.config;
+    logger.error(`[MTN] config in play:`, {
+      country: cfg.country,
+      currency: cfg.currency,
+      environment: cfg.environment,
+      baseUrl: cfg.baseUrl,
+    });
+
+    if (requestBody) {
+      logger.error(`[MTN] request body: ${stringifyBody(requestBody)}`);
+    }
 
     if (status === 400) return new AppError(`Invalid MTN request: ${detail}`, 400);
     if (status === 401) return new AppError('MTN authentication failed', 401);
@@ -722,7 +772,7 @@ export class MTNMobileMoneyService {
     );
 
     if (response.status !== 202) {
-      throw this.mapMtnError(response.status, response.data);
+      throw this.mapMtnError(response.status, response.data, requestBody);
     }
 
     logger.info(`✅ MTN transfer initiated: ${reference}`);
@@ -871,6 +921,7 @@ export class AirtelMobileMoneyService {
       const cfg = this.config;
       logger.info('✅ Airtel Mobile Money configured successfully');
       logger.info(`   Country: ${cfg.country}, Currency: ${cfg.currency}`);
+      logger.info(`   Base URL: ${cfg.baseUrl}`);
     }
   }
 
@@ -914,6 +965,13 @@ export class AirtelMobileMoneyService {
     if (response.status !== 200 || !response.data?.access_token) {
       logger.error(`Failed to get Airtel access token: HTTP ${response.status}`);
       logger.error(`[Airtel] raw token response body: ${stringifyBody(response.data)}`);
+      logger.error(`[Airtel] token config in play:`, {
+        country: cfg.country,
+        currency: cfg.currency,
+        baseUrl: cfg.baseUrl,
+        hasClientId: Boolean(cfg.clientId),
+        hasClientSecret: Boolean(cfg.clientSecret),
+      });
       throw new AppError('Failed to authenticate with Airtel Mobile Money', 502);
     }
 
@@ -994,7 +1052,7 @@ export class AirtelMobileMoneyService {
           { response },
         )}`,
       );
-      throw this.mapAirtelError(response.status, response.data);
+      throw this.mapAirtelError(response.status, response.data, requestBody);
     }
 
     logger.info(`✅ Airtel payment initiated: ${reference}`);
@@ -1009,19 +1067,46 @@ export class AirtelMobileMoneyService {
     };
   }
 
-  private mapAirtelError(status: number, body: any): AppError {
+  /**
+   * Map an HTTP failure from Airtel into an `AppError`.
+   *
+   * Same reasoning as `MTNMobileMoneyService.mapMtnError`: broaden
+   * the detail extraction so the log carries Airtel's actual
+   * reason, and pair it with the resolved config so a 400 is
+   * diagnosable without grepping the env.
+   */
+  private mapAirtelError(
+    status: number,
+    body: any,
+    requestBody?: Record<string, unknown>,
+  ): AppError {
     const detail =
       body?.status?.message ||
       body?.message ||
       body?.error_description ||
       body?.error ||
       body?.code ||
+      body?.detail ||
+      body?.details ||
+      body?.reason ||
+      body?.errorMessage ||
       (typeof body === 'string' && body ? body : undefined) ||
       (body ? JSON.stringify(body).slice(0, 200) : undefined) ||
       'Airtel error';
 
     logger.error(`[Airtel] HTTP ${status}: ${detail}`);
     logger.error(`[Airtel] raw response body: ${stringifyBody(body)}`);
+
+    const cfg = this.config;
+    logger.error(`[Airtel] config in play:`, {
+      country: cfg.country,
+      currency: cfg.currency,
+      baseUrl: cfg.baseUrl,
+    });
+
+    if (requestBody) {
+      logger.error(`[Airtel] request body: ${stringifyBody(requestBody)}`);
+    }
 
     if (status === 400) return new AppError(`Invalid Airtel request: ${detail}`, 400);
     if (status === 401) return new AppError('Airtel authentication failed', 401);
@@ -1185,7 +1270,7 @@ export class AirtelMobileMoneyService {
       response.status !== 201 &&
       response.status !== 202
     ) {
-      throw this.mapAirtelError(response.status, response.data);
+      throw this.mapAirtelError(response.status, response.data, requestBody);
     }
 
     logger.info(`✅ Airtel transfer initiated: ${reference}`);

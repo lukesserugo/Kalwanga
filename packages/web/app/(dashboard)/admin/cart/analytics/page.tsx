@@ -55,14 +55,6 @@ import {
 // ============================================
 // INTERFACES
 // ============================================
-//
-// The backend `GET /cart/analytics` returns exactly six fields:
-//   totalCarts, activeCarts, abandonedCarts,
-//   averageItems, averageValue, conversionRate
-//
-// The additional fields below are declared for forward compatibility
-// and are guarded at every use site. When the backend adds them, the
-// UI lights up automatically.
 
 interface CartAnalytics {
   totalCarts: number;
@@ -71,7 +63,6 @@ interface CartAnalytics {
   averageItems: number;
   averageValue: number;
   conversionRate: number;
-  // Not currently returned by the backend:
   todayCarts?: number;
   todayRevenue?: number;
   weeklyTrend?: WeeklyTrend[];
@@ -109,8 +100,18 @@ interface RecentActivity {
   details: string;
 }
 
+/**
+ * Wire shape for `POST /cart/analytics/export`.
+ *
+ * ⚠ The `format` union is `'csv' | 'json'` — matching what
+ *   `cartService.exportAnalytics` accepts. The backend currently only
+ *   produces CSV regardless of the field, but JSON is kept in the
+ *   union for forward-compatibility. Excel and PDF are intentionally
+ *   excluded: no server generator exists, and requesting one would
+ *   produce a mislabelled CSV.
+ */
 interface ExportOptions {
-  format: 'csv' | 'excel' | 'json' | 'pdf';
+  format: 'csv' | 'json';
   metrics?: string[];
   dateRange: string;
   startDate?: string;
@@ -208,15 +209,60 @@ const STATUS_LABELS: Record<string, string> = {
   ABANDONED: 'Abandoned',
 };
 
-// NOTE: the backend `POST /cart/analytics/export` currently produces
-// CSV regardless of the `format` field. Non-CSV options are shown
-// disabled so the UI does not promise a file type it cannot deliver.
-const EXPORT_FORMATS = [
+/**
+ * The set of format identifiers the backend's export route can
+ * actually produce. Kept as a runtime constant so the click handler
+ * can narrow safely without TypeScript collapsing the check to
+ * `never`.
+ *
+ * ⚠ The type argument on `new Set<...>` is load-bearing. Without it,
+ *   `new Set(['csv', 'json'])` infers `Set<string>`, which is NOT
+ *   assignable to `ReadonlySet<'csv' | 'json'>` — `Set<string>`'s
+ *   `forEach` / `has` / `add` all accept the wider `string`, so the
+ *   compiler rejects the assignment with TS2322 on `forEach`. Passing
+ *   the literal union explicitly keeps the set's element type narrow
+ *   and the assignment sound.
+ *
+ * ⚠ When a format becomes supported on the backend, add it here AND
+ *   widen this union AND the local `ExportOptions['format']` union AND
+ *   the `exportFormat` state type AND flip the matching entry's
+ *   `supported` flag in `EXPORT_FORMATS`.
+ */
+const SUPPORTED_EXPORT_FORMATS: ReadonlySet<'csv' | 'json'> = new Set<
+  'csv' | 'json'
+>(['csv', 'json']);
+
+/**
+ * Display list for the export-format picker.
+ *
+ * ⚠ The `value` type is deliberately widened to `string` instead of
+ *   an `as const` literal union. The narrowing that `as const`
+ *   produces (each element's `value` being its own literal type)
+ *   collides with the click handler's runtime guard, causing
+ *   TypeScript to narrow the type to `never`. Widening it here keeps
+ *   the array readable without introducing a phantom `never`.
+ *
+ * ⚠ `supported` is the source of truth for clickability. Only
+ *   entries with `supported: true` are selectable — the others are
+ *   shown disabled so the user sees that more formats are planned,
+ *   without being able to request one the backend cannot produce.
+ *
+ * ⚠ When a format becomes supported on the backend, flip its
+ *   `supported` flag AND widen the local `ExportOptions['format']`
+ *   union AND `exportFormat` state type AND
+ *   `SUPPORTED_EXPORT_FORMATS` to match.
+ */
+const EXPORT_FORMATS: ReadonlyArray<{
+  value: string;
+  label: string;
+  color: string;
+  supported: boolean;
+}> = [
   { value: 'csv', label: 'CSV', color: 'text-emerald-500', supported: true },
   { value: 'excel', label: 'Excel', color: 'text-green-500', supported: false },
   { value: 'json', label: 'JSON', color: 'text-blue-500', supported: false },
   { value: 'pdf', label: 'PDF', color: 'text-red-500', supported: false },
-] as const;
+];
 
 const AVAILABLE_METRICS = [
   { id: 'totalCarts', label: 'Total Carts', icon: ShoppingCart },
@@ -253,6 +299,17 @@ function unwrapApiResponse<T>(response: unknown): T | null {
   return response as T;
 }
 
+/**
+ * Type guard: does the string a caller hands us belong to the wire
+ * union? Used by the format picker's onClick to safely narrow without
+ * relying on TypeScript's literal-type inference.
+ */
+function isSupportedExportFormat(
+  value: string,
+): value is 'csv' | 'json' {
+  return SUPPORTED_EXPORT_FORMATS.has(value as 'csv' | 'json');
+}
+
 // ============================================
 // MAIN COMPONENT
 // ============================================
@@ -276,11 +333,15 @@ export default function CartAnalyticsPage() {
     'overview' | 'trends' | 'details'
   >('overview');
 
-  // Export modal state
+  // Export modal state.
+  //
+  // ⚠ `exportFormat` is narrowed to the wire union. It can only ever
+  //   hold a value the backend accepts, which is why the payload
+  //   passed to `cartService.exportAnalytics` type-checks without a
+  //   cast.
   const [showExportModal, setShowExportModal] = useState(false);
   const [exportLoading, setExportLoading] = useState(false);
-  const [exportFormat, setExportFormat] =
-    useState<'csv' | 'excel' | 'json' | 'pdf'>('csv');
+  const [exportFormat, setExportFormat] = useState<'csv' | 'json'>('csv');
   const [selectedMetrics, setSelectedMetrics] = useState<string[]>(
     AVAILABLE_METRICS.map((m) => m.id),
   );
@@ -522,11 +583,6 @@ export default function CartAnalyticsPage() {
   // DERIVED
   // ============================================
 
-  /**
-   * Fallback conversion rate when the backend returns 0 but the other
-   * counters are non-zero. Matches the backend formula exactly:
-   *   (total - active - abandoned) / total * 100
-   */
   const completionRate = useMemo(() => {
     if (!analytics || analytics.totalCarts <= 0) return 0;
     const checkedOut =
@@ -1245,12 +1301,21 @@ export default function CartAnalyticsPage() {
                             key={format.value}
                             type="button"
                             disabled={isDisabled}
-                            onClick={() =>
-                              !isDisabled &&
-                              setExportFormat(
-                                format.value as ExportOptions['format'],
-                              )
-                            }
+                            onClick={() => {
+                              if (isDisabled) return;
+                              // The type guard narrows `format.value`
+                              // to the wire union. Anything outside
+                              // it is a no-op — the disabled entries
+                              // never reach this branch, and if a
+                              // future entry mis-flags itself as
+                              // supported, the guard still rejects
+                              // it.
+                              if (
+                                isSupportedExportFormat(format.value)
+                              ) {
+                                setExportFormat(format.value);
+                              }
+                            }}
                             className={`flex flex-col items-center gap-2 p-4 rounded-xl border-2 transition-all duration-200 ${
                               isDisabled
                                 ? 'opacity-40 cursor-not-allowed border-gray-200 dark:border-gray-700'

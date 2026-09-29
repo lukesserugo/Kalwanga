@@ -1,6 +1,13 @@
+// packages/web/components/checkout/CheckoutModal.tsx
 'use client';
 
-import React, { useState, useEffect, useMemo, useCallback } from 'react';
+import React, {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from 'react';
 import {
   X,
   ArrowLeft,
@@ -12,14 +19,15 @@ import {
   CheckCircle,
   AlertCircle,
   User,
-  Tag,
   Sparkles,
 } from 'lucide-react';
+
 import { checkoutService } from '../../../services/checkoutService';
 import {
   saleService,
   LOYALTY_POINT_VALUE,
   MAX_LOYALTY_DISCOUNT_FRACTION,
+  computeLoyaltyCapacity,
   isDiscountType,
   getDiscountTypeLabel,
 } from '../../../services/saleService';
@@ -65,16 +73,28 @@ export interface CheckoutModalProps {
   /** Total amount to charge (after tax and discount). */
   total: number;
 
-  /** Currency code, e.g. 'USD'. Defaults to 'USD'. */
-  currency?: string;
-
-  /** Cart id — passed through to checkoutService. */
+  /**
+   * Cart id — passed through to `checkoutService.processCheckout`.
+   *
+   * ⚠ Required by the backend. `SaleService.createSaleFromCart`
+   *   rejects a missing `cartId` with a 400. The modal guards on
+   *   this locally so the user sees a clear message instead of an
+   *   axios error.
+   */
   cartId?: string;
 
   /** Optional customer attached to the sale. */
   customer?: CheckoutCustomer | null;
 
-  /** Discount already applied to the cart (display only here). */
+  /**
+   * Discount already applied to the cart (display only here).
+   *
+   * ⚠ The modal forwards this value to the backend as `discount`.
+   *   The backend reduces the total by `discount` *again*, so
+   *   `total` should already include or exclude this discount
+   *   consistently with how the backend treats it. See the note
+   *   below.
+   */
   discount?: number;
 
   /** Active shift — required to process a sale. */
@@ -181,6 +201,39 @@ const CANONICAL_METHODS_SET = new Set<string>([
   'CARD',
 ]);
 
+const QUICK_CASH_DENOMINATIONS = [5, 10, 20, 50, 100] as const;
+
+/**
+ * Only digits and at most two decimal places. Used to reject garbage
+ * like "10.5.5" before it reaches `parseFloat`, which would silently
+ * read that as `10.5`.
+ */
+const PAID_AMOUNT_PATTERN = /^\d*(\.\d{0,2})?$/;
+
+// ============================================
+// HELPERS
+// ============================================
+
+function extractErrorMessage(error: unknown, fallback: string): string {
+  if (!error) return fallback;
+  const anyErr = error as any;
+  const data = anyErr?.response?.data;
+
+  if (data) {
+    if (typeof data.error === 'string') return data.error;
+    if (data.error?.message) return String(data.error.message);
+    if (data.message) return String(data.message);
+    if (Array.isArray(data.errors) && data.errors.length > 0) {
+      return data.errors
+        .map((e: any) => `${e.field ?? 'field'}: ${e.message ?? 'invalid'}`)
+        .join(', ');
+    }
+  }
+
+  if (anyErr?.message) return String(anyErr.message);
+  return fallback;
+}
+
 // ============================================
 // COMPONENT
 // ============================================
@@ -189,7 +242,6 @@ export function CheckoutModal({
   isOpen,
   onClose,
   total,
-  currency = 'USD',
   cartId,
   customer = null,
   discount = 0,
@@ -210,20 +262,90 @@ export function CheckoutModal({
   const [internalProcessing, setInternalProcessing] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  /**
+   * Guard against a duplicate `onPaymentComplete` invocation when the
+   * operator double-clicks. The backend dedupes on `idempotencyKey`;
+   * the modal must dedupe on its side too, or the parent's success
+   * handler runs twice (double receipt print, double cart clear,
+   * double route push).
+   */
+  const submittedKeyRef = useRef<string | null>(null);
+
+  /**
+   * Synchronous in-flight guard. `internalProcessing` from state is
+   * stale inside a single render — two rapid clicks both see
+   * `false`. A ref updated synchronously can't be raced.
+   */
+  const inFlightRef = useRef(false);
+
+  const containerRef = useRef<HTMLDivElement | null>(null);
+
   const processing = externalProcessing || internalProcessing;
 
-  // Reset internal state every time the modal opens.
-  // Deliberately does NOT touch `idempotencyKey` — the parent owns it.
+  // ── Reset internal state on the open transition ───────────
+  //
+  // Keyed on the false → true transition of `isOpen`, NOT on every
+  // change of `isOpen` or `initialNotes`. The previous version
+  // re-ran the whole reset whenever `initialNotes` changed while the
+  // modal was open, wiping the operator's in-progress cash amount.
+
+  const wasOpenRef = useRef(false);
   useEffect(() => {
-    if (isOpen) {
+    const wasOpen = wasOpenRef.current;
+    wasOpenRef.current = isOpen;
+
+    if (isOpen && !wasOpen) {
       setMethod('CASH');
       setPaidAmount('');
       setReference('');
       setNotes(initialNotes);
       setError(null);
       setInternalProcessing(false);
+      submittedKeyRef.current = null;
+      inFlightRef.current = false;
     }
   }, [isOpen, initialNotes]);
+
+  // Keep `notes` in sync if the parent supplies a fresh value while
+  // the operator hasn't typed anything.
+  const notesTouchedRef = useRef(false);
+  useEffect(() => {
+    if (!isOpen) return;
+    if (notesTouchedRef.current) return;
+    setNotes(initialNotes);
+  }, [initialNotes, isOpen]);
+
+  // Reset the touched flag when the modal closes so the next open
+  // starts fresh.
+  useEffect(() => {
+    if (!isOpen) notesTouchedRef.current = false;
+  }, [isOpen]);
+
+  // ── Focus management ──────────────────────────────────────
+  //
+  // Remember what had focus before the modal opened, move focus into
+  // the modal, and restore on close. A full focus trap is out of
+  // scope; this at least gets the keyboard user into the modal and
+  // back to where they were.
+
+  const previouslyFocusedRef = useRef<HTMLElement | null>(null);
+
+  useEffect(() => {
+    if (!isOpen) return;
+    if (typeof document === 'undefined') return;
+
+    previouslyFocusedRef.current =
+      (document.activeElement as HTMLElement) ?? null;
+
+    const t = setTimeout(() => {
+      containerRef.current?.focus();
+    }, 0);
+
+    return () => {
+      clearTimeout(t);
+      previouslyFocusedRef.current?.focus?.();
+    };
+  }, [isOpen]);
 
   // ============================================
   // DERIVED
@@ -236,52 +358,37 @@ export function CheckoutModal({
 
   const changeAmount = useMemo(
     () => Math.max(0, paidNumber - total),
-    [paidNumber, total]
+    [paidNumber, total],
   );
 
   const cashInsufficient = method === 'CASH' && paidNumber < total;
 
   /**
-   * Points required to cover the total, at the backend's conversion
-   * rate. `LOYALTY_POINT_VALUE = 0.1` means 1 point = $0.10, so a
-   * $25.00 total requires 250 points.
+   * Points required to cover the total, using the SAME calculation
+   * the frontend service uses (`computeLoyaltyCapacity`), which in
+   * turn mirrors the backend's `checkoutService.processCheckout`.
    *
-   * The backend additionally caps the discount at 50% of the total
-   * (`MAX_LOYALTY_DISCOUNT_FRACTION`), so a customer with 999 points
-   * on a $10 total can only redeem 50 points. We mirror that cap
-   * here so the "required" number matches what the backend will
-   * actually consume.
+   * Using the service helper directly (instead of re-deriving the
+   * formula here) is what keeps the display in lockstep with what
+   * the backend will actually consume. The earlier version used a
+   * `Math.ceil` on the wrong side of the cap and disagreed with the
+   * server by one point on some totals.
    */
-  const loyaltyPointsRequired = useMemo(() => {
-    if (method !== 'LOYALTY_POINTS') return 0;
-    const maxDiscountByFraction = total * MAX_LOYALTY_DISCOUNT_FRACTION;
-    const maxPointsByFraction = Math.floor(
-      maxDiscountByFraction / LOYALTY_POINT_VALUE
-    );
-    const pointsByValue = Math.ceil(total / LOYALTY_POINT_VALUE);
-    return Math.min(pointsByValue, maxPointsByFraction);
-  }, [method, total]);
+  const loyaltyCapacity = useMemo(
+    () =>
+      computeLoyaltyCapacity(total, customer?.loyaltyPoints ?? 0),
+    [total, customer?.loyaltyPoints],
+  );
+
+  const loyaltyPointsRequired = loyaltyCapacity.redeemablePoints;
 
   const loyaltyInsufficient = useMemo(() => {
     if (method !== 'LOYALTY_POINTS') return false;
     return (customer?.loyaltyPoints ?? 0) < loyaltyPointsRequired;
   }, [method, customer?.loyaltyPoints, loyaltyPointsRequired]);
 
-  /**
-   * Preview of what the backend will persist on the sale. Uses the
-   * same `describeBreakdown` helper the receipt footer and sale
-   * detail page use, so the wording stays consistent.
-   *
-   * `discountType` is included so the preview reflects what the
-   * backend will actually attribute. When it's `null`, the backend's
-   * `inferDiscountType` runs and the resulting type is decided from
-   * the discount amounts — the preview here can't know that ahead of
-   * time, so we don't try.
-   */
   const breakdownPreview = useMemo(() => {
-    if (!saleService.hasBreakdown({ promotionDiscount })) {
-      return null;
-    }
+    if (!saleService.hasBreakdown({ promotionDiscount })) return null;
     return saleService.describeBreakdown({
       promotionDiscount,
       promotionCode,
@@ -294,7 +401,14 @@ export function CheckoutModal({
 
   const handleClose = useCallback(() => {
     if (processing) return;
-    onCancel?.();
+
+    // Guard against a throwing `onCancel` blocking `onClose`. The
+    // modal must always close when the user dismisses it.
+    try {
+      onCancel?.();
+    } catch (err) {
+      console.error('onCancel handler threw:', err);
+    }
     onClose();
   }, [processing, onCancel, onClose]);
 
@@ -303,11 +417,34 @@ export function CheckoutModal({
     setError(null);
   }, []);
 
+  const handlePaidAmountChange = useCallback(
+    (e: React.ChangeEvent<HTMLInputElement>) => {
+      const next = e.target.value;
+      // Allow the empty string while typing, but reject anything
+      // that isn't a partial decimal number. Rejecting here means
+      // `parseFloat` never has to silently discard trailing garbage.
+      if (next === '' || PAID_AMOUNT_PATTERN.test(next)) {
+        setPaidAmount(next);
+      }
+    },
+    [],
+  );
+
   const handleSubmit = useCallback(async () => {
     setError(null);
 
+    // Synchronous guard — prevents double submission even if state
+    // hasn't re-rendered yet.
+    if (inFlightRef.current) return;
+    if (processing) return;
+
     if (!shift) {
       setError('Please open a shift before processing a sale.');
+      return;
+    }
+
+    if (!cartId) {
+      setError('No cart is attached to this checkout.');
       return;
     }
 
@@ -326,6 +463,14 @@ export function CheckoutModal({
       return;
     }
 
+    // Idempotency self-guard. If the caller supplied a key and we've
+    // already successfully submitted with it during this modal's
+    // open lifetime, treat the second submit as a no-op.
+    const key = idempotencyKey ?? null;
+    if (key && submittedKeyRef.current === key) {
+      return;
+    }
+
     // Zero is legitimate for non-cash methods (loyalty-only /
     // fully-discounted). For cash we've already validated
     // paidNumber >= total. Never coerce with `|| total`.
@@ -335,14 +480,18 @@ export function CheckoutModal({
     // legacy string that isn't a Prisma enum member, drop it — the
     // backend infers a valid type instead.
     const safeDiscountType: DiscountType | null =
-      discountType !== null && discountType !== undefined && isDiscountType(discountType)
+      discountType !== null &&
+      discountType !== undefined &&
+      isDiscountType(discountType)
         ? discountType
         : null;
 
-    try {
-      setInternalProcessing(true);
+    inFlightRef.current = true;
+    setInternalProcessing(true);
 
-      const result = await checkoutService.processCheckout({
+    let checkoutResult: any;
+    try {
+      checkoutResult = await checkoutService.processCheckout({
         cartId,
         customerId: customer?.id,
         paymentMethod: method,
@@ -362,34 +511,61 @@ export function CheckoutModal({
         promotionCode: promotionCode ?? undefined,
         promotionDiscount: promotionDiscount || undefined,
       });
-
-      const details: CheckoutDetails = {
-        paidAmount: effectivePaidAmount,
-        changeAmount: method === 'CASH' ? changeAmount : 0,
-        notes: notes.trim() || undefined,
-        reference: reference.trim() || undefined,
-        loyaltyPointsUsed:
-          method === 'LOYALTY_POINTS' ? loyaltyPointsRequired : undefined,
-      };
-
-      await onPaymentComplete(result, method, details);
-      toast.success('Checkout completed successfully!');
-    } catch (err: any) {
-      console.error('Checkout failed:', err);
-      const message = err?.message || 'Checkout failed. Please try again.';
+    } catch (err) {
+      const message = extractErrorMessage(
+        err,
+        'Checkout failed. Please try again.',
+      );
+      console.error('[CheckoutModal] checkout failed:', message);
       setError(message);
       toast.error(message);
+
+      inFlightRef.current = false;
+      setInternalProcessing(false);
+      return;
+    }
+
+    // The sale has been created on the server. Everything from here
+    // is post-processing — record the key so a duplicate submit
+    // can't re-run it.
+    if (key) submittedKeyRef.current = key;
+
+    const details: CheckoutDetails = {
+      paidAmount: effectivePaidAmount,
+      changeAmount: method === 'CASH' ? changeAmount : 0,
+      notes: notes.trim() || undefined,
+      reference: reference.trim() || undefined,
+      loyaltyPointsUsed:
+        method === 'LOYALTY_POINTS' ? loyaltyPointsRequired : undefined,
+    };
+
+    try {
+      await onPaymentComplete(checkoutResult, method, details);
+      toast.success('Checkout completed successfully!');
+    } catch (callbackErr) {
+      // The sale succeeded — only the parent's post-processing
+      // failed. Surface the distinction so the operator knows not to
+      // retry the payment.
+      console.error(
+        '[CheckoutModal] onPaymentComplete callback failed:',
+        callbackErr,
+      );
+      toast.error(
+        'Payment succeeded, but the post-checkout action failed. Do not retry the payment.',
+      );
     } finally {
+      inFlightRef.current = false;
       setInternalProcessing(false);
     }
   }, [
+    processing,
     shift,
+    cartId,
     method,
     cashInsufficient,
     loyaltyInsufficient,
     paidNumber,
     total,
-    cartId,
     customer?.id,
     discount,
     notes,
@@ -403,7 +579,8 @@ export function CheckoutModal({
     onPaymentComplete,
   ]);
 
-  // Keyboard: Esc closes, Cmd/Ctrl+Enter submits.
+  // ── Keyboard: Esc closes, Cmd/Ctrl+Enter submits ──────────
+
   useEffect(() => {
     if (!isOpen) return;
 
@@ -414,7 +591,7 @@ export function CheckoutModal({
       }
       if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') {
         e.preventDefault();
-        if (!processing) handleSubmit();
+        if (!processing) void handleSubmit();
       }
     };
 
@@ -429,22 +606,42 @@ export function CheckoutModal({
   // ============================================
 
   return (
-    <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4">
-      <div className="bg-white dark:bg-gray-800 rounded-xl w-full max-w-2xl max-h-[90vh] overflow-y-auto shadow-2xl border border-gray-200 dark:border-gray-700">
+    <div
+      className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="checkout-modal-title"
+    >
+      <div
+        ref={containerRef}
+        tabIndex={-1}
+        className="bg-white dark:bg-gray-800 rounded-xl w-full max-w-2xl max-h-[90vh] overflow-y-auto shadow-2xl border border-gray-200 dark:border-gray-700 outline-none"
+      >
         {/* Header */}
         <div className="sticky top-0 bg-white dark:bg-gray-800 p-4 border-b border-gray-200 dark:border-gray-700 flex items-center justify-between z-10">
           <div className="flex items-center gap-3">
             <button
+              type="button"
               onClick={handleClose}
               disabled={processing}
               className="p-2 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-colors disabled:opacity-50"
               title="Back"
+              aria-label="Back"
             >
-              <ArrowLeft className="w-5 h-5 text-gray-600 dark:text-gray-400" />
+              <ArrowLeft
+                className="w-5 h-5 text-gray-600 dark:text-gray-400"
+                aria-hidden="true"
+              />
             </button>
             <div>
-              <h2 className="text-lg font-bold text-gray-900 dark:text-white flex items-center gap-2">
-                <CreditCard className="w-5 h-5 text-blue-500" />
+              <h2
+                id="checkout-modal-title"
+                className="text-lg font-bold text-gray-900 dark:text-white flex items-center gap-2"
+              >
+                <CreditCard
+                  className="w-5 h-5 text-blue-500"
+                  aria-hidden="true"
+                />
                 Complete Payment
               </h2>
               <p className="text-sm text-gray-500 dark:text-gray-400">
@@ -461,11 +658,13 @@ export function CheckoutModal({
             </div>
           </div>
           <button
+            type="button"
             onClick={handleClose}
             disabled={processing}
             className="p-2 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-colors disabled:opacity-50"
+            aria-label="Close"
           >
-            <X className="w-5 h-5 text-gray-500" />
+            <X className="w-5 h-5 text-gray-500" aria-hidden="true" />
           </button>
         </div>
 
@@ -473,7 +672,10 @@ export function CheckoutModal({
           {/* Customer */}
           {customer && (
             <div className="flex items-center gap-2 text-sm text-blue-600 dark:text-blue-400 bg-blue-50 dark:bg-blue-900/20 rounded-lg px-3 py-2">
-              <User className="w-4 h-4 flex-shrink-0" />
+              <User
+                className="w-4 h-4 flex-shrink-0"
+                aria-hidden="true"
+              />
               <span className="font-medium">
                 {customer.firstName} {customer.lastName}
               </span>
@@ -489,7 +691,10 @@ export function CheckoutModal({
           {/* Promotion preview */}
           {breakdownPreview && (
             <div className="flex items-center gap-2 text-sm text-blue-600 dark:text-blue-400 bg-blue-50 dark:bg-blue-900/20 rounded-lg px-3 py-2">
-              <Sparkles className="w-4 h-4 flex-shrink-0" />
+              <Sparkles
+                className="w-4 h-4 flex-shrink-0"
+                aria-hidden="true"
+              />
               <span className="font-medium">{breakdownPreview}</span>
               {promotionCode && (
                 <code className="px-1.5 py-0.5 rounded bg-blue-100 dark:bg-blue-900/40 text-[11px] font-mono">
@@ -506,18 +711,28 @@ export function CheckoutModal({
 
           {/* Shift missing warning */}
           {!shift && (
-            <div className="flex items-center gap-2 text-sm text-yellow-700 dark:text-yellow-300 bg-yellow-50 dark:bg-yellow-900/20 rounded-lg px-3 py-2">
-              <AlertCircle className="w-4 h-4 flex-shrink-0" />
+            <div
+              role="alert"
+              className="flex items-center gap-2 text-sm text-yellow-700 dark:text-yellow-300 bg-yellow-50 dark:bg-yellow-900/20 rounded-lg px-3 py-2"
+            >
+              <AlertCircle
+                className="w-4 h-4 flex-shrink-0"
+                aria-hidden="true"
+              />
               <span>No open shift. Please open a shift first.</span>
             </div>
           )}
 
           {/* Payment method selector */}
           <div>
-            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+            <span className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
               Payment Method
-            </label>
-            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+            </span>
+            <div
+              role="radiogroup"
+              aria-label="Payment method"
+              className="grid grid-cols-2 sm:grid-cols-4 gap-2"
+            >
               {PAYMENT_METHODS.map((m) => {
                 const Icon = m.icon;
                 const active = method === m.id;
@@ -526,6 +741,8 @@ export function CheckoutModal({
                   <button
                     key={m.id}
                     type="button"
+                    role="radio"
+                    aria-checked={active}
                     onClick={() => !disabled && setMethod(m.id)}
                     disabled={disabled || processing}
                     className={`p-3 rounded-lg border text-left transition-colors disabled:opacity-40 disabled:cursor-not-allowed ${
@@ -540,6 +757,7 @@ export function CheckoutModal({
                           ? 'text-blue-600 dark:text-blue-400'
                           : 'text-gray-500 dark:text-gray-400'
                       }`}
+                      aria-hidden="true"
                     />
                     <p className="text-sm font-medium text-gray-900 dark:text-white">
                       {m.label}
@@ -557,27 +775,37 @@ export function CheckoutModal({
           {method === 'CASH' && (
             <div className="space-y-3">
               <div>
-                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                <label
+                  htmlFor="checkout-paid-amount"
+                  className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1"
+                >
                   Amount Paid
                 </label>
                 <div className="relative">
-                  <DollarSign className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" />
+                  <DollarSign
+                    className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400 pointer-events-none"
+                    aria-hidden="true"
+                  />
                   <input
-                    type="number"
+                    id="checkout-paid-amount"
+                    type="text"
                     inputMode="decimal"
-                    step="0.01"
-                    min="0"
                     value={paidAmount}
-                    onChange={(e) => setPaidAmount(e.target.value)}
+                    onChange={handlePaidAmountChange}
                     placeholder={total.toFixed(2)}
-                    className="w-full pl-10 pr-4 py-2.5 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+                    className="w-full pl-10 pr-4 py-2.5 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white dark:bg-gray-700 text-gray-900 dark:text-white tabular-nums"
                     disabled={processing}
                     autoFocus
                   />
                 </div>
               </div>
 
-              {/* Quick-cash shortcuts */}
+              {/* Quick-cash shortcuts.
+                  These are tender-amount shortcuts, not minimums.
+                  A $5 button on a $20 sale sets paid to $5 — the
+                  operator adds more cash and clicks again. The
+                  previous version disabled them below the total,
+                  blocking that flow. */}
               <div className="flex flex-wrap gap-2">
                 <button
                   type="button"
@@ -587,13 +815,17 @@ export function CheckoutModal({
                 >
                   Exact ({formatCurrency(total)})
                 </button>
-                {[5, 10, 20, 50, 100].map((v) => (
+                {QUICK_CASH_DENOMINATIONS.map((v) => (
                   <button
                     key={v}
                     type="button"
                     onClick={() => handleQuickCash(v)}
-                    disabled={processing || v < total}
-                    className="px-3 py-1.5 text-sm border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 disabled:opacity-30"
+                    disabled={processing}
+                    className={`px-3 py-1.5 text-sm border rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 disabled:opacity-50 ${
+                      v >= total
+                        ? 'border-success-400 dark:border-success-500'
+                        : 'border-gray-300 dark:border-gray-600'
+                    }`}
                   >
                     ${v}
                   </button>
@@ -605,7 +837,7 @@ export function CheckoutModal({
                   <span className="text-sm text-green-700 dark:text-green-300">
                     Change
                   </span>
-                  <span className="text-lg font-bold text-green-700 dark:text-green-300">
+                  <span className="text-lg font-bold text-green-700 dark:text-green-300 tabular-nums">
                     {formatCurrency(changeAmount)}
                   </span>
                 </div>
@@ -615,14 +847,19 @@ export function CheckoutModal({
 
           {method === 'CARD' && (
             <div>
-              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+              <label
+                htmlFor="checkout-card-reference"
+                className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1"
+              >
                 Reference / Last 4 digits
               </label>
               <input
+                id="checkout-card-reference"
                 type="text"
                 value={reference}
                 onChange={(e) => setReference(e.target.value)}
                 placeholder="e.g. 4242"
+                autoComplete="off"
                 className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
                 disabled={processing}
               />
@@ -631,14 +868,19 @@ export function CheckoutModal({
 
           {method === 'MOBILE_MONEY' && (
             <div>
-              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+              <label
+                htmlFor="checkout-mobile-reference"
+                className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1"
+              >
                 Transaction Reference
               </label>
               <input
+                id="checkout-mobile-reference"
                 type="text"
                 value={reference}
                 onChange={(e) => setReference(e.target.value)}
                 placeholder="e.g. MP123456789"
+                autoComplete="off"
                 className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
                 disabled={processing}
               />
@@ -651,7 +893,7 @@ export function CheckoutModal({
                 <span className="text-gray-600 dark:text-gray-400">
                   Points Required
                 </span>
-                <span className="font-medium text-gray-900 dark:text-white">
+                <span className="font-medium text-gray-900 dark:text-white tabular-nums">
                   {loyaltyPointsRequired}
                 </span>
               </div>
@@ -660,7 +902,7 @@ export function CheckoutModal({
                   Available
                 </span>
                 <span
-                  className={`font-medium ${
+                  className={`font-medium tabular-nums ${
                     loyaltyInsufficient
                       ? 'text-red-600 dark:text-red-400'
                       : 'text-green-600 dark:text-green-400'
@@ -688,14 +930,21 @@ export function CheckoutModal({
 
           {/* Notes */}
           <div>
-            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+            <label
+              htmlFor="checkout-notes"
+              className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1"
+            >
               Notes (optional)
             </label>
             <textarea
+              id="checkout-notes"
               value={notes}
-              onChange={(e) => setNotes(e.target.value)}
+              onChange={(e) => {
+                notesTouchedRef.current = true;
+                setNotes(e.target.value);
+              }}
               rows={2}
-              placeholder="Any additional information..."
+              placeholder="Any additional information…"
               className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white dark:bg-gray-700 text-gray-900 dark:text-white resize-none"
               disabled={processing}
             />
@@ -703,8 +952,15 @@ export function CheckoutModal({
 
           {/* Error */}
           {error && (
-            <div className="flex items-start gap-2 text-sm text-red-700 dark:text-red-300 bg-red-50 dark:bg-red-900/20 rounded-lg px-3 py-2">
-              <AlertCircle className="w-4 h-4 flex-shrink-0 mt-0.5" />
+            <div
+              role="alert"
+              aria-live="assertive"
+              className="flex items-start gap-2 text-sm text-red-700 dark:text-red-300 bg-red-50 dark:bg-red-900/20 rounded-lg px-3 py-2"
+            >
+              <AlertCircle
+                className="w-4 h-4 flex-shrink-0 mt-0.5"
+                aria-hidden="true"
+              />
               <span>{error}</span>
             </div>
           )}
@@ -712,10 +968,8 @@ export function CheckoutModal({
           {/* Summary */}
           <div className="border-t border-gray-200 dark:border-gray-700 pt-4 space-y-1">
             <div className="flex justify-between text-sm">
-              <span className="text-gray-600 dark:text-gray-400">
-                Total
-              </span>
-              <span className="font-bold text-gray-900 dark:text-white">
+              <span className="text-gray-600 dark:text-gray-400">Total</span>
+              <span className="font-bold text-gray-900 dark:text-white tabular-nums">
                 {formatCurrency(total)}
               </span>
             </div>
@@ -725,7 +979,7 @@ export function CheckoutModal({
                   <span className="text-gray-600 dark:text-gray-400">
                     Paid
                   </span>
-                  <span className="text-gray-900 dark:text-white">
+                  <span className="text-gray-900 dark:text-white tabular-nums">
                     {formatCurrency(paidNumber)}
                   </span>
                 </div>
@@ -733,7 +987,7 @@ export function CheckoutModal({
                   <span className="text-gray-600 dark:text-gray-400">
                     Change
                   </span>
-                  <span className="text-gray-900 dark:text-white">
+                  <span className="text-gray-900 dark:text-white tabular-nums">
                     {formatCurrency(changeAmount)}
                   </span>
                 </div>
@@ -754,19 +1008,23 @@ export function CheckoutModal({
           </button>
           <button
             type="button"
-            onClick={handleSubmit}
+            onClick={() => void handleSubmit()}
             disabled={
               processing ||
               !shift ||
+              !cartId ||
               (method === 'CASH' && cashInsufficient) ||
               (method === 'LOYALTY_POINTS' && loyaltyInsufficient)
             }
             className="px-5 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors text-sm font-medium flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
           >
             {processing ? (
-              <Loader2 className="w-4 h-4 animate-spin" />
+              <Loader2
+                className="w-4 h-4 animate-spin"
+                aria-hidden="true"
+              />
             ) : (
-              <CheckCircle className="w-4 h-4" />
+              <CheckCircle className="w-4 h-4" aria-hidden="true" />
             )}
             {processing ? 'Processing…' : 'Complete Payment'}
           </button>

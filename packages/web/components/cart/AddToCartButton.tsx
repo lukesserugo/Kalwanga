@@ -69,10 +69,58 @@ function extractErrorMessage(error: any, fallback: string): string {
   return fallback;
 }
 
+/**
+ * Walk the error chain for an HTTP status code. axios, the backend's
+ * `AppError`, and wrapped errors all surface the status in different
+ * places; this returns the first finite number it finds.
+ *
+ * Mirrors `getErrorStatusCode` in the backend's
+ * `paymentController.ts`.
+ */
+function getErrorStatus(error: any): number | undefined {
+  if (!error || typeof error !== 'object') return undefined;
+
+  const seen = new Set<any>();
+  let node: any = error;
+
+  while (node && typeof node === 'object' && !seen.has(node)) {
+    seen.add(node);
+
+    const candidates = [
+      node.status,
+      node.statusCode,
+      node.response?.status,
+    ];
+
+    for (const candidate of candidates) {
+      if (
+        typeof candidate === 'number' &&
+        Number.isFinite(candidate) &&
+        candidate > 0
+      ) {
+        return candidate;
+      }
+    }
+
+    node = node.cause;
+  }
+
+  return undefined;
+}
+
+/**
+ * True when the backend rejected the request because stock ran out
+ * between page load and the click.
+ */
 function isInsufficientStockError(error: any): boolean {
   return /insufficient stock/i.test(extractErrorMessage(error, ''));
 }
 
+/**
+ * Pull the "Available: N" figure out of the backend's stock-error
+ * message, when present. Returns `null` when the message doesn't
+ * carry a number.
+ */
 function parseAvailableFromStockError(error: any): number | null {
   const match = extractErrorMessage(error, '').match(
     /available:\s*(\d+)/i
@@ -80,6 +128,22 @@ function parseAvailableFromStockError(error: any): number | null {
   if (!match) return null;
   const parsed = Number(match[1]);
   return Number.isFinite(parsed) ? parsed : null;
+}
+
+/**
+ * True when the status + body suggest the session expired and the
+ * user should be bounced to login. A bare 401 is always treated as
+ * expired; a 403 only when the body mentions "session" or "expired",
+ * because 403 is also used for genuine permission denials that
+ * shouldn't trigger a redirect loop.
+ */
+function isSessionExpired(error: any): boolean {
+  const status = getErrorStatus(error);
+  if (status === 401) return true;
+  if (status !== 403) return false;
+
+  const message = extractErrorMessage(error, '').toLowerCase();
+  return message.includes('session') || message.includes('expired');
 }
 
 // ============================================
@@ -104,6 +168,21 @@ export function AddToCartButton({
   const { isAuthenticated } = useAuth();
   const [state, setState] = useState<ButtonState>('idle');
 
+  /**
+   * Route the add through the correct service.
+   *
+   *   - Authenticated → `cartService` → `POST /cart/items`. The
+   *     backend resolves the cart from the session user +
+   *     business-unit header.
+   *   - Anonymous → `guestCartService` → `POST /guest-cart/items`.
+   *     Backed by the `guest_session_id` cookie set by
+   *     `guestSessionMiddleware` on the server. Merged into the
+   *     user's cart on login by `POST /cart/merge-guest`.
+   *
+   * Do not collapse this branch — the two services target different
+   * endpoints, and calling the authenticated one while anonymous
+   * returns 401 instead of adding to the guest cart.
+   */
   const activeCartService = useMemo(
     () => (isAuthenticated ? cartService : guestCartService),
     [isAuthenticated],
@@ -163,13 +242,9 @@ export function AddToCartButton({
     } catch (err: any) {
       console.error('Failed to add to cart:', err);
 
-      // 401 mid-flight (session expired) → bounce to login and stop.
+      // Session expired mid-flight → bounce to login and stop.
       // No toast here: the redirect is the user feedback.
-      if (
-        err?.response?.status === 401 &&
-        isAuthenticated &&
-        redirectOnAuthError
-      ) {
+      if (isSessionExpired(err) && isAuthenticated && redirectOnAuthError) {
         const redirectUrl =
           typeof window !== 'undefined'
             ? window.location.pathname + window.location.search
@@ -189,6 +264,8 @@ export function AddToCartButton({
         setState('out_of_stock');
 
         const reported = parseAvailableFromStockError(err);
+        // `reported === 0` falls through to the generic message on
+        // purpose, so the user isn't shown "Only 0 left in stock."
         const message =
           reported !== null && reported > 0
             ? `Only ${reported} left in stock.`
@@ -253,6 +330,10 @@ export function AddToCartButton({
       type="button"
       onClick={handleAddToCart}
       disabled={isDisabled}
+      // `aria-disabled` mirrors the native attribute so assistive
+      // tech still announces the disabled state when the button is
+      // focusable during a state transition.
+      aria-disabled={isDisabled}
       aria-live="polite"
       className={buttonClasses}
     >

@@ -26,13 +26,21 @@ import { toast } from '../../../../../utils/toast-manager';
 // DEFAULTS
 // ============================================
 //
-// ⚠ `currencyCode` and `currencySymbol` are intentionally EMPTY.
-//   The backend's `getCheckoutSettings` derives them from the
-//   business unit's currency via `currencyService.resolveForBusiness`
+// ⚠ `currencyCode` is intentionally EMPTY. The backend's
+//   `getCheckoutSettings` derives it from the business unit's
+//   currency via `currencyService.resolveForBusiness`
 //   (BU → DEFAULT_CURRENCY → registry default — UGX on this
-//   deployment). Hardcoding `'USD'` / `'$'` here made the initial
-//   render show the wrong currency until the backend response
-//   landed. Leave them empty; the backend fills them in.
+//   deployment). Hardcoding `'USD'` here made the initial render
+//   show the wrong currency until the backend response landed.
+//   Leave it empty; the backend fills it in.
+//
+// ⚠ `currencySymbol` was removed. Phase 1 dropped the persisted
+//   column from `CartSettings`, `CheckoutSettings`, and
+//   `SalesSettings`; the display symbol is derived from
+//   `currencyCode` via `lib/currencies.ts` on the read path.
+//   Including it here would fail the `CheckoutSettings` type
+//   check and, if the type were widened to accept it, would 400
+//   on save with "Unknown settings field: currencySymbol".
 
 const DEFAULT_SETTINGS: CheckoutSettings = {
   allowPartialPayment: true,
@@ -59,7 +67,7 @@ const DEFAULT_SETTINGS: CheckoutSettings = {
   notifyOnAbandonedCart: true,
   abandonedCartHours: 2,
   currencyCode: '',
-  currencySymbol: '',
+  // ⚠ `currencySymbol` intentionally absent — see JSDoc above.
   showStockBadge: true,
   showVariantImages: true,
 };

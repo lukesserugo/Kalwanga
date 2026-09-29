@@ -1,7 +1,10 @@
-// D:\Projects\Kalwanga\packages\web\types\customer.ts
-import { Company, User } from './user';
-import { Sale } from './sale';
-import { Order } from './order';
+// packages/web/types/customer.ts
+
+// Use `import type` for type-only imports to match the convention in
+// `types/sale.ts` and avoid accidental runtime dependency cycles.
+import type { Company, User } from './user';
+import type { Sale } from './sale';
+import type { Order } from './order';
 
 export interface Customer {
   id: string;
@@ -27,8 +30,21 @@ export interface Customer {
   sales?: Sale[];
   giftCards?: GiftCard[];
   loyaltyHistory?: LoyaltyHistory[];
-  invoices?: Invoice[];
-  carts?: Cart[];
+
+  // ⚠ `invoices` and `carts` were REMOVED from this interface.
+  //
+  //   The backend's `CustomerResponse` (see
+  //   `packages/backend/src/services/customerService.ts`) does not
+  //   declare either relation, and none of the customer endpoints
+  //   (`getAllCustomers`, `getCustomerById`, `createCustomer`,
+  //   `updateCustomer`, `searchCustomers`, `deleteCustomer`) include
+  //   them. Reading `customer.invoices` or `customer.carts` on a
+  //   payload from any of those endpoints returned `undefined`.
+  //
+  //   Declaring them here only made the type lie about the wire
+  //   shape. If a future endpoint adds one of these relations, add
+  //   the field back AND include the corresponding relation on the
+  //   backend's `CustomerResponse`.
 }
 
 export interface GiftCard {
@@ -97,7 +113,7 @@ export interface LoyaltyProgram {
   id: string;
   name: string;
   description?: string;
-  pointsPerDollar: number;
+  pointsPerEarn: number;
   minPointsForRedeem: number;
   isActive: boolean;
   startDate?: string;

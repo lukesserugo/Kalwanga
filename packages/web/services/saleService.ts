@@ -1577,6 +1577,147 @@ export const saleService = {
     }
   },
 
+    /**
+   * Export sales to a downloadable file.
+   * GET /sales/export?startDate=…&endDate=…&format=csv
+   *
+   * Returns a `Blob` the caller is responsible for downloading
+   * (e.g. via an anchor click). The backend streams CSV, JSON,
+   * Excel, or PDF depending on the `format` param; the actual
+   * content type comes back in the response headers, not in the
+   * body.
+   *
+   * ⚠ This method was missing from the service; it's the wrapper
+   *    the `SaleList` and any future sales export UI should call.
+   */
+  async exportSales(params: {
+    businessUnitId?: string;
+    startDate: string;
+    endDate: string;
+    format?: 'json' | 'csv' | 'excel' | 'pdf';
+  }): Promise<Blob> {
+    const format = params.format ?? 'csv';
+
+    const query: Record<string, string> = {
+      startDate: params.startDate,
+      endDate: params.endDate,
+      format,
+    };
+    if (params.businessUnitId) {
+      query.businessUnitId = params.businessUnitId;
+    }
+
+    try {
+      const response = await api.get<any>('/sales/export', {
+        params: query,
+        responseType: 'blob',
+      });
+
+      // The `api` client may return the Blob directly, wrap it in
+      // `{ data: Blob }`, or (rarely) fall through with the raw
+      // axios response. Normalize all three so callers always get
+      // a Blob they can `URL.createObjectURL` on.
+      if (response instanceof Blob) return response;
+      if (response?.data instanceof Blob) return response.data;
+      return new Blob(
+        [
+          typeof response === 'string'
+            ? response
+            : JSON.stringify(response),
+        ],
+        { type: 'application/json' },
+      );
+    } catch (error) {
+      console.error('Failed to export sales:', error);
+      throw error;
+    }
+  },
+
+    /**
+   * Send a receipt email for a sale.
+   * POST /sales/:id/email-receipt
+   *
+   * The backend's `sendReceiptEmail` accepts an email address and
+   * (optionally) records that the receipt was emailed by updating
+   * the `Receipt.sentAt` timestamp.
+   */
+  async sendReceiptEmail(
+    saleId: string,
+    email: string,
+  ): Promise<{ success: true; message: string }> {
+    if (!saleId) throw new Error('Sale ID is required');
+    if (!email) throw new Error('Email address is required');
+
+    try {
+      const response = await api.post<any>(
+        `/sales/${saleId}/email-receipt`,
+        { email },
+      );
+      if (response && typeof response === 'object') {
+        if ('data' in response && response.data) {
+          return response.data;
+        }
+        return response;
+      }
+      return { success: true, message: 'Receipt sent' };
+    } catch (error) {
+      console.error(`Failed to send receipt for sale ${saleId}:`, error);
+      throw error;
+    }
+  },
+
+  /**
+   * Refund a sale.
+   * POST /sales/:id/refund
+   *
+   * `amount` is optional. When omitted, the backend refunds the
+   * full remaining balance. `reason` is required by the backend's
+   * `refundSchema` (it's `.optional()` in the schema, but the
+   * service treats a missing reason as `'No reason provided'`).
+   *
+   * Returns the created refund record along with the updated sale.
+   */
+  async refundSale(
+    saleId: string,
+    reason: string,
+    amount?: number,
+  ): Promise<{
+    refund: {
+      id: string;
+      refundNumber: string;
+      total: number;
+      status: string;
+      createdAt: string;
+    };
+    sale: Sale;
+  }> {
+    if (!saleId) throw new Error('Sale ID is required');
+
+    const body: Record<string, unknown> = {
+      reason: reason?.trim() || undefined,
+    };
+    if (typeof amount === 'number' && Number.isFinite(amount) && amount > 0) {
+      body.amount = amount;
+    }
+
+    try {
+      const response = await api.post<any>(
+        `/sales/${saleId}/refund`,
+        body,
+      );
+      if (response && typeof response === 'object') {
+        if ('data' in response && response.data) {
+          return response.data;
+        }
+        return response;
+      }
+      throw new Error('Invalid response from server');
+    } catch (error) {
+      console.error(`Failed to refund sale ${saleId}:`, error);
+      throw error;
+    }
+  },
+
   // ============================================
   // POS ROUTES (via /sales/pos/*)
   // ============================================

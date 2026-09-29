@@ -2,13 +2,22 @@
 
 // D:\Projects\Kalwanga\packages\web\components\products\ProductCard.tsx
 
-import React, { useState, useCallback } from 'react';
+import React, { useState, useCallback, useMemo } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { motion } from 'framer-motion';
 import {
-  Package, Star, ShoppingCart, Eye,
-  Edit, Trash2, AlertCircle, Loader2, Layers, ImageIcon, Link2,
+  Package,
+  Star,
+  ShoppingCart,
+  Eye,
+  Edit,
+  Trash2,
+  AlertCircle,
+  Loader2,
+  Layers,
+  ImageIcon,
+  Link2,
 } from 'lucide-react';
 
 import { formatCurrency } from '../../utils/formatters';
@@ -21,35 +30,46 @@ import { cartService } from '../../services/cartService';
 import { guestCartService } from '../../services/guestCartService';
 
 // ============================================
-// TYPES
+// TYPES — canonical, mirrors the backend
 // ============================================
+//
+// The backend's `normalizeProduct` / `normalizeVariant` flatten the
+// `images` relation (`ProductImage[]` / `ProductVariantImage[]`) to
+// `string[]` URLs and return `inventory` as a SINGULAR object (not
+// an array). However, a stale `Product` type still in circulation
+// declares `inventory` as `Inventory[]`. To be tolerant of both
+// shapes at the call site — and to compile against both — the
+// `inventory` fields below accept either and the card normalizes
+// with `firstInventory()`.
+
+interface ProductInventory {
+  id?: string;
+  quantity?: number;
+  reserved?: number;
+  available?: number;
+  reorderPoint?: number;
+  reorderQuantity?: number;
+  location?: string | null;
+  status?: string;
+}
 
 interface ProductVariantShape {
   id: string;
   name: string;
   sku: string;
   price: number;
+  costPrice?: number | null;
+  /** Denormalized stock. Prefer `inventory` when present. */
   stock: number;
+  reserved?: number;
   isActive: boolean;
   images?: string[];
-  attributes?: Record<string, any>;
+  attributes?: Record<string, unknown>;
   barcode?: string | null;
   inventoryId?: string | null;
-  inventory?:
-    | { quantity?: number; reserved?: number }
-    | null;
+  /** Singular — matches the backend's canonical shape. */
+  inventory?: ProductInventory | null;
 }
-
-/**
- * The inventory relation is singular on the canonical `Product` type
- * (`Inventory | null`). Older callers occasionally pass an array.
- * Accept both shapes so the stock math is always right.
- */
-type InventoryLike =
-  | { quantity?: number; reserved?: number }
-  | Array<{ quantity?: number; reserved?: number }>
-  | null
-  | undefined;
 
 interface ProductCardProduct {
   id: string;
@@ -60,7 +80,16 @@ interface ProductCardProduct {
   images?: string[];
   description?: string;
   category?: { id: string; name: string };
-  inventory?: InventoryLike;
+  /**
+   * Accepts either shape:
+   *   - singular (canonical backend shape)
+   *   - array (legacy shape still emitted by stale type declarations)
+   *
+   * `firstInventory()` normalizes both to a single row before the
+   * stock math runs.
+   */
+  inventory?: ProductInventory | ProductInventory[] | null;
+  inventoryId?: string | null;
   minStock?: number;
   rating?: number;
   reviewCount?: number;
@@ -70,7 +99,6 @@ interface ProductCardProduct {
   tags?: string[];
   createdAt?: string;
   variants?: ProductVariantShape[];
-  inventoryId?: string | null;
 }
 
 interface ProductCardProps {
@@ -84,7 +112,7 @@ interface ProductCardProps {
   onAddToCart?: (
     productId: string,
     variantId?: string,
-    quantity?: number
+    quantity?: number,
   ) => Promise<void> | void;
   onQuickView?: (product: ProductCardProduct) => void;
   onEdit?: (productId: string) => void;
@@ -101,68 +129,70 @@ const PLACEHOLDER_IMAGE =
   'data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7';
 
 /**
- * Read the primary inventory quantity regardless of whether the
- * caller passed a singular object or a legacy array.
+ * Normalize a product's `inventory` field to a single row.
+ *
+ * The canonical backend shape is singular (`Inventory | null`). A
+ * stale web type still declares it as `Inventory[]`. Callers
+ * throughout the app may pass either, so this collapses the two to
+ * "the first row, or null".
+ *
+ * Using the first row (rather than summing) matches the backend's
+ * cart-validation rule: when no variant is selected, the server
+ * checks the product's own inventory row in isolation. It does not
+ * sum across business units.
  */
-function readInventoryTotals(inventory: InventoryLike): {
-  quantity: number;
-  reserved: number;
-} {
-  if (!inventory) return { quantity: 0, reserved: 0 };
-
-  if (Array.isArray(inventory)) {
-    const initial: { quantity: number; reserved: number } = {
-      quantity: 0,
-      reserved: 0,
-    };
-
-    return inventory.reduce<{ quantity: number; reserved: number }>(
-      (acc, inv) => ({
-        quantity: acc.quantity + (inv.quantity ?? 0),
-        reserved: acc.reserved + (inv.reserved ?? 0),
-      }),
-      initial
-    );
-  }
-
-  return {
-    quantity: inventory.quantity ?? 0,
-    reserved: inventory.reserved ?? 0,
-  };
+function firstInventory(
+  inv: ProductInventory | ProductInventory[] | null | undefined,
+): ProductInventory | null {
+  if (!inv) return null;
+  if (Array.isArray(inv)) return inv[0] ?? null;
+  return inv;
 }
 
 /**
- * Compute the effective available stock for a single variant,
- * preferring its linked Inventory row over the denormalized `stock`.
+ * Available stock for a single inventory row.
+ *
+ * Prefers the server-computed `available` field, falls back to
+ * `quantity - reserved`. Never returns a negative number.
  */
-function readSingleVariantStock(
-  variant: ProductVariantShape
+function readAvailable(
+  inventory: ProductInventory | null | undefined,
 ): number {
-  if (variant.inventory) {
-    return Math.max(
-      0,
-      (variant.inventory.quantity ?? 0) -
-        (variant.inventory.reserved ?? 0)
-    );
+  if (!inventory) return 0;
+  if (typeof inventory.available === 'number') {
+    return Math.max(0, inventory.available);
   }
+  const quantity = inventory.quantity ?? 0;
+  const reserved = inventory.reserved ?? 0;
+  return Math.max(0, quantity - reserved);
+}
+
+/**
+ * Effective stock for a single variant.
+ *
+ * Prefers the linked `Inventory` row (the canonical shape), falls
+ * back to the denormalized `stock` field only when no inventory row
+ * is linked.
+ */
+function readVariantStock(variant: ProductVariantShape): number {
+  if (variant.inventory) return readAvailable(variant.inventory);
   return Math.max(0, variant.stock ?? 0);
 }
 
 /**
- * Sum variant available stock for display purposes only.
+ * Sum variant available stock — **display only**.
  *
- * NOTE: this is used for the "+N variant stock" badge. It is NOT
- * used to enable/disable the Add-to-Cart button, because the backend
- * does not sum parent + variants when validating a cart add.
+ * Used for the "+N variant stock" badge. Not used to gate Add-to-Cart
+ * because the backend's cart validation checks the selected variant
+ * (or the parent product) in isolation. It does not sum parent +
+ * variants.
  */
-function readTotalVariantStock(
-  variants: ProductVariantShape[] | undefined
+function sumVariantStockForDisplay(
+  variants: ProductVariantShape[] | undefined,
 ): number {
   if (!variants || variants.length === 0) return 0;
   let total = 0;
-  for (const v of variants) {
-    total += readSingleVariantStock(v);
-  }
+  for (const v of variants) total += readVariantStock(v);
   return total;
 }
 
@@ -173,22 +203,20 @@ function stopEvent(e: React.MouseEvent): void {
 
 /**
  * Extract a human-readable error message from the various shapes the
- * backend emits. The order matters — we check the most specific
- * shapes first.
+ * backend emits. Order matters — most specific first.
  *
  *   1. `{ error: { message } }`          ← cart validation
  *   2. `{ error: string }`
  *   3. `{ message }`
  *   4. `{ errors: [{ field, message }] }` ← Zod field errors
  *   5. `error.message`                    ← axios / JS
- *
- * The backend's "Insufficient stock. Available: 0" arrives as
- * `response.data.error.message`.
  */
-function extractErrorMessage(error: any, fallback: string): string {
+function extractErrorMessage(error: unknown, fallback: string): string {
   if (!error) return fallback;
 
-  const data = error?.response?.data;
+  const anyErr = error as any;
+  const data = anyErr?.response?.data;
+
   if (data) {
     if (typeof data.error === 'string') return data.error;
     if (data.error?.message) return String(data.error.message);
@@ -200,7 +228,7 @@ function extractErrorMessage(error: any, fallback: string): string {
     }
   }
 
-  if (error?.message) return String(error.message);
+  if (anyErr?.message) return String(anyErr.message);
   return fallback;
 }
 
@@ -208,18 +236,16 @@ function extractErrorMessage(error: any, fallback: string): string {
  * True when the backend rejected the request because stock ran out
  * between page load and the click.
  */
-function isInsufficientStockError(error: any): boolean {
-  const message = extractErrorMessage(error, '');
-  return /insufficient stock/i.test(message);
+function isInsufficientStockError(error: unknown): boolean {
+  return /insufficient stock/i.test(extractErrorMessage(error, ''));
 }
 
 /**
  * Extract the "Available: N" number from a stock error message, when
  * present. Returns null if the message doesn't include a number.
  */
-function parseAvailableFromStockError(error: any): number | null {
-  const message = extractErrorMessage(error, '');
-  const match = message.match(/available:\s*(\d+)/i);
+function parseAvailableFromStockError(error: unknown): number | null {
+  const match = extractErrorMessage(error, '').match(/available:\s*(\d+)/i);
   if (!match) return null;
   const parsed = Number(match[1]);
   return Number.isFinite(parsed) ? parsed : null;
@@ -252,14 +278,13 @@ export function ProductCard({
   const [addingToCart, setAddingToCart] = useState(false);
   const [imageErrors, setImageErrors] = useState<Record<string, boolean>>({});
   const [selectedVariantId, setSelectedVariantId] = useState<string | null>(
-    null
+    null,
   );
 
   /**
    * Set to true when the backend rejected a cart add with
    * "Insufficient stock". The card then reflects the server's truth
-   * without needing the parent to refetch. Resets when the component
-   * remounts with a new product.
+   * without needing the parent to refetch.
    */
   const [serverReportedOutOfStock, setServerReportedOutOfStock] =
     useState(false);
@@ -281,16 +306,25 @@ export function ProductCard({
   // DERIVED STOCK / VARIANTS
   // ============================================
 
-  const { quantity, reserved } = readInventoryTotals(product?.inventory);
-  const mainStock = Math.max(0, quantity - reserved);
+  const variants = useMemo(
+    () => product?.variants ?? [],
+    [product?.variants],
+  );
 
-  const variants = product?.variants ?? [];
-  const totalVariantStock = readTotalVariantStock(variants);
+  // Normalize the (possibly-array) product inventory to a single row
+  // once, then reuse it.
+  const productInventory = useMemo(
+    () => firstInventory(product?.inventory),
+    [product?.inventory],
+  );
+
+  const mainStock = readAvailable(productInventory);
+  const totalVariantStock = sumVariantStockForDisplay(variants);
 
   const hasVariants = variants.length > 0;
   const totalVariantCount = variants.length;
   const hasVariantImages = variants.some(
-    (v) => Array.isArray(v.images) && v.images.length > 0
+    (v) => Array.isArray(v.images) && v.images.length > 0,
   );
   const isInventoryLinked = !!product?.inventoryId;
 
@@ -299,7 +333,7 @@ export function ProductCard({
     : null;
 
   /**
-   * The stock value that actually gates the Add-to-Cart button.
+   * The stock value that gates the Add-to-Cart button.
    *
    * The backend validates cart adds against:
    *   - the selected variant's inventory row, when a variant is
@@ -308,12 +342,9 @@ export function ProductCard({
    *
    * It does NOT sum parent + variants. Mirror that rule here so the
    * button's enabled state matches what the server will accept.
-   *
-   * Summing would produce a UI that lets the user click on products
-   * the server will reject with 400 "Insufficient stock".
    */
   const effectiveStock = selectedVariant
-    ? readSingleVariantStock(selectedVariant)
+    ? readVariantStock(selectedVariant)
     : mainStock;
 
   const isOutOfStock = effectiveStock <= 0 || serverReportedOutOfStock;
@@ -342,7 +373,7 @@ export function ProductCard({
       if (imageErrors[url]) return PLACEHOLDER_IMAGE;
       return url;
     },
-    [imageErrors]
+    [imageErrors],
   );
 
   const handleImageError = useCallback((url: string) => {
@@ -350,10 +381,8 @@ export function ProductCard({
   }, []);
 
   const primaryImage =
-    product?.images && product.images.length > 0
-      ? product.images[0]
-      : null;
-  const primaryImageValid = primaryImage && !imageErrors[primaryImage];
+    product?.images && product.images.length > 0 ? product.images[0] : null;
+  const primaryImageValid = !!primaryImage && !imageErrors[primaryImage];
 
   // ============================================
   // HANDLERS
@@ -374,13 +403,7 @@ export function ProductCard({
       }
       if (addingToCart) return;
 
-      /**
-       * ⚠ Declared OUTSIDE the try so the catch block can read it.
-       *   Previously `cleanProductId` lived inside the try, and the
-       *   catch's `cart:update-failed` dispatch referenced a binding
-       *   that had gone out of scope (TS2304). Hoisted here so both
-       *   blocks see the same value.
-       */
+      // Declared OUTSIDE the try so the catch block can read it.
       const cleanProductId = String(productId).trim();
       const variantId = selectedVariantId || undefined;
 
@@ -389,13 +412,9 @@ export function ProductCard({
         if (onAddToCart) {
           await onAddToCart(cleanProductId, variantId, 1);
         } else {
-          // ✅ Authenticated → authenticated cart route.
-          //    Anonymous → guest cart route, backed by the
-          //    `guest_session_id` cookie set by
-          //    `guestSessionMiddleware`.
-          const cart = isAuthenticated
-            ? cartService
-            : guestCartService;
+          // Authenticated → authenticated cart route.
+          // Anonymous   → guest cart route.
+          const cart = isAuthenticated ? cartService : guestCartService;
 
           await cart.addItem({
             productId: cleanProductId,
@@ -406,13 +425,10 @@ export function ProductCard({
           toast.success(`${product.name} added to cart`);
           window.dispatchEvent(new CustomEvent('cart:updated'));
         }
-      } catch (err: any) {
+      } catch (err: unknown) {
         console.error('❌ Failed to add to cart:', err);
 
         if (isInsufficientStockError(err)) {
-          // The server is authoritative. Flip the card to
-          // "Out of Stock" immediately and give the user a
-          // message they can act on.
           setServerReportedOutOfStock(true);
 
           const reported = parseAvailableFromStockError(err);
@@ -429,7 +445,7 @@ export function ProductCard({
                 productId: cleanProductId,
                 reason: 'OUT_OF_STOCK',
               },
-            })
+            }),
           );
           return;
         }
@@ -448,17 +464,15 @@ export function ProductCard({
       onAddToCart,
       product?.name,
       isAuthenticated,
-    ]
+    ],
   );
 
   const handleVariantSelect = useCallback(
     (variantId: string, e: React.MouseEvent) => {
       stopEvent(e);
-      setSelectedVariantId((prev) =>
-        prev === variantId ? null : variantId
-      );
+      setSelectedVariantId((prev) => (prev === variantId ? null : variantId));
     },
-    []
+    [],
   );
 
   const handleQuickView = useCallback(
@@ -470,7 +484,7 @@ export function ProductCard({
         router.push(`/shop/${product.id}`);
       }
     },
-    [onQuickView, product, router, hasValidProductId]
+    [onQuickView, product, router, hasValidProductId],
   );
 
   const handleEdit = useCallback(
@@ -482,7 +496,7 @@ export function ProductCard({
         router.push(`/admin/catalog/edit/${product.id}`);
       }
     },
-    [onEdit, product?.id, router, hasValidProductId]
+    [onEdit, product?.id, router, hasValidProductId],
   );
 
   const handleDelete = useCallback(
@@ -494,7 +508,7 @@ export function ProductCard({
         toast.warning('No delete handler provided');
       }
     },
-    [onDelete, product?.id]
+    [onDelete, product?.id],
   );
 
   const renderStars = useCallback((rating: number = 0) => {
@@ -626,32 +640,35 @@ export function ProductCard({
 
               {hasVariants && (
                 <div className="mt-2 flex flex-wrap gap-1">
-                  {variants.slice(0, 3).map((v) => (
-                    <button
-                      key={v.id}
-                      type="button"
-                      onClick={(e) => handleVariantSelect(v.id, e)}
-                      className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-2xs transition duration-250 focus-ring ${
-                        selectedVariantId === v.id
-                          ? 'bg-brand-600 text-white'
-                          : 'bg-secondary-50 dark:bg-secondary-900/20 text-secondary-700 dark:text-secondary-300 hover:bg-secondary-100 dark:hover:bg-secondary-900/40'
-                      }`}
-                    >
-                      {v.images?.[0] && !imageErrors[v.images[0]] && (
-                        <img
-                          src={getValidImage(v.images[0])}
-                          alt={v.name}
-                          className="w-3 h-3 rounded-full object-cover"
-                          onError={() => handleImageError(v.images![0])}
-                        />
-                      )}
-                      {v.name}
-                      <span className="text-secondary-400">•</span>
-                      <span className="tabular-nums">
-                        {formatCurrency(v.price)}
-                      </span>
-                    </button>
-                  ))}
+                  {variants
+                    .filter((v) => v.isActive)
+                    .slice(0, 3)
+                    .map((v) => (
+                      <button
+                        key={v.id}
+                        type="button"
+                        onClick={(e) => handleVariantSelect(v.id, e)}
+                        className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-2xs transition duration-250 focus-ring ${
+                          selectedVariantId === v.id
+                            ? 'bg-brand-600 text-white'
+                            : 'bg-secondary-50 dark:bg-secondary-900/20 text-secondary-700 dark:text-secondary-300 hover:bg-secondary-100 dark:hover:bg-secondary-900/40'
+                        }`}
+                      >
+                        {v.images?.[0] && !imageErrors[v.images[0]] && (
+                          <img
+                            src={getValidImage(v.images[0])}
+                            alt={v.name}
+                            className="w-3 h-3 rounded-full object-cover"
+                            onError={() => handleImageError(v.images![0])}
+                          />
+                        )}
+                        {v.name}
+                        <span className="text-secondary-400">•</span>
+                        <span className="tabular-nums">
+                          {formatCurrency(v.price)}
+                        </span>
+                      </button>
+                    ))}
                   {totalVariantCount > 3 && (
                     <span className="text-2xs tabular-nums text-gray-400 dark:text-gray-500">
                       +{totalVariantCount - 3} more
@@ -1112,7 +1129,7 @@ export function ProductCard({
           <div className="mt-1">{renderStars(product.rating)}</div>
         )}
 
-        {/* Variant quick-select */}
+        {/* Variant quick-select — only when 3 or fewer active variants */}
         {hasVariants && totalVariantCount <= 3 && (
           <div className="mt-2 flex flex-wrap gap-1">
             {variants

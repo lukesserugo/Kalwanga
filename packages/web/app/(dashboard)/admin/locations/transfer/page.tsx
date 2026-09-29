@@ -1,6 +1,6 @@
-'use client';
-
 // packages/web/app/(dashboard)/admin/locations/transfer/page.tsx
+
+'use client';
 
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
@@ -18,7 +18,6 @@ import {
   Warehouse,
 } from 'lucide-react';
 
-// ✅ Relative paths — six levels up to packages/web/, then into each folder.
 import { api } from '../../../../../services/api';
 import { locationService } from '../../../../../services/locationService';
 import { useToast } from '../../../../../hooks/useToast';
@@ -97,10 +96,29 @@ const LOCATION_ICONS: Record<LocationType, React.ReactNode> = {
 // ============================================
 // PAGE
 // ============================================
+//
+// ⚠ `useToast()` in this codebase returns an imperative API, NOT a
+//   `{ toast }` tuple:
+//
+//     {
+//       toasts: Toast[];
+//       showToast(message, type?, duration?) => string;
+//       removeToast(id) => void;
+//       clearToasts() => void;
+//     }
+//
+//   The previous version destructured `{ toast }` — which is `undefined`
+//   at runtime — and then called `toast({ title, description, variant })`.
+//   TypeScript flagged the destructure with TS2339. We now use
+//   `showToast(message, type)` which is the actual contract.
+//
+//   If you later adopt a react-hot-toast-style `useToast` that returns
+//   `{ toast }`, revert these call sites. But under the current hook,
+//   `showToast` is the only entry point.
 
 export default function LocationTransferPage() {
   const router = useRouter();
-  const { toast } = useToast();
+  const { showToast } = useToast();
 
   // ---- locations ----
   const [locations, setLocations] = useState<Location[]>([]);
@@ -131,16 +149,16 @@ export default function LocationTransferPage() {
         setLocationsLoading(true);
         const rows = await locationService.list();
         if (!cancelled) {
-          // ✅ `l` is now typed because `Location` resolves
-          setLocations(rows.filter((l: Location) => l.isActive && !l.deletedAt));
+          setLocations(
+            rows.filter((l: Location) => l.isActive && !l.deletedAt),
+          );
         }
-      } catch (err) {
+      } catch {
         if (!cancelled) {
-          toast({
-            title: 'Failed to load locations',
-            description: 'Please refresh and try again.',
-            variant: 'destructive',
-          });
+          showToast(
+            'Failed to load locations. Please refresh and try again.',
+            'error',
+          );
         }
       } finally {
         if (!cancelled) setLocationsLoading(false);
@@ -149,7 +167,7 @@ export default function LocationTransferPage() {
     return () => {
       cancelled = true;
     };
-  }, [toast]);
+  }, [showToast]);
 
   // ============================================
   // LOAD INVENTORY WHEN SOURCE LOCATION CHANGES
@@ -172,16 +190,15 @@ export default function LocationTransferPage() {
       } catch (err) {
         console.warn('❌ Failed to load inventory for location:', err);
         setInventory([]);
-        toast({
-          title: 'Failed to load inventory',
-          description: 'Stock for the selected source could not be loaded.',
-          variant: 'destructive',
-        });
+        showToast(
+          'Stock for the selected source could not be loaded.',
+          'error',
+        );
       } finally {
         setInventoryLoading(false);
       }
     },
-    [toast]
+    [showToast],
   );
 
   useEffect(() => {
@@ -200,12 +217,12 @@ export default function LocationTransferPage() {
 
   const fromLocation = useMemo(
     () => locations.find((l) => l.id === form.fromLocationId) ?? null,
-    [locations, form.fromLocationId]
+    [locations, form.fromLocationId],
   );
 
   const toLocation = useMemo(
     () => locations.find((l) => l.id === form.toLocationId) ?? null,
-    [locations, form.toLocationId]
+    [locations, form.toLocationId],
   );
 
   const filteredInventory = useMemo(() => {
@@ -227,12 +244,12 @@ export default function LocationTransferPage() {
 
   const totalUnits = useMemo(
     () => lines.reduce((sum, l) => sum + (l.quantity || 0), 0),
-    [lines]
+    [lines],
   );
 
   const hasStockWarning = useMemo(
     () => lines.some((l) => l.quantity > l.available),
-    [lines]
+    [lines],
   );
 
   // ============================================
@@ -241,7 +258,7 @@ export default function LocationTransferPage() {
 
   const setField = <K extends keyof TransferFormState>(
     key: K,
-    value: TransferFormState[K]
+    value: TransferFormState[K],
   ) => {
     setForm((prev) => ({ ...prev, [key]: value }));
     setErrors((prev) => {
@@ -253,7 +270,6 @@ export default function LocationTransferPage() {
   };
 
   const addLine = (row: InventoryRow) => {
-    // ✅ Guard: narrow `row.product` once, then use the local const.
     const product = row.product;
     if (!product) return;
 
@@ -264,7 +280,7 @@ export default function LocationTransferPage() {
         return prev.map((l) =>
           l.key === key
             ? { ...l, quantity: Math.min(l.quantity + 1, l.available) }
-            : l
+            : l,
         );
       }
       return [
@@ -293,8 +309,8 @@ export default function LocationTransferPage() {
               ...l,
               quantity: Number.isFinite(qty) ? Math.max(1, qty) : 1,
             }
-          : l
-      )
+          : l,
+      ),
     );
   };
 
@@ -305,8 +321,10 @@ export default function LocationTransferPage() {
   const validate = (): boolean => {
     const next: Record<string, string> = {};
 
-    if (!form.fromLocationId) next.fromLocationId = 'Source location is required';
-    if (!form.toLocationId) next.toLocationId = 'Destination location is required';
+    if (!form.fromLocationId)
+      next.fromLocationId = 'Source location is required';
+    if (!form.toLocationId)
+      next.toLocationId = 'Destination location is required';
     if (
       form.fromLocationId &&
       form.toLocationId &&
@@ -314,7 +332,8 @@ export default function LocationTransferPage() {
     ) {
       next.toLocationId = 'Source and destination must be different';
     }
-    if (lines.length === 0) next.lines = 'Add at least one product to transfer';
+    if (lines.length === 0)
+      next.lines = 'Add at least one product to transfer';
 
     for (const line of lines) {
       if (line.quantity > line.available) {
@@ -329,10 +348,7 @@ export default function LocationTransferPage() {
 
   const handleSubmit = async () => {
     if (!validate()) {
-      toast({
-        title: 'Please fix the highlighted fields',
-        variant: 'destructive',
-      });
+      showToast('Please fix the highlighted fields.', 'error');
       return;
     }
 
@@ -356,12 +372,12 @@ export default function LocationTransferPage() {
         })),
       });
 
-      toast({
-        title: 'Transfer initiated',
-        description: `${totalUnits} unit(s) moving from ${
+      showToast(
+        `Transfer initiated: ${totalUnits} unit(s) moving from ${
           fromLocation?.name ?? 'source'
         } to ${toLocation?.name ?? 'destination'}.`,
-      });
+        'success',
+      );
 
       router.push('/admin/locations');
       router.refresh();
@@ -370,11 +386,7 @@ export default function LocationTransferPage() {
         err?.response?.data?.message ||
         err?.message ||
         'Transfer could not be completed.';
-      toast({
-        title: 'Transfer failed',
-        description: message,
-        variant: 'destructive',
-      });
+      showToast(message, 'error');
     } finally {
       setSubmitting(false);
     }
@@ -464,7 +476,9 @@ export default function LocationTransferPage() {
                   onChange={(e) => setField('toLocationId', e.target.value)}
                   disabled={locationsLoading}
                   className={`w-full rounded-lg border px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500 ${
-                    errors.toLocationId ? 'border-danger-400' : 'border-gray-300'
+                    errors.toLocationId
+                      ? 'border-danger-400'
+                      : 'border-gray-300'
                   }`}
                 >
                   <option value="">
@@ -556,7 +570,6 @@ export default function LocationTransferPage() {
                     </p>
                   ) : (
                     filteredInventory.map((row) => {
-                      // ✅ Narrow once so both usages below see a defined product.
                       const product = row.product;
                       const name = product?.name ?? 'Unknown product';
                       const sku = row.variant?.sku ?? product?.sku ?? '—';
@@ -651,11 +664,13 @@ export default function LocationTransferPage() {
                               onChange={(e) =>
                                 updateLineQty(
                                   line.key,
-                                  parseInt(e.target.value, 10)
+                                  parseInt(e.target.value, 10),
                                 )
                               }
                               className={`w-20 rounded-md border px-2 py-1 text-right text-sm focus:outline-none focus:ring-2 focus:ring-brand-500 tabular-nums ${
-                                over ? 'border-danger-400' : 'border-gray-300'
+                                over
+                                  ? 'border-danger-400'
+                                  : 'border-gray-300'
                               }`}
                             />
                           </td>
@@ -790,7 +805,9 @@ export default function LocationTransferPage() {
               <button
                 type="button"
                 onClick={handleSubmit}
-                disabled={submitting || hasStockWarning || lines.length === 0}
+                disabled={
+                  submitting || hasStockWarning || lines.length === 0
+                }
                 className="mt-5 inline-flex w-full items-center justify-center gap-2 rounded-lg bg-brand-500 px-4 py-2 text-sm font-medium text-white hover:bg-brand-600 disabled:cursor-not-allowed disabled:bg-gray-300 focus-ring"
               >
                 {submitting ? (
@@ -818,7 +835,9 @@ export default function LocationTransferPage() {
 
             {/* Help note */}
             <div className="rounded-xl border border-gray-200 bg-gray-50 p-4 text-xs text-gray-600">
-              <p className="mb-1 font-medium text-gray-700">How transfers work</p>
+              <p className="mb-1 font-medium text-gray-700">
+                How transfers work
+              </p>
               <p>
                 Stock is deducted from the source and added to the
                 destination in a single atomic operation. Both locations
@@ -831,4 +850,3 @@ export default function LocationTransferPage() {
     </div>
   );
 }
-

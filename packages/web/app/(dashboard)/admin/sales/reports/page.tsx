@@ -2,7 +2,7 @@
 
 'use client';
 
-import { useState, useEffect, useCallback, useMemo } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import { useUser } from '@clerk/nextjs';
 import { motion, AnimatePresence } from 'framer-motion';
@@ -28,6 +28,44 @@ import { saleService } from '../../../../../services/saleService';
 import { formatCurrency } from '../../../../../utils/formatters';
 import { useAuth } from '../../../../../hooks/useAuth';
 import { toast } from '../../../../../utils/toast-manager';
+import { api } from '../../../../../services/api';
+
+// ============================================
+// LOCAL SERVICE EXTENSIONS
+// ============================================
+//
+// The frontend `saleService` does not declare `exportSales`. The
+// backend exposes it at:
+//
+//   GET /sales/export?startDate=…&endDate=…&format=…
+//     → { success, data: [...], format, total, message }
+//
+// We call it through the shared `api` client rather than mutating the
+// shared service.
+
+async function exportSalesRemote(params: {
+  startDate?: string;
+  endDate?: string;
+  format?: 'json' | 'csv' | 'excel' | 'pdf';
+}): Promise<{ data: any[]; total?: number; format?: string }> {
+  const response = await api.get<any>('/sales/export', { params });
+  const body =
+    response && typeof response === 'object' && 'data' in response
+      ? (response as any).data
+      : response;
+
+  if (body && typeof body === 'object' && Array.isArray(body.data)) {
+    return {
+      data: body.data,
+      total: typeof body.total === 'number' ? body.total : body.data.length,
+      format: typeof body.format === 'string' ? body.format : params.format,
+    };
+  }
+  if (Array.isArray(body)) {
+    return { data: body, total: body.length, format: params.format };
+  }
+  return { data: [], total: 0, format: params.format };
+}
 
 // ============================================
 // INTERFACES
@@ -103,9 +141,8 @@ interface SalesReportData {
 
 const toIso = (d: Date): string => d.toISOString().split('T')[0];
 
-/** Map the UI's groupBy to what `getAggregatedSales` accepts. */
 const toAggregateGroupBy = (
-  group: GroupBy
+  group: GroupBy,
 ): 'hour' | 'day' | 'week' | 'month' => {
   if (group === 'quarter' || group === 'year') return 'month';
   return group;
@@ -142,7 +179,7 @@ export default function SalesReportsPage() {
   const [filters, setFilters] = useState<ReportFilter>({
     dateRange: 'this_month',
     startDate: toIso(
-      new Date(new Date().getFullYear(), new Date().getMonth(), 1)
+      new Date(new Date().getFullYear(), new Date().getMonth(), 1),
     ),
     endDate: toIso(new Date()),
     reportType: 'overview',
@@ -152,7 +189,7 @@ export default function SalesReportsPage() {
 
   const [showExportModal, setShowExportModal] = useState(false);
   const [exportFormat, setExportFormat] = useState<'csv' | 'excel' | 'pdf'>(
-    'csv'
+    'csv',
   );
   const [activeTab, setActiveTab] = useState<
     'overview' | 'trends' | 'products' | 'payments'
@@ -175,9 +212,6 @@ export default function SalesReportsPage() {
   // ============================================
   // GENERATE
   // ============================================
-  //
-  // Composed entirely from endpoints the backend exposes under
-  // `/api/sales/*`. Nothing here hits a fictional `/api/reports/*`.
 
   const generateReport = useCallback(async () => {
     if (!authUser) return;
@@ -189,7 +223,6 @@ export default function SalesReportsPage() {
       const startIso = new Date(`${filters.startDate}T00:00:00.000Z`);
       const endIso = new Date(`${filters.endDate}T23:59:59.999Z`);
 
-      // ── Parallel fetches ────────────────────────────────────
       const [
         stats,
         analytics,
@@ -217,11 +250,23 @@ export default function SalesReportsPage() {
             return null;
           }),
 
-        saleService
-          .getAggregatedSales({
-            startDate: startIso.toISOString(),
-            endDate: endIso.toISOString(),
-            groupBy: toAggregateGroupBy(filters.groupBy),
+        // NOTE: the frontend service does not declare
+        // `getAggregatedSales`. Use the same shape the backend
+        // exposes at `GET /sales/aggregate` via the shared api client.
+        api
+          .get<any>('/sales/aggregate', {
+            params: {
+              startDate: startIso.toISOString(),
+              endDate: endIso.toISOString(),
+              groupBy: toAggregateGroupBy(filters.groupBy),
+            },
+          })
+          .then((response) => {
+            const body =
+              response && typeof response === 'object' && 'data' in response
+                ? (response as any).data
+                : response;
+            return Array.isArray(body) ? body : body?.data ?? [];
           })
           .catch((err) => {
             console.warn('getAggregatedSales failed:', err);
@@ -292,7 +337,7 @@ export default function SalesReportsPage() {
         : [];
       const topProductsRevenue = rawTopProducts.reduce(
         (sum: number, p: any) => sum + (p._sum?.total ?? p.total ?? 0),
-        0
+        0,
       );
       const topProducts = rawTopProducts.map((p: any) => {
         const revenue = p._sum?.total ?? p.total ?? 0;
@@ -310,29 +355,35 @@ export default function SalesReportsPage() {
       });
 
       const totalPaymentRevenue = Array.isArray(paymentMethods)
-        ? paymentMethods.reduce((sum: number, m: any) => sum + (m.total ?? 0), 0)
+        ? paymentMethods.reduce(
+            (sum: number, m: any) => sum + (m.total ?? 0),
+            0,
+          )
         : 0;
       const normalizedPaymentMethods = Array.isArray(paymentMethods)
         ? paymentMethods.map((m: any) => ({
-            method: humanizePaymentMethod(m.paymentMethod ?? m.method ?? 'OTHER'),
+            method: humanizePaymentMethod(
+              m.paymentMethod ?? m.method ?? 'OTHER',
+            ),
             count: m.count ?? 0,
             total: m.total ?? 0,
             percentage:
               m.percentage ??
               (totalPaymentRevenue > 0
-                ? Math.round(((m.total ?? 0) / totalPaymentRevenue) * 1000) / 10
+                ? Math.round(((m.total ?? 0) / totalPaymentRevenue) * 1000) /
+                  10
                 : 0),
           }))
         : [];
 
       const rawCategoryBreakdown = Array.isArray(
-        (summary as any)?.categoryBreakdown
+        (summary as any)?.categoryBreakdown,
       )
         ? (summary as any).categoryBreakdown
         : [];
       const totalCategoryRevenue = rawCategoryBreakdown.reduce(
         (sum: number, c: any) => sum + (c.revenue ?? 0),
-        0
+        0,
       );
       const categoryBreakdown = rawCategoryBreakdown.map((c: any) => ({
         category: c.categoryName ?? c.categoryId ?? c.name ?? 'Uncategorized',
@@ -458,24 +509,20 @@ export default function SalesReportsPage() {
   };
 
   // ============================================
-  // EXPORT — via the real sales export endpoint
+  // EXPORT
   // ============================================
 
   const handleDownload = async () => {
     try {
       setDownloading(true);
 
-      const result = await saleService.exportSales({
+      const result = await exportSalesRemote({
         startDate: filters.startDate,
         endDate: filters.endDate,
-        format: exportFormat,
+        format: 'json',
       });
 
-      // The backend returns `{ data: [...], format, total, ... }` for
-      // JSON, or a raw list for other formats. Normalise to a CSV
-      // string when we didn't get a Blob back.
-      const rowsData: any[] =
-        (result as any)?.data || (Array.isArray(result) ? result : []);
+      const rowsData: any[] = Array.isArray(result.data) ? result.data : [];
 
       const headers = [
         'Receipt',
@@ -518,8 +565,8 @@ export default function SalesReportsPage() {
         exportFormat === 'csv'
           ? 'csv'
           : exportFormat === 'excel'
-          ? 'xlsx'
-          : 'pdf';
+            ? 'xlsx'
+            : 'pdf';
       a.download = `sales-report-${toIso(new Date())}.${extension}`;
       document.body.appendChild(a);
       a.click();
@@ -807,7 +854,8 @@ function SummaryCard({
   color,
 }: SummaryCardProps) {
   const colors: Record<string, string> = {
-    brand: 'bg-brand-50 dark:bg-brand-900/20 text-brand-600 dark:text-brand-400',
+    brand:
+      'bg-brand-50 dark:bg-brand-900/20 text-brand-600 dark:text-brand-400',
     'brand-accent':
       'bg-brand-accent-50 dark:bg-brand-accent-900/20 text-brand-accent-600 dark:text-brand-accent-400',
     secondary:
@@ -858,12 +906,11 @@ function SummaryCard({
 function OverviewTab({ data }: { data: SalesReportData }) {
   const maxHourlyRevenue = Math.max(
     ...data.hourDistribution.map((h) => h.revenue),
-    1
+    1,
   );
 
   return (
     <div className="space-y-6">
-      {/* Category Breakdown */}
       {data.categoryBreakdown.length > 0 && (
         <div className="card-brand p-6">
           <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-4 flex items-center gap-2">
@@ -897,7 +944,6 @@ function OverviewTab({ data }: { data: SalesReportData }) {
         </div>
       )}
 
-      {/* Hour Distribution */}
       <div className="card-brand p-6">
         <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-4 flex items-center gap-2">
           <Clock className="w-5 h-5 text-brand-accent-500" />
@@ -911,7 +957,7 @@ function OverviewTab({ data }: { data: SalesReportData }) {
                 style={{
                   height: `${Math.max(
                     4,
-                    (hour.revenue / maxHourlyRevenue) * 100
+                    (hour.revenue / maxHourlyRevenue) * 100,
                   )}px`,
                   width: '100%',
                 }}

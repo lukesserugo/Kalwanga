@@ -2,7 +2,7 @@
 
 'use client';
 
-import { useState, useEffect, useCallback, useMemo } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import { useUser } from '@clerk/nextjs';
 import { motion, AnimatePresence } from 'framer-motion';
@@ -16,21 +16,14 @@ import {
   ChevronRight,
   XCircle,
   CheckCircle,
-  Clock,
   AlertCircle,
   Download,
   Loader2,
-  Users,
-  DollarSign,
   Package,
   FileText,
-  Calendar,
   Mail,
   Send,
-  Receipt as ReceiptIcon,
-  CreditCard,
   User,
-  Phone,
   Mail as MailIcon,
   Copy,
   Check,
@@ -49,6 +42,85 @@ import {
 } from '../../../../../utils/formatters';
 import { useAuth } from '../../../../../hooks/useAuth';
 import { toast } from '../../../../../utils/toast-manager';
+import { api } from '../../../../../services/api';
+
+// ============================================
+// LOCAL SERVICE EXTENSIONS
+// ============================================
+//
+// The frontend `saleService` does not declare `exportSales`,
+// `sendReceiptEmail`, or `voidSale`. All three routes exist on the
+// backend:
+//
+//   GET    /sales/export                         → { success, data: [...] }
+//   POST   /sales/:id/email-receipt              → { success, data, message }
+//   POST   /sales/:id/void                       → { success, data, message }
+//
+// We call them through the shared `api` client (the same client
+// `saleService` uses) rather than mutating the shared service from
+// this page. When the service gains these methods, swap the local
+// helpers for direct service calls.
+
+async function exportSalesRemote(params: {
+  startDate?: string;
+  endDate?: string;
+  format?: 'json' | 'csv' | 'excel' | 'pdf';
+}): Promise<{ data: any[]; total?: number; format?: string }> {
+  const response = await api.get<any>('/sales/export', { params });
+  const body =
+    response && typeof response === 'object' && 'data' in response
+      ? (response as any).data
+      : response;
+
+  if (body && typeof body === 'object' && Array.isArray(body.data)) {
+    return {
+      data: body.data,
+      total: typeof body.total === 'number' ? body.total : body.data.length,
+      format: typeof body.format === 'string' ? body.format : params.format,
+    };
+  }
+  if (Array.isArray(body)) {
+    return { data: body, total: body.length, format: params.format };
+  }
+  return { data: [], total: 0, format: params.format };
+}
+
+async function sendReceiptEmailRemote(
+  saleId: string,
+  email: string,
+): Promise<{ success: boolean; data?: any; message?: string }> {
+  if (!saleId) throw new Error('Sale ID is required');
+  if (!email) throw new Error('Email is required');
+  const response = await api.post<any>(`/sales/${saleId}/email-receipt`, {
+    email,
+  });
+  const body =
+    response && typeof response === 'object' && 'data' in response
+      ? (response as any).data
+      : response;
+  if (body && typeof body === 'object' && 'success' in body) {
+    return body as { success: boolean; data?: any; message?: string };
+  }
+  return { success: true, data: body };
+}
+
+async function voidSaleRemote(
+  saleId: string,
+  reason: string,
+): Promise<{ success: boolean; data?: any; message?: string }> {
+  if (!saleId) throw new Error('Sale ID is required');
+  const response = await api.post<any>(`/sales/${saleId}/void`, {
+    reason: reason || undefined,
+  });
+  const body =
+    response && typeof response === 'object' && 'data' in response
+      ? (response as any).data
+      : response;
+  if (body && typeof body === 'object' && 'success' in body) {
+    return body as { success: boolean; data?: any; message?: string };
+  }
+  return { success: true, data: body };
+}
 
 // ============================================
 // INTERFACES
@@ -110,9 +182,6 @@ interface Receipt {
   terminalId?: string;
   receiptType: 'sale' | 'refund' | 'return';
 
-  // ── Promotion / loyalty breakdown ─────────────────────────
-  // Mirrors the five audit columns on `Sale`. Optional so receipts
-  // created before the migration still type-check.
   discountType?: string | null;
   promotionCode?: string | null;
   promotionDiscount?: number;
@@ -142,10 +211,9 @@ interface ReceiptStats {
 }
 
 // ============================================
-// HELPERS — map a Sale from the backend to a Receipt
+// HELPERS
 // ============================================
 
-/** Map backend payment method to a receipt payment method. */
 function normalizePaymentMethod(raw: string): ReceiptPaymentMethod {
   const value = (raw || 'CASH').toUpperCase();
   switch (value) {
@@ -164,7 +232,6 @@ function normalizePaymentMethod(raw: string): ReceiptPaymentMethod {
   }
 }
 
-/** Map backend sale status to a receipt status. */
 function normalizeReceiptStatus(raw: string): Receipt['status'] {
   const value = (raw || 'COMPLETED').toUpperCase();
   switch (value) {
@@ -184,14 +251,6 @@ function normalizeReceiptStatus(raw: string): Receipt['status'] {
   }
 }
 
-/**
- * Map a raw sale object (from saleService) → Receipt shape used by
- * this page.
- *
- * Uses `saleService.extractBreakdown()` to pull the five promotion /
- * loyalty audit fields off the sale, so the receipt carries the same
- * breakdown every other view does.
- */
 function saleToReceipt(sale: any): Receipt {
   const items: ReceiptItem[] = (sale.items || []).map((item: any) => ({
     id: item.id,
@@ -229,7 +288,7 @@ function saleToReceipt(sale: any): Receipt {
     paidAmount: sale.paidAmount || 0,
     changeAmount: sale.changeAmount || 0,
     paymentMethod: normalizePaymentMethod(
-      payment.paymentMethod || sale.paymentMethod || 'CASH'
+      payment.paymentMethod || sale.paymentMethod || 'CASH',
     ),
     status: normalizeReceiptStatus(sale.status),
     notes: sale.notes,
@@ -248,18 +307,16 @@ function saleToReceipt(sale: any): Receipt {
     cashierName: sale.cashierName
       ? sale.cashierName
       : sale.user
-      ? `${sale.user.firstName || ''} ${sale.user.lastName || ''}`.trim()
-      : undefined,
+        ? `${sale.user.firstName || ''} ${sale.user.lastName || ''}`.trim()
+        : undefined,
     cashierId: sale.userId,
     terminalId: sale.cashRegister?.code || undefined,
     receiptType:
       sale.status === 'REFUNDED'
         ? 'refund'
         : sale.status === 'RETURNED'
-        ? 'return'
-        : 'sale',
-
-    // Breakdown
+          ? 'return'
+          : 'sale',
     discountType: breakdown.discountType ?? null,
     promotionCode: breakdown.promotionCode ?? null,
     promotionDiscount: breakdown.promotionDiscount ?? 0,
@@ -269,7 +326,7 @@ function saleToReceipt(sale: any): Receipt {
 }
 
 // ============================================
-// STAT CARD COMPONENT
+// SUB-COMPONENTS
 // ============================================
 
 function StatCard({
@@ -368,7 +425,8 @@ const getPaymentMethodColor = (method: string): string => {
       'bg-brand-accent-100 dark:bg-brand-accent-900/30 text-brand-accent-700 dark:text-brand-accent-400',
     LOYALTY_POINTS:
       'bg-warning-100 dark:bg-warning-900/30 text-warning-700 dark:text-warning-400',
-    CRYPTO: 'bg-secondary-100 dark:bg-secondary-900/30 text-secondary-700 dark:text-secondary-400',
+    CRYPTO:
+      'bg-secondary-100 dark:bg-secondary-900/30 text-secondary-700 dark:text-secondary-400',
     CHECK: 'bg-gray-100 dark:bg-gray-700/50 text-gray-700 dark:text-gray-400',
   };
   return (
@@ -460,10 +518,9 @@ export default function ReceiptsPage() {
   const [downloadingPdf, setDownloadingPdf] = useState(false);
   const [copied, setCopied] = useState(false);
 
-  // Permissions
   const userRole = (authUser?.role as string) || 'EMPLOYEE';
   const canManageReceipts = ['SUPER_ADMIN', 'ADMIN', 'MANAGER'].includes(
-    userRole
+    userRole,
   );
   const canViewReceipts = [
     'SUPER_ADMIN',
@@ -486,7 +543,7 @@ export default function ReceiptsPage() {
   }, [isLoaded, isSignedIn, router, canViewReceipts]);
 
   // ============================================
-  // FETCH (via saleService — talks to :3001 with Clerk auth)
+  // FETCH
   // ============================================
 
   const fetchReceipts = useCallback(
@@ -511,7 +568,6 @@ export default function ReceiptsPage() {
           sortOrder: 'desc',
         };
 
-        // Map receipt status filter → sale status filter
         if (filters.status !== 'all') {
           switch (filters.status) {
             case 'issued':
@@ -528,7 +584,6 @@ export default function ReceiptsPage() {
           }
         }
 
-        // ✅ Parallel: page rows + server-side aggregates.
         const [response, aggregates] = await Promise.all([
           saleService.getAllSales(params),
           saleService
@@ -549,13 +604,9 @@ export default function ReceiptsPage() {
         setTotalReceipts((response as any).total || mapped.length);
         setTotalPages((response as any).totalPages || 1);
 
-        // Per-status counts stay page-level (backend aggregates don't
-        // include them). Total amount and average come from the
-        // server-side aggregate when available, otherwise fall back
-        // to the page sum.
         const pageTotal = mapped.reduce(
           (sum: number, receipt: Receipt) => sum + (receipt.total || 0),
-          0
+          0,
         );
         const serverTotalRevenue = (aggregates as any)?.totalRevenue ?? null;
         const serverTotalSales = (aggregates as any)?.totalSales ?? null;
@@ -589,8 +640,8 @@ export default function ReceiptsPage() {
             serverTotalSales && serverTotalRevenue
               ? serverTotalRevenue / serverTotalSales
               : mapped.length > 0
-              ? pageTotal / mapped.length
-              : 0,
+                ? pageTotal / mapped.length
+                : 0,
           byPaymentMethod,
         };
         setStats(computed);
@@ -603,7 +654,7 @@ export default function ReceiptsPage() {
         setIsRefreshing(false);
       }
     },
-    [authUser, filters]
+    [authUser, filters],
   );
 
   useEffect(() => {
@@ -624,7 +675,7 @@ export default function ReceiptsPage() {
 
   const handleDateChange = (
     field: 'startDate' | 'endDate',
-    value: string
+    value: string,
   ) => {
     setFilters((prev) => ({ ...prev, [field]: value, page: 1 }));
   };
@@ -647,14 +698,18 @@ export default function ReceiptsPage() {
 
     try {
       setProcessing(true);
-      await saleService.sendReceiptEmail(selectedReceipt.saleId, target);
+      await sendReceiptEmailRemote(selectedReceipt.saleId, target);
       toast.success(`Receipt sent to ${target}`);
       setShowEmailModal(false);
       setEmailAddress('');
       fetchReceipts(true);
     } catch (error: any) {
       console.error('Failed to send receipt email:', error);
-      toast.error(error.message || 'Failed to send receipt email');
+      toast.error(
+        error?.response?.data?.message ||
+          error?.message ||
+          'Failed to send receipt email',
+      );
     } finally {
       setProcessing(false);
     }
@@ -701,45 +756,23 @@ export default function ReceiptsPage() {
     }
   };
 
-  /**
-   * Void a receipt.
-   *
-   * Uses `saleService.voidSale` — the backend method that
-   * sets `Sale.status = 'VOID'` and **appends** the reason to the
-   * existing notes instead of replacing them.
-   *
-   * If `voidSale` isn't available on the web service, we fall back to
-   * `updateSale` with a merged notes string so we never clobber
-   * pre-existing notes.
-   */
   const handleVoidReceipt = async () => {
     if (!selectedReceipt || !voidReason.trim()) return;
 
     try {
       setProcessing(true);
-
-      const svc = saleService as any;
-      if (typeof svc.voidSale === 'function') {
-        await svc.voidSale(selectedReceipt.saleId, voidReason.trim());
-      } else {
-        // Merge notes instead of replacing them.
-        const existing = (selectedReceipt.notes || '').trim();
-        const appended = existing
-          ? `${existing}\nVoided: ${voidReason.trim()}`
-          : `Voided: ${voidReason.trim()}`;
-        await saleService.updateSale(selectedReceipt.saleId, {
-          status: 'VOID',
-          notes: appended,
-        } as any);
-      }
-
+      await voidSaleRemote(selectedReceipt.saleId, voidReason.trim());
       toast.success('Receipt voided successfully');
       setShowVoidModal(false);
       setVoidReason('');
       fetchReceipts(true);
     } catch (error: any) {
       console.error('Failed to void receipt:', error);
-      toast.error(error.message || 'Failed to void receipt');
+      toast.error(
+        error?.response?.data?.message ||
+          error?.message ||
+          'Failed to void receipt',
+      );
     } finally {
       setProcessing(false);
     }
@@ -752,12 +785,6 @@ export default function ReceiptsPage() {
     toast.success('Receipt number copied');
   };
 
-  /**
-   * Export all receipts in the current date range.
-   *
-   * Uses the server-side export so the whole result set is included,
-   * not just the current page.
-   */
   const handleExport = async () => {
     try {
       setExporting(true);
@@ -765,13 +792,13 @@ export default function ReceiptsPage() {
       const startDate = filters.startDate || undefined;
       const endDate = filters.endDate || undefined;
 
-      const result = await saleService.exportSales({
+      const result = await exportSalesRemote({
         startDate,
         endDate,
-        format: 'csv',
+        format: 'json',
       });
 
-      const rowsData: any[] = (result as any)?.data || [];
+      const rowsData: any[] = Array.isArray(result.data) ? result.data : [];
 
       if (rowsData.length === 0) {
         toast.error('No receipts to export');
@@ -844,7 +871,7 @@ export default function ReceiptsPage() {
   };
 
   // ============================================
-  // RECEIPT HTML (for print / PDF)
+  // RECEIPT HTML
   // ============================================
 
   const generateReceiptHTML = (receipt: Receipt): string => {
@@ -939,17 +966,17 @@ export default function ReceiptsPage() {
                 <span class="qty">x${item.quantity}</span>
                 <span class="price">$${item.total.toFixed(2)}</span>
               </div>
-            `
+            `,
               )
               .join('')}
           </div>
 
           <div class="totals">
             <div class="row"><span>Subtotal</span><span>$${receipt.subtotal.toFixed(
-              2
+              2,
             )}</span></div>
             <div class="row"><span>Tax</span><span>$${receipt.tax.toFixed(
-              2
+              2,
             )}</span></div>
             ${promotionLine}
             ${loyaltyLine}
@@ -960,10 +987,10 @@ export default function ReceiptsPage() {
             </div>
             <div class="payment-info">
               <div class="row"><span>Paid</span><span>$${receipt.paidAmount.toFixed(
-                2
+                2,
               )}</span></div>
               <div class="row"><span>Change</span><span>$${receipt.changeAmount.toFixed(
-                2
+                2,
               )}</span></div>
               <div class="row"><span>Payment</span><span>${
                 receipt.paymentMethod
@@ -1247,7 +1274,7 @@ export default function ReceiptsPage() {
                         <div className="flex items-center gap-3">
                           <span
                             className={`px-2.5 py-1 rounded-full text-xs font-medium ${getStatusColor(
-                              receipt.status
+                              receipt.status,
                             )} flex items-center gap-1`}
                           >
                             <StatusIcon status={receipt.status} />
@@ -1280,7 +1307,7 @@ export default function ReceiptsPage() {
                             <div className="flex flex-wrap gap-2">
                               <span
                                 className={`px-2 py-1 rounded-full text-xs font-medium ${getPaymentMethodColor(
-                                  receipt.paymentMethod
+                                  receipt.paymentMethod,
                                 )} flex items-center gap-1`}
                               >
                                 {receipt.paymentMethod
@@ -1538,7 +1565,6 @@ function DetailModal({
         </div>
 
         <div className="p-6 space-y-6">
-          {/* Preview */}
           <div className="bg-gray-50 dark:bg-gray-700/50 rounded-lg p-4 max-w-sm mx-auto">
             <div className="text-center">
               <p className="font-bold text-gray-900 dark:text-white">
@@ -1650,7 +1676,6 @@ function DetailModal({
             </div>
           </div>
 
-          {/* Breakdown summary */}
           {hasBreakdown && (
             <section
               className="rounded-lg border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800/50 p-3 space-y-1.5"
@@ -1694,7 +1719,6 @@ function DetailModal({
             </section>
           )}
 
-          {/* Info */}
           <div className="grid grid-cols-2 gap-4">
             <div>
               <p className="text-sm text-gray-500 dark:text-gray-400">
@@ -1722,7 +1746,7 @@ function DetailModal({
               </p>
               <span
                 className={`px-2 py-1 rounded-full text-xs font-medium ${getStatusColor(
-                  receiptData.status
+                  receiptData.status,
                 )}`}
               >
                 {receiptData.status.charAt(0).toUpperCase() +
@@ -1731,7 +1755,6 @@ function DetailModal({
             </div>
           </div>
 
-          {/* Actions */}
           <div className="flex flex-wrap gap-3 pt-4 border-t border-gray-200 dark:border-gray-700">
             <button
               onClick={onPrint}

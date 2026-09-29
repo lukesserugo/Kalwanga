@@ -14,7 +14,10 @@ import {
   Wand2,
 } from 'lucide-react';
 
-import { productService } from '../../../../../services/productService';
+import {
+  productService,
+  type CreateProductFromInventoryPayload,
+} from '../../../../../services/productService';
 import { inventoryService } from '../../../../../services/inventoryService';
 import { categoryService } from '../../../../../services/categoryService';
 import { supplierService } from '../../../../../services/supplierService';
@@ -93,6 +96,22 @@ interface BarcodeDisplayData {
   format: string;
 }
 
+/**
+ * Payload shape sent to `productService.createProductFromInventory`.
+ *
+ * ⚠ This is the local declaration of the payload the page builds.
+ *   It is structurally compatible with
+ *   `CreateProductFromInventoryPayload` in the service — if you
+ *   change either shape, keep them aligned. The service's
+ *   parameter type is the authoritative one; this interface exists
+ *   so the page can build the object with full type-checking before
+ *   handing it off.
+ *
+ * ⚠ The local `Variant` interface deliberately omits
+ *   `productId` / `createdAt` / `updatedAt` — those are populated
+ *   by the backend. That matches `CreateVariantPayload` on the
+ *   service side.
+ */
 interface ProductPayload {
   name: string;
   sku: string;
@@ -1314,6 +1333,12 @@ export default function AddProductPage() {
             ? formData.categoryId
             : undefined;
 
+        // ── The payload handed to the service ──────────────────
+        // `ProductPayload` (above) and
+        // `CreateProductFromInventoryPayload` (in the service) are
+        // structurally compatible. This interface alias makes the
+        // dependency explicit so a drift between the two shapes
+        // fails the build rather than the runtime.
         const productData: ProductPayload = {
           name: formData.name.trim(),
           sku: formData.sku.trim().toUpperCase(),
@@ -1349,9 +1374,17 @@ export default function AddProductPage() {
           createdBy: user?.id || 'system',
         };
 
+        // ⚠ No cast needed. `CreateProductFromInventoryPayload` on
+        //   the service side accepts this shape as-is — the local
+        //   `Variant` interface intentionally omits the
+        //   server-managed fields (`productId`, `createdAt`,
+        //   `updatedAt`), matching `CreateVariantPayload` on the
+        //   service.
+        const payload: CreateProductFromInventoryPayload = productData;
+
         await productService.createProductFromInventory(
           formData.inventoryId,
-          productData
+          payload
         );
 
         toast.success('Product created and linked to inventory successfully');

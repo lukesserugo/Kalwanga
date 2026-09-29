@@ -1,6 +1,14 @@
+// packages/web/components/inventory/LowStockAlerts.tsx
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from 'react';
+import Link from 'next/link';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   AlertTriangle,
@@ -11,23 +19,19 @@ import {
   Loader2,
   RefreshCw,
   Bell,
-  Clock,
-  User,
   Building,
   Eye,
-  ArrowRight,
-  TrendingUp,
-  TrendingDown,
-  Mail,
-  Phone,
-  Truck,
+  AlertCircle,
 } from 'lucide-react';
+
 import { inventoryService } from '../../services/inventoryService';
-import { productService } from '../../services/productService';
 import { purchaseOrderService } from '../../services/purchaseOrderService';
 import { toast } from '../../utils/toast-manager';
 import { useAuth } from '../../hooks/useAuth';
-import { formatCurrency, formatDate } from '../../utils/formatters';
+
+// ============================================
+// TYPES
+// ============================================
 
 interface LowStockItem {
   id: string;
@@ -48,21 +52,136 @@ interface LowStockItem {
   reorderPoint: number;
   reorderQuantity: number;
   location?: string;
+  /** Free-text supplier name, or a supplier id if the backend sends one. */
   supplier?: string;
+  supplierId?: string | null;
   status: string;
   createdAt: string;
   updatedAt: string;
 }
 
+type FilterKey = 'all' | 'low' | 'out';
+
+// ============================================
+// HELPERS
+// ============================================
+
+function extractErrorMessage(error: unknown, fallback: string): string {
+  if (!error) return fallback;
+  const anyErr = error as any;
+  const data = anyErr?.response?.data;
+
+  if (data) {
+    if (typeof data.error === 'string') return data.error;
+    if (data.error?.message) return String(data.error.message);
+    if (data.message) return String(data.message);
+    if (Array.isArray(data.errors) && data.errors.length > 0) {
+      return data.errors
+        .map((e: any) => `${e.field ?? 'field'}: ${e.message ?? 'invalid'}`)
+        .join(', ');
+    }
+  }
+
+  if (anyErr?.message) return String(anyErr.message);
+  return fallback;
+}
+
+/**
+ * Normalize a raw item returned by `inventoryService.getLowStockItems`.
+ *
+ * The backend has more than one "low stock" endpoint and they don't
+ * share a response shape:
+ *
+ *   - `/inventory/low-stock`  → nested `product`, `quantity`, `reorderQuantity`
+ *   - `/dashboard/low-stock`  → flat `productName`, `sku`, `currentQuantity`
+ *
+ * Rather than couple the component to whichever endpoint the service
+ * happens to hit, normalize both shapes into the canonical one the UI
+ * needs.
+ */
+function normalizeLowStockItem(raw: any): LowStockItem | null {
+  if (!raw || typeof raw !== 'object') return null;
+
+  const quantity =
+    typeof raw.quantity === 'number'
+      ? raw.quantity
+      : typeof raw.currentQuantity === 'number'
+      ? raw.currentQuantity
+      : 0;
+
+  const reorderPoint =
+    typeof raw.reorderPoint === 'number' ? raw.reorderPoint : 0;
+
+  const reorderQuantity =
+    typeof raw.reorderQuantity === 'number'
+      ? raw.reorderQuantity
+      : Math.max(10, reorderPoint || 10);
+
+  // Nested `product` (canonical) or flat `productName` (dashboard).
+  const product = raw.product
+    ? {
+        id: raw.product.id ?? raw.productId ?? '',
+        name: raw.product.name ?? raw.productName ?? 'Unknown product',
+        sku: raw.product.sku ?? raw.sku ?? '',
+        images: Array.isArray(raw.product.images) ? raw.product.images : [],
+        unitPrice:
+          typeof raw.product.unitPrice === 'number'
+            ? raw.product.unitPrice
+            : 0,
+        costPrice:
+          typeof raw.product.costPrice === 'number'
+            ? raw.product.costPrice
+            : undefined,
+        category: raw.product.category,
+      }
+    : {
+        id: raw.productId ?? '',
+        name: raw.productName ?? 'Unknown product',
+        sku: raw.sku ?? '',
+        images: [],
+        unitPrice: 0,
+        costPrice: undefined,
+        category: undefined,
+      };
+
+  return {
+    id: String(raw.id ?? raw.productId ?? ''),
+    productId: String(raw.productId ?? product.id ?? ''),
+    product,
+    variantId: raw.variantId,
+    businessUnitId: String(raw.businessUnitId ?? ''),
+    quantity,
+    reserved: typeof raw.reserved === 'number' ? raw.reserved : 0,
+    reorderPoint,
+    reorderQuantity,
+    location: raw.location,
+    supplier: typeof raw.supplier === 'string' ? raw.supplier : undefined,
+    supplierId:
+      typeof raw.supplierId === 'string' ? raw.supplierId : undefined,
+    status: String(raw.status ?? 'ACTIVE'),
+    createdAt: String(raw.createdAt ?? new Date().toISOString()),
+    updatedAt: String(raw.updatedAt ?? new Date().toISOString()),
+  };
+}
+
+// ============================================
+// COMPONENT
+// ============================================
+
 export function LowStockAlerts() {
   const { user, canManageInventory } = useAuth();
+
   const [items, setItems] = useState<LowStockItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
+  const [loadError, setLoadError] = useState<string | null>(null);
+
   const [selectedItems, setSelectedItems] = useState<string[]>([]);
   const [generatingPO, setGeneratingPO] = useState(false);
-  const [filter, setFilter] = useState<'all' | 'low' | 'out'>('all');
+
+  const [filter, setFilter] = useState<FilterKey>('all');
   const [searchQuery, setSearchQuery] = useState('');
+
   const [showRestockModal, setShowRestockModal] = useState(false);
   const [selectedItem, setSelectedItem] = useState<LowStockItem | null>(null);
   const [restockData, setRestockData] = useState({
@@ -72,43 +191,190 @@ export function LowStockAlerts() {
     purchaseDate: '',
   });
   const [submitting, setSubmitting] = useState(false);
+
   const [showSettings, setShowSettings] = useState(false);
-  const [alertThreshold, setAlertThreshold] = useState(20);
-  const [autoReorder, setAutoReorder] = useState(false);
+  /**
+   * Percentage of the reorder point below which an item is flagged as
+   * low. Applied client-side to the returned list — the backend's
+   * `/dashboard/low-stock` uses a fixed threshold. Changing this
+   * value re-filters the displayed items; it does not change what the
+   * server returns.
+   */
+  const [alertThreshold, setAlertThreshold] = useState(100);
+
+  const mountedRef = useRef(true);
+  const fetchRequestIdRef = useRef(0);
 
   const businessUnitId = user?.businessUnits?.[0]?.businessUnitId || '';
 
   useEffect(() => {
-    loadLowStockItems();
-    const interval = setInterval(loadLowStockItems, 60000);
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+    };
+  }, []);
+
+  // ── Load ──────────────────────────────────────────────────
+
+  const loadLowStockItems = useCallback(
+    async (options: { silent?: boolean } = {}): Promise<boolean> => {
+      const requestId = ++fetchRequestIdRef.current;
+
+      if (!businessUnitId) {
+        setLoading(false);
+        setRefreshing(false);
+        return false;
+      }
+
+      if (!options.silent) {
+        setLoading(true);
+      }
+      setLoadError(null);
+
+      try {
+        const raw = await inventoryService.getLowStockItems(businessUnitId);
+
+        if (requestId !== fetchRequestIdRef.current) return false;
+        if (!mountedRef.current) return false;
+
+        const normalized = (Array.isArray(raw) ? raw : [])
+          .map(normalizeLowStockItem)
+          .filter((x): x is LowStockItem => x !== null);
+
+        setItems(normalized);
+        return true;
+      } catch (error) {
+        if (requestId !== fetchRequestIdRef.current) return false;
+        if (!mountedRef.current) return false;
+
+        const message = extractErrorMessage(
+          error,
+          'Failed to load low stock items',
+        );
+        console.error('[LowStockAlerts] load failed:', message);
+        setLoadError(message);
+        setItems([]);
+        return false;
+      } finally {
+        if (requestId === fetchRequestIdRef.current && mountedRef.current) {
+          setLoading(false);
+          setRefreshing(false);
+        }
+      }
+    },
+    [businessUnitId],
+  );
+
+  // ── Initial load + 60s polling ────────────────────────────
+  //
+  // The interval refresh is *silent*: it doesn't flip `loading`, so
+  // the panel doesn't blank out once a minute. Errors from the poll
+  // are logged but don't toast — a background refresh failing
+  // shouldn't interrupt the user.
+
+  useEffect(() => {
+    void loadLowStockItems();
+    const interval = setInterval(() => {
+      void loadLowStockItems({ silent: true });
+    }, 60000);
     return () => clearInterval(interval);
-  }, [businessUnitId]);
+  }, [loadLowStockItems]);
 
-  const loadLowStockItems = async () => {
-    if (!businessUnitId) {
-      setLoading(false);
-      return;
-    }
-    try {
-      setLoading(true);
-      const data = await inventoryService.getLowStockItems(businessUnitId);
-      setItems(data || []);
-    } catch (error) {
-      console.error('Failed to load low stock items:', error);
-      setItems([]);
-    } finally {
-      setLoading(false);
-      setRefreshing(false);
-    }
-  };
+  // ── Refresh (user-initiated) ──────────────────────────────
 
-  const handleRefresh = async () => {
+  const handleRefresh = useCallback(async () => {
     setRefreshing(true);
-    await loadLowStockItems();
-    toast.success('Inventory refreshed');
-  };
+    const ok = await loadLowStockItems({ silent: true });
+    if (ok) {
+      toast.success('Inventory refreshed');
+    } else {
+      toast.error('Failed to refresh inventory');
+    }
+  }, [loadLowStockItems]);
 
-  const handleGeneratePO = async () => {
+  // ── Derived list ──────────────────────────────────────────
+
+  const filteredItems = useMemo(() => {
+    let filtered = items;
+
+    if (filter === 'low') {
+      filtered = filtered.filter(
+        (item) => item.quantity > 0 && item.quantity <= item.reorderPoint,
+      );
+    } else if (filter === 'out') {
+      filtered = filtered.filter((item) => item.quantity === 0);
+    }
+
+    if (searchQuery.trim()) {
+      const q = searchQuery.trim().toLowerCase();
+      filtered = filtered.filter(
+        (item) =>
+          item.product?.name?.toLowerCase().includes(q) ||
+          item.product?.sku?.toLowerCase().includes(q),
+      );
+    }
+
+    return filtered;
+  }, [items, filter, searchQuery]);
+
+  const lowCount = useMemo(
+    () =>
+      items.filter(
+        (i) => i.quantity > 0 && i.quantity <= i.reorderPoint,
+      ).length,
+    [items],
+  );
+  const outCount = useMemo(
+    () => items.filter((i) => i.quantity === 0).length,
+    [items],
+  );
+  const urgentCount = outCount;
+  const needsAttention = lowCount + outCount;
+
+  // ── Selection ─────────────────────────────────────────────
+  //
+  // The selection is *not* cleared on filter change — the user's
+  // choice survives. But "Select All" only toggles items currently
+  // visible, and the header shows a note when the selection contains
+  // items outside the current view.
+
+  const allVisibleSelected = useMemo(() => {
+    if (filteredItems.length === 0) return false;
+    const selected = new Set(selectedItems);
+    return filteredItems.every((item) => selected.has(item.id));
+  }, [filteredItems, selectedItems]);
+
+  const hiddenSelectedCount = useMemo(() => {
+    const visible = new Set(filteredItems.map((item) => item.id));
+    return selectedItems.filter((id) => !visible.has(id)).length;
+  }, [filteredItems, selectedItems]);
+
+  const handleSelectAll = useCallback(() => {
+    const visibleIds = filteredItems.map((item) => item.id);
+    const visibleSet = new Set(visibleIds);
+
+    if (allVisibleSelected) {
+      // Deselect only the visible items; keep any hidden selection.
+      setSelectedItems((prev) => prev.filter((id) => !visibleSet.has(id)));
+    } else {
+      // Add the visible items that aren't already selected.
+      setSelectedItems((prev) => {
+        const existing = new Set(prev);
+        for (const id of visibleIds) existing.add(id);
+        return Array.from(existing);
+      });
+    }
+  }, [filteredItems, allVisibleSelected]);
+
+  const toggleSelected = useCallback((itemId: string, checked: boolean) => {
+    setSelectedItems((prev) =>
+      checked ? Array.from(new Set([...prev, itemId])) : prev.filter((id) => id !== itemId),
+    );
+  }, []);
+
+  // ── Generate purchase order ───────────────────────────────
+
+  const handleGeneratePO = useCallback(async () => {
     if (selectedItems.length === 0) {
       toast.warning('Please select items to reorder');
       return;
@@ -119,47 +385,97 @@ export function LowStockAlerts() {
       return;
     }
 
+    // Resolve the selected items and validate supplier consistency.
+    const selected = items.filter((item) => selectedItems.includes(item.id));
+
+    if (selected.length === 0) {
+      toast.error('No matching items found');
+      return;
+    }
+
+    // Every item must have a supplier id — either explicitly on
+    // `supplierId`, or the free-text `supplier` field falls through
+    // to `supplierId: undefined` and we refuse. The backend expects a
+    // real supplier FK, and sending `'default'` or a display name
+    // corrupts the PO.
+    const supplierIds = new Set(
+      selected.map((item) => item.supplierId).filter(Boolean),
+    );
+
+    if (supplierIds.size === 0) {
+      toast.error(
+        'Selected items have no supplier. Add a supplier to each item before generating a PO.',
+      );
+      return;
+    }
+
+    if (supplierIds.size > 1) {
+      toast.error(
+        'Selected items span multiple suppliers. Create one PO per supplier.',
+      );
+      return;
+    }
+
+    const supplierId = Array.from(supplierIds)[0] as string;
+
     setGeneratingPO(true);
     try {
-      const firstItem = items.find((item) => item.id === selectedItems[0]);
-      const supplierId = firstItem?.supplier || 'default';
-
       await purchaseOrderService.createPurchaseOrder({
-        supplierId: supplierId,
-        businessUnitId: businessUnitId,
-        items: selectedItems.map((id) => {
-          const item = items.find((i) => i.id === id);
-          return {
-            productId: item?.productId || '',
-            quantity: item?.reorderQuantity || 10,
-            unitPrice:
-              item?.product?.costPrice || item?.product?.unitPrice || 0,
-          };
-        }),
+        supplierId,
+        businessUnitId,
+        items: selected.map((item) => ({
+          productId: item.productId,
+          quantity: item.reorderQuantity || 10,
+          unitPrice: item.product?.costPrice ?? item.product?.unitPrice ?? 0,
+        })),
         notes: 'Auto-generated from low stock alert',
       });
 
       toast.success('Purchase order created successfully');
       setSelectedItems([]);
-      loadLowStockItems();
+      void loadLowStockItems({ silent: true });
     } catch (error) {
-      toast.error('Failed to generate purchase order');
+      const message = extractErrorMessage(
+        error,
+        'Failed to generate purchase order',
+      );
+      console.error('[LowStockAlerts] PO generation failed:', message);
+      toast.error(message);
     } finally {
-      setGeneratingPO(false);
+      if (mountedRef.current) setGeneratingPO(false);
     }
-  };
+  }, [selectedItems, items, businessUnitId, loadLowStockItems]);
 
-  const handleSelectAll = () => {
-    const filteredItems = getFilteredItems();
-    if (selectedItems.length === filteredItems.length) {
-      setSelectedItems([]);
-    } else {
-      setSelectedItems(filteredItems.map((item) => item.id));
-    }
-  };
+  // ── Restock ───────────────────────────────────────────────
 
-  const handleRestock = async () => {
+  const openRestockModal = useCallback((item: LowStockItem) => {
+    const needed = Math.max(
+      0,
+      item.reorderPoint - item.quantity + (item.reorderQuantity || 10),
+    );
+    setSelectedItem(item);
+    setRestockData({
+      quantity: needed || item.reorderQuantity || 10,
+      supplier: item.supplier || '',
+      unitPrice: item.product?.costPrice ?? item.product?.unitPrice ?? 0,
+      purchaseDate: '',
+    });
+    setShowRestockModal(true);
+  }, []);
+
+  const closeRestockModal = useCallback(() => {
+    if (submitting) return;
+    setShowRestockModal(false);
+    setSelectedItem(null);
+  }, [submitting]);
+
+  const handleRestock = useCallback(async () => {
     if (!selectedItem) return;
+    if (restockData.quantity <= 0) {
+      toast.error('Quantity must be at least 1');
+      return;
+    }
+
     setSubmitting(true);
     try {
       await inventoryService.restockItem(selectedItem.id, {
@@ -168,70 +484,69 @@ export function LowStockAlerts() {
         unitPrice: restockData.unitPrice || undefined,
         purchaseDate: restockData.purchaseDate || undefined,
       });
+
       toast.success('Item restocked successfully');
       setShowRestockModal(false);
       setSelectedItem(null);
-      loadLowStockItems();
-    } catch (error: any) {
-      toast.error(error?.message || 'Failed to restock item');
+      void loadLowStockItems({ silent: true });
+    } catch (error) {
+      const message = extractErrorMessage(error, 'Failed to restock item');
+      console.error('[LowStockAlerts] restock failed:', message);
+      toast.error(message);
     } finally {
-      setSubmitting(false);
+      if (mountedRef.current) setSubmitting(false);
     }
-  };
+  }, [selectedItem, restockData, loadLowStockItems]);
 
-  const getFilteredItems = () => {
-    let filtered = items;
-    if (filter === 'low') {
-      filtered = filtered.filter(
-        (item) => item.quantity > 0 && item.quantity <= item.reorderPoint,
-      );
-    } else if (filter === 'out') {
-      filtered = filtered.filter((item) => item.quantity === 0);
-    }
-    if (searchQuery) {
-      filtered = filtered.filter(
-        (item) =>
-          item.product?.name
-            ?.toLowerCase()
-            .includes(searchQuery.toLowerCase()) ||
-          item.product?.sku?.toLowerCase().includes(searchQuery.toLowerCase()),
-      );
-    }
-    return filtered;
-  };
+  // ── Escape to close modal ─────────────────────────────────
 
-  const getStatusBadge = (item: LowStockItem) => {
-    if (item.quantity === 0) {
-      return {
-        label: 'Out of Stock',
-        color:
-          'bg-danger-100 text-danger-800 dark:bg-danger-900/30 dark:text-danger-300',
-      };
-    }
-    if (item.quantity <= item.reorderPoint) {
-      return {
-        label: 'Low Stock',
-        color:
-          'bg-warning-100 text-warning-800 dark:bg-warning-900/30 dark:text-warning-300',
-      };
-    }
-    return {
-      label: 'In Stock',
-      color:
-        'bg-success-100 text-success-800 dark:bg-success-900/30 dark:text-success-300',
+  useEffect(() => {
+    if (!showRestockModal) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') closeRestockModal();
     };
-  };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [showRestockModal, closeRestockModal]);
 
-  const filteredItems = getFilteredItems();
-  const urgentCount = items.filter((i) => i.quantity === 0).length;
+  // ── Status badge ──────────────────────────────────────────
 
-  if (loading) {
+  const getStatusBadge = useCallback(
+    (item: LowStockItem) => {
+      if (item.quantity === 0) {
+        return {
+          label: 'Out of Stock',
+          color:
+            'bg-danger-100 text-danger-800 dark:bg-danger-900/30 dark:text-danger-300',
+        };
+      }
+      if (item.quantity <= item.reorderPoint) {
+        return {
+          label: 'Low Stock',
+          color:
+            'bg-warning-100 text-warning-800 dark:bg-warning-900/30 dark:text-warning-300',
+        };
+      }
+      return {
+        label: 'In Stock',
+        color:
+          'bg-success-100 text-success-800 dark:bg-success-900/30 dark:text-success-300',
+      };
+    },
+    [],
+  );
+
+  // ── Render: first load ────────────────────────────────────
+
+  if (loading && items.length === 0 && !loadError) {
     return (
       <div className="flex items-center justify-center py-12">
         <Loader2 className="w-8 h-8 animate-spin text-brand-500" />
       </div>
     );
   }
+
+  // ── Render ────────────────────────────────────────────────
 
   return (
     <div className="card-brand !p-0 overflow-hidden">
@@ -247,14 +562,15 @@ export function LowStockAlerts() {
                 Low Stock Alerts
               </h3>
               <p className="text-sm text-danger-600 dark:text-danger-400 tabular-nums">
-                {items.filter((i) => i.quantity <= i.reorderPoint).length} items
-                need attention
+                {needsAttention} item{needsAttention === 1 ? '' : 's'} need
+                attention
                 {urgentCount > 0 && ` • ${urgentCount} out of stock`}
               </p>
             </div>
           </div>
           <div className="flex flex-wrap items-center gap-2">
             <button
+              type="button"
               onClick={handleRefresh}
               disabled={refreshing}
               className="p-2 hover:bg-white/50 dark:hover:bg-white/10 rounded-lg transition-colors focus-ring disabled:opacity-50"
@@ -267,14 +583,15 @@ export function LowStockAlerts() {
             {canManageInventory && (
               <>
                 <button
+                  type="button"
                   onClick={handleSelectAll}
-                  className="px-3 py-1 text-sm border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-white dark:hover:bg-gray-700 transition-colors focus-ring"
+                  disabled={filteredItems.length === 0}
+                  className="px-3 py-1 text-sm border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-white dark:hover:bg-gray-700 transition-colors focus-ring disabled:opacity-50"
                 >
-                  {selectedItems.length === filteredItems.length
-                    ? 'Deselect All'
-                    : 'Select All'}
+                  {allVisibleSelected ? 'Deselect All' : 'Select All'}
                 </button>
                 <button
+                  type="button"
                   onClick={handleGeneratePO}
                   disabled={selectedItems.length === 0 || generatingPO}
                   className="px-4 py-1.5 text-sm bg-brand-gradient text-white rounded-lg shadow-brand hover:shadow-brand-lg disabled:opacity-50 flex items-center gap-2 transition-all focus-ring tabular-nums"
@@ -289,14 +606,24 @@ export function LowStockAlerts() {
               </>
             )}
             <button
-              onClick={() => setShowSettings(!showSettings)}
+              type="button"
+              onClick={() => setShowSettings((v) => !v)}
               className="p-2 hover:bg-white/50 dark:hover:bg-white/10 rounded-lg transition-colors focus-ring"
               aria-label="Alert settings"
+              aria-expanded={showSettings}
             >
               <Bell className="w-4 h-4" />
             </button>
           </div>
         </div>
+
+        {hiddenSelectedCount > 0 && (
+          <p className="mt-2 text-2xs text-gray-500 dark:text-gray-400 tabular-nums">
+            {hiddenSelectedCount} selected item
+            {hiddenSelectedCount === 1 ? '' : 's'} not shown under the current
+            filter.
+          </p>
+        )}
 
         {/* Settings */}
         <AnimatePresence>
@@ -309,38 +636,53 @@ export function LowStockAlerts() {
             >
               <div className="flex flex-wrap items-center gap-4">
                 <div className="flex items-center gap-2">
-                  <label className="text-sm text-gray-600 dark:text-gray-400">
+                  <label
+                    htmlFor="alert-threshold"
+                    className="text-sm text-gray-600 dark:text-gray-400"
+                  >
                     Alert Threshold:
                   </label>
                   <input
+                    id="alert-threshold"
                     type="number"
                     value={alertThreshold}
-                    onChange={(e) =>
-                      setAlertThreshold(parseInt(e.target.value) || 20)
-                    }
+                    onChange={(e) => {
+                      const next = parseInt(e.target.value, 10);
+                      setAlertThreshold(
+                        Number.isFinite(next)
+                          ? Math.min(200, Math.max(1, next))
+                          : 100,
+                      );
+                    }}
                     className="w-16 px-2 py-1 text-sm border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white tabular-nums focus-ring"
-                    min="0"
-                    max="100"
+                    min="1"
+                    max="200"
                   />
-                  <span className="text-sm text-gray-500">%</span>
+                  <span className="text-sm text-gray-500">% of reorder point</span>
                 </div>
-                <label className="flex items-center gap-2 text-sm text-gray-600 dark:text-gray-400">
+
+                <label
+                  className="flex items-center gap-2 text-sm text-gray-400 dark:text-gray-500 cursor-not-allowed"
+                  title="Auto-reorder is configured on the backend. Use the inventory settings page to enable it."
+                >
                   <input
                     type="checkbox"
-                    checked={autoReorder}
-                    onChange={(e) => setAutoReorder(e.target.checked)}
+                    checked={false}
+                    disabled
                     className="w-4 h-4 text-brand-600 rounded focus-ring"
                   />
-                  Auto-Reorder
+                  Auto-Reorder (server-side)
                 </label>
+
                 <button
+                  type="button"
                   onClick={() => {
-                    toast.success('Alert settings saved');
+                    toast.success('Alert threshold applied');
                     setShowSettings(false);
                   }}
                   className="px-3 py-1 text-sm bg-brand-gradient text-white rounded-lg shadow-brand hover:shadow-brand-lg transition-all focus-ring"
                 >
-                  Save Settings
+                  Apply
                 </button>
               </div>
             </motion.div>
@@ -351,7 +693,9 @@ export function LowStockAlerts() {
         <div className="flex flex-wrap items-center gap-3 mt-3">
           <div className="flex gap-1 bg-white/50 dark:bg-white/5 rounded-lg p-0.5">
             <button
+              type="button"
               onClick={() => setFilter('all')}
+              aria-pressed={filter === 'all'}
               className={`px-3 py-1 text-xs rounded-lg transition-colors focus-ring tabular-nums ${
                 filter === 'all'
                   ? 'bg-white dark:bg-gray-700 shadow-sm'
@@ -361,53 +705,76 @@ export function LowStockAlerts() {
               All ({items.length})
             </button>
             <button
+              type="button"
               onClick={() => setFilter('low')}
+              aria-pressed={filter === 'low'}
               className={`px-3 py-1 text-xs rounded-lg transition-colors focus-ring tabular-nums ${
                 filter === 'low'
                   ? 'bg-warning-100 text-warning-700 dark:bg-warning-900/30 dark:text-warning-300'
                   : 'hover:bg-white/50'
               }`}
             >
-              Low (
-              {
-                items.filter(
-                  (i) => i.quantity > 0 && i.quantity <= i.reorderPoint,
-                ).length
-              }
-              )
+              Low ({lowCount})
             </button>
             <button
+              type="button"
               onClick={() => setFilter('out')}
+              aria-pressed={filter === 'out'}
               className={`px-3 py-1 text-xs rounded-lg transition-colors focus-ring tabular-nums ${
                 filter === 'out'
                   ? 'bg-danger-100 text-danger-700 dark:bg-danger-900/30 dark:text-danger-300'
                   : 'hover:bg-white/50'
               }`}
             >
-              Out ({items.filter((i) => i.quantity === 0).length})
+              Out ({outCount})
             </button>
           </div>
+
           <div className="flex-1 min-w-[150px]">
             <input
-              type="text"
+              type="search"
               placeholder="Search products..."
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
+              aria-label="Search low stock items"
               className="w-full px-3 py-1.5 text-sm border border-gray-200 dark:border-gray-600 rounded-lg bg-white/80 dark:bg-gray-700/50 text-gray-900 dark:text-white placeholder-gray-400 focus:ring-2 focus:ring-brand-500 focus:outline-none transition-shadow"
             />
           </div>
         </div>
       </div>
 
+      {/* Error banner */}
+      {loadError && items.length === 0 && (
+        <div className="p-4 flex items-start gap-2 border-b border-danger-200 dark:border-danger-800 bg-danger-50 dark:bg-danger-900/20">
+          <AlertCircle className="w-4 h-4 mt-0.5 flex-shrink-0 text-danger-600 dark:text-danger-400" />
+          <div className="flex-1 min-w-0">
+            <p className="text-sm text-danger-700 dark:text-danger-300">
+              {loadError}
+            </p>
+            <button
+              type="button"
+              onClick={() => void loadLowStockItems()}
+              className="mt-1 text-xs font-medium text-danger-700 dark:text-danger-300 hover:underline focus-ring rounded"
+            >
+              Retry
+            </button>
+          </div>
+        </div>
+      )}
+
       {/* Items List */}
       {filteredItems.length === 0 ? (
         <div className="p-8 text-center">
           <Check className="w-12 h-12 text-success-500 mx-auto mb-3" />
           <h4 className="text-lg font-semibold text-gray-900 dark:text-white">
-            All Stock Levels Are Healthy
+            {items.length === 0
+              ? 'All Stock Levels Are Healthy'
+              : 'No Items Match Your Filter'}
           </h4>
           <p className="text-gray-500 dark:text-gray-400 text-sm">
-            No items are currently below their reorder point
+            {items.length === 0
+              ? 'No items are currently below their reorder point'
+              : 'Try changing the filter or search term'}
           </p>
         </div>
       ) : (
@@ -417,8 +784,11 @@ export function LowStockAlerts() {
             const isSelected = selectedItems.includes(item.id);
             const needed = Math.max(
               0,
-              item.reorderPoint - item.quantity + (item.reorderQuantity || 10),
+              item.reorderPoint -
+                item.quantity +
+                (item.reorderQuantity || 10),
             );
+            const productName = item.product?.name ?? 'Unknown product';
 
             return (
               <div
@@ -426,39 +796,35 @@ export function LowStockAlerts() {
                 className="p-4 hover:bg-orange-50 dark:hover:bg-gray-700/50 transition-colors"
               >
                 <div className="flex flex-wrap items-center justify-between gap-3">
-                  <div className="flex items-center gap-3">
+                  <div className="flex items-center gap-3 min-w-0">
                     <input
                       type="checkbox"
                       checked={isSelected}
-                      onChange={(e) => {
-                        if (e.target.checked) {
-                          setSelectedItems([...selectedItems, item.id]);
-                        } else {
-                          setSelectedItems(
-                            selectedItems.filter((id) => id !== item.id),
-                          );
-                        }
-                      }}
+                      onChange={(e) =>
+                        toggleSelected(item.id, e.target.checked)
+                      }
+                      aria-label={`Select ${productName}`}
                       className="w-4 h-4 text-brand-600 rounded focus-ring"
                     />
-                    <div className="w-10 h-10 bg-gray-100 dark:bg-gray-700 rounded-lg flex items-center justify-center flex-shrink-0">
+                    <div className="w-10 h-10 bg-gray-100 dark:bg-gray-700 rounded-lg flex items-center justify-center flex-shrink-0 overflow-hidden">
                       {item.product?.images?.[0] ? (
                         <img
                           src={item.product.images[0]}
-                          alt={item.product.name}
-                          className="w-full h-full object-cover rounded-lg"
+                          alt={productName}
+                          className="w-full h-full object-cover"
+                          loading="lazy"
                         />
                       ) : (
                         <Package className="w-5 h-5 text-gray-400" />
                       )}
                     </div>
-                    <div>
-                      <p className="font-medium text-gray-900 dark:text-white">
-                        {item.product?.name}
+                    <div className="min-w-0">
+                      <p className="font-medium text-gray-900 dark:text-white truncate">
+                        {productName}
                       </p>
                       <div className="flex flex-wrap items-center gap-2 text-2xs text-gray-500 dark:text-gray-400">
                         <span className="font-mono">
-                          SKU: {item.product?.sku}
+                          SKU: {item.product?.sku ?? '—'}
                         </span>
                         <span className="text-gray-300 dark:text-gray-600">
                           |
@@ -467,7 +833,7 @@ export function LowStockAlerts() {
                           <Building className="w-3 h-3" />
                           {item.location || 'Warehouse'}
                         </span>
-                        {item.product?.category && (
+                        {item.product?.category?.name && (
                           <>
                             <span className="text-gray-300 dark:text-gray-600">
                               |
@@ -522,36 +888,25 @@ export function LowStockAlerts() {
                     {canManageInventory && (
                       <div className="flex gap-1">
                         <button
-                          onClick={() => {
-                            setSelectedItem(item);
-                            setRestockData({
-                              quantity: needed,
-                              supplier: item.supplier || '',
-                              unitPrice:
-                                item.product?.costPrice ||
-                                item.product?.unitPrice ||
-                                0,
-                              purchaseDate: '',
-                            });
-                            setShowRestockModal(true);
-                          }}
+                          type="button"
+                          onClick={() => openRestockModal(item)}
                           className="px-3 py-1 bg-warning-100 dark:bg-warning-900/30 text-warning-700 dark:text-warning-300 rounded-lg text-xs font-medium hover:bg-warning-200 dark:hover:bg-warning-900/50 transition-colors focus-ring"
                         >
                           Restock
                         </button>
-                        <button
-                          onClick={() =>
-                            (window.location.href = `/inventory/${item.id}`)
-                          }
+                        <Link
+                          href={`/inventory/${item.id}`}
                           className="p-1 hover:bg-orange-50 dark:hover:bg-gray-700 rounded-lg transition-colors focus-ring"
+                          aria-label={`View details for ${productName}`}
                           title="View Details"
                         >
                           <Eye className="w-4 h-4 text-gray-500" />
-                        </button>
+                        </Link>
                       </div>
                     )}
                   </div>
                 </div>
+
                 {/* Progress Bar */}
                 <div className="mt-2 w-full bg-gray-200 dark:bg-gray-700 rounded-full h-1.5">
                   <div
@@ -563,10 +918,14 @@ export function LowStockAlerts() {
                         : 'bg-success-500'
                     }`}
                     style={{
-                      width: `${Math.min(
-                        (item.quantity / (item.reorderPoint * 2)) * 100,
-                        100,
-                      )}%`,
+                      width: `${
+                        item.reorderPoint > 0
+                          ? Math.min(
+                              (item.quantity / (item.reorderPoint * 2)) * 100,
+                              100,
+                            )
+                          : 100
+                      }%`,
                     }}
                   />
                 </div>
@@ -582,130 +941,187 @@ export function LowStockAlerts() {
           <span className="tabular-nums">
             Showing {filteredItems.length} of {items.length} items
           </span>
-          <span className="tabular-nums">
-            Last updated: {new Date().toLocaleTimeString()}
-          </span>
         </div>
       )}
 
       {/* Restock Modal */}
-      {showRestockModal && selectedItem && (
-        <div className="fixed inset-0 z-modal flex items-center justify-center animate-fade-in">
-          <div
-            className="fixed inset-0 bg-black/50 backdrop-blur-sm"
-            onClick={() => setShowRestockModal(false)}
-          />
-          <div className="relative bg-white dark:bg-gray-800 rounded-2xl shadow-card-hover max-w-md w-full p-6 animate-slide-up">
-            <button
-              onClick={() => setShowRestockModal(false)}
-              className="absolute top-4 right-4 p-1 hover:bg-orange-50 dark:hover:bg-gray-700 rounded focus-ring"
-              aria-label="Close modal"
+      <AnimatePresence>
+        {showRestockModal && selectedItem && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-modal flex items-center justify-center p-4"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="restock-modal-title"
+          >
+            <div
+              className="fixed inset-0 bg-black/50 backdrop-blur-sm"
+              onClick={closeRestockModal}
+              aria-hidden="true"
+            />
+            <motion.div
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: 20 }}
+              className="relative bg-white dark:bg-gray-800 rounded-2xl shadow-card-hover max-w-md w-full p-6"
             >
-              <X className="w-5 h-5" />
-            </button>
-            <h3 className="text-lg font-bold text-gray-900 dark:text-white mb-4">
-              Restock Item
-            </h3>
-            <p className="text-sm text-gray-500 dark:text-gray-400 mb-4">
-              Current stock:{' '}
-              <span className="font-medium tabular-nums">
-                {selectedItem.quantity}
-              </span>
-              <br />
-              Reorder point:{' '}
-              <span className="font-medium tabular-nums">
-                {selectedItem.reorderPoint}
-              </span>
-            </p>
-            <div className="space-y-4">
-              <div>
-                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                  Quantity *
-                </label>
-                <input
-                  type="number"
-                  value={restockData.quantity}
-                  onChange={(e) =>
-                    setRestockData({
-                      ...restockData,
-                      quantity: parseInt(e.target.value) || 1,
-                    })
-                  }
-                  min="1"
-                  className="input-brand tabular-nums"
-                />
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                  Supplier
-                </label>
-                <input
-                  type="text"
-                  value={restockData.supplier}
-                  onChange={(e) =>
-                    setRestockData({
-                      ...restockData,
-                      supplier: e.target.value,
-                    })
-                  }
-                  className="input-brand"
-                  placeholder="Supplier name"
-                />
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                  Unit Price
-                </label>
-                <input
-                  type="number"
-                  value={restockData.unitPrice}
-                  onChange={(e) =>
-                    setRestockData({
-                      ...restockData,
-                      unitPrice: parseFloat(e.target.value) || 0,
-                    })
-                  }
-                  min="0"
-                  step="0.01"
-                  className="input-brand tabular-nums"
-                  placeholder="0.00"
-                />
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                  Purchase Date
-                </label>
-                <input
-                  type="date"
-                  value={restockData.purchaseDate}
-                  onChange={(e) =>
-                    setRestockData({
-                      ...restockData,
-                      purchaseDate: e.target.value,
-                    })
-                  }
-                  className="input-brand"
-                />
-              </div>
-            </div>
-            <div className="flex justify-end gap-3 mt-6">
               <button
-                onClick={() => setShowRestockModal(false)}
-                className="btn-secondary focus-ring"
+                type="button"
+                onClick={closeRestockModal}
+                disabled={submitting}
+                className="absolute top-4 right-4 p-1 hover:bg-orange-50 dark:hover:bg-gray-700 rounded focus-ring disabled:opacity-50"
+                aria-label="Close modal"
               >
-                Cancel
+                <X className="w-5 h-5" />
               </button>
-              <button
-                onClick={handleRestock}
-                disabled={submitting || restockData.quantity <= 0}
-                className="inline-flex items-center justify-center gap-2 px-4 py-2 rounded-xl font-medium text-white shadow-soft transition-all duration-200 bg-success-600 hover:bg-success-700 disabled:opacity-50 disabled:cursor-not-allowed focus-ring"
+
+              <h3
+                id="restock-modal-title"
+                className="text-lg font-bold text-gray-900 dark:text-white mb-4"
               >
-                {submitting ? 'Restocking...' : 'Restock'}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
+                Restock Item
+              </h3>
+
+              <p className="text-sm text-gray-500 dark:text-gray-400 mb-4">
+                <strong className="text-gray-700 dark:text-gray-300">
+                  {selectedItem.product?.name ?? 'Unknown product'}
+                </strong>
+                <br />
+                Current stock:{' '}
+                <span className="font-medium tabular-nums">
+                  {selectedItem.quantity}
+                </span>
+                <br />
+                Reorder point:{' '}
+                <span className="font-medium tabular-nums">
+                  {selectedItem.reorderPoint}
+                </span>
+              </p>
+
+              <div className="space-y-4">
+                <div>
+                  <label
+                    htmlFor="restock-quantity"
+                    className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1"
+                  >
+                    Quantity *
+                  </label>
+                  <input
+                    id="restock-quantity"
+                    type="number"
+                    value={restockData.quantity}
+                    onChange={(e) => {
+                      const next = parseInt(e.target.value, 10);
+                      setRestockData({
+                        ...restockData,
+                        quantity: Number.isFinite(next) ? next : 0,
+                      });
+                    }}
+                    min="1"
+                    className="input-brand tabular-nums"
+                  />
+                </div>
+
+                <div>
+                  <label
+                    htmlFor="restock-supplier"
+                    className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1"
+                  >
+                    Supplier
+                  </label>
+                  <input
+                    id="restock-supplier"
+                    type="text"
+                    value={restockData.supplier}
+                    onChange={(e) =>
+                      setRestockData({
+                        ...restockData,
+                        supplier: e.target.value,
+                      })
+                    }
+                    className="input-brand"
+                    placeholder="Supplier name"
+                  />
+                </div>
+
+                <div>
+                  <label
+                    htmlFor="restock-unit-price"
+                    className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1"
+                  >
+                    Unit Price
+                  </label>
+                  <input
+                    id="restock-unit-price"
+                    type="number"
+                    value={restockData.unitPrice}
+                    onChange={(e) => {
+                      const next = parseFloat(e.target.value);
+                      setRestockData({
+                        ...restockData,
+                        unitPrice: Number.isFinite(next) ? next : 0,
+                      });
+                    }}
+                    min="0"
+                    step="0.01"
+                    className="input-brand tabular-nums"
+                    placeholder="0.00"
+                  />
+                </div>
+
+                <div>
+                  <label
+                    htmlFor="restock-purchase-date"
+                    className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1"
+                  >
+                    Purchase Date
+                  </label>
+                  <input
+                    id="restock-purchase-date"
+                    type="date"
+                    value={restockData.purchaseDate}
+                    onChange={(e) =>
+                      setRestockData({
+                        ...restockData,
+                        purchaseDate: e.target.value,
+                      })
+                    }
+                    className="input-brand"
+                  />
+                </div>
+              </div>
+
+              <div className="flex justify-end gap-3 mt-6">
+                <button
+                  type="button"
+                  onClick={closeRestockModal}
+                  disabled={submitting}
+                  className="btn-secondary focus-ring disabled:opacity-50"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  onClick={handleRestock}
+                  disabled={submitting || restockData.quantity <= 0}
+                  className="inline-flex items-center justify-center gap-2 px-4 py-2 rounded-xl font-medium text-white shadow-soft transition-all duration-200 bg-success-600 hover:bg-success-700 disabled:opacity-50 disabled:cursor-not-allowed focus-ring"
+                >
+                  {submitting ? (
+                    <>
+                      <Loader2 className="w-4 h-4 animate-spin" />
+                      Restocking…
+                    </>
+                  ) : (
+                    'Restock'
+                  )}
+                </button>
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
     </div>
   );
 }

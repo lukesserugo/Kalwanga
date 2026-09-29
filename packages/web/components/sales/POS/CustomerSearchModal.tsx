@@ -1,227 +1,342 @@
+// packages/web/components/customers/CustomerSearchModal.tsx
 'use client';
 
-import React, { useState, useEffect, useCallback } from 'react';
+import React, {
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+} from 'react';
 import {
   X,
   Search,
   Loader2,
-  User,
   Mail,
   Phone,
   Plus,
   Users,
-  CreditCard,
-  Wallet,
-  Check,
-  AlertCircle
+  AlertCircle,
 } from 'lucide-react';
+
 import { customerService } from '../../../services/customerService';
-import { useToast } from '../../../utils/toast-manager';
+import type { Customer } from '../../../services/customerService';
+import { toast } from '../../../utils/toast-manager';
 import { formatCurrency } from '../../../utils/formatters';
 
-interface Customer {
-  id: string;
-  firstName: string;
-  lastName: string;
-  email: string;
-  phoneNumber: string;
-  loyaltyPoints: number;
-  totalSpent: number;
-  isActive: boolean;
-  createdAt: string;
-}
+// ============================================
+// TYPES
+// ============================================
 
-interface CustomerSearchModalProps {
+export interface CustomerSearchModalProps {
   isOpen: boolean;
   onClose: () => void;
   onSelectCustomer: (customer: Customer) => void;
 }
+
+interface CreateFormState {
+  firstName: string;
+  lastName: string;
+  email: string;
+  phoneNumber: string;
+}
+
+const EMPTY_CREATE_FORM: CreateFormState = {
+  firstName: '',
+  lastName: '',
+  email: '',
+  phoneNumber: '',
+};
+
+const MIN_QUERY_LENGTH = 2;
+const SEARCH_DEBOUNCE_MS = 300;
+const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+// ============================================
+// HELPERS
+// ============================================
+
+function extractErrorMessage(error: unknown, fallback: string): string {
+  if (!error) return fallback;
+  const anyErr = error as any;
+  const data = anyErr?.response?.data;
+
+  if (data) {
+    if (typeof data.error === 'string') return data.error;
+    if (data.error?.message) return String(data.error.message);
+    if (data.message) return String(data.message);
+    if (Array.isArray(data.errors) && data.errors.length > 0) {
+      return data.errors
+        .map((e: any) => `${e.field ?? 'field'}: ${e.message ?? 'invalid'}`)
+        .join(', ');
+    }
+  }
+
+  if (anyErr?.message) return String(anyErr.message);
+  return fallback;
+}
+
+/**
+ * The canonical `Customer` from the service types `email` and
+ * `phoneNumber` as nullable. This helper formats them for display,
+ * returning `null` when there's nothing to show so the caller can
+ * hide the row entirely.
+ */
+function displayOrNull(value: string | null | undefined): string | null {
+  if (typeof value !== 'string') return null;
+  const trimmed = value.trim();
+  return trimmed.length > 0 ? trimmed : null;
+}
+
+// ============================================
+// COMPONENT
+// ============================================
 
 export function CustomerSearchModal({
   isOpen,
   onClose,
   onSelectCustomer,
 }: CustomerSearchModalProps) {
-  const { showToast } = useToast();
   const [searchQuery, setSearchQuery] = useState('');
   const [customers, setCustomers] = useState<Customer[]>([]);
-  const [loading, setLoading] = useState(false);
-  const [isCreating, setIsCreating] = useState(false);
-  const [selectedCustomer, setSelectedCustomer] = useState<Customer | null>(null);
+  const [searching, setSearching] = useState(false);
+  const [searchError, setSearchError] = useState<string | null>(null);
+
   const [showCreateForm, setShowCreateForm] = useState(false);
-  const [createForm, setCreateForm] = useState({
-    firstName: '',
-    lastName: '',
-    email: '',
-    phoneNumber: '',
-  });
+  const [createForm, setCreateForm] = useState<CreateFormState>(
+    EMPTY_CREATE_FORM,
+  );
+  const [isCreating, setIsCreating] = useState(false);
 
-  // Search for customers
+  const mountedRef = useRef(true);
+  const searchRequestIdRef = useRef(0);
+  const searchInputRef = useRef<HTMLInputElement | null>(null);
+
   useEffect(() => {
-    const searchCustomers = async () => {
-      if (searchQuery.length < 2) {
-        setCustomers([]);
-        return;
-      }
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+    };
+  }, []);
 
-      setLoading(true);
+  // ── Reset on open transition ─────────────────────────────
+  //
+  // State persists across open/close cycles unless we clear it.
+  // Resetting on the false → true transition gives the operator a
+  // fresh modal every time, without clobbering the form while the
+  // modal is open.
+
+  const wasOpenRef = useRef(false);
+  useEffect(() => {
+    const wasOpen = wasOpenRef.current;
+    wasOpenRef.current = isOpen;
+
+    if (isOpen && !wasOpen) {
+      setSearchQuery('');
+      setCustomers([]);
+      setSearchError(null);
+      setSearching(false);
+      setShowCreateForm(false);
+      setCreateForm(EMPTY_CREATE_FORM);
+      setIsCreating(false);
+    }
+  }, [isOpen]);
+
+  // Focus the search input when the modal opens.
+  useEffect(() => {
+    if (!isOpen) return;
+    const t = setTimeout(() => searchInputRef.current?.focus(), 0);
+    return () => clearTimeout(t);
+  }, [isOpen]);
+
+  // ── Search ───────────────────────────────────────────────
+
+  useEffect(() => {
+    if (!isOpen) return;
+
+    const trimmed = searchQuery.trim();
+
+    if (trimmed.length < MIN_QUERY_LENGTH) {
+      setCustomers([]);
+      setSearchError(null);
+      setSearching(false);
+      return;
+    }
+
+    const requestId = ++searchRequestIdRef.current;
+    setSearching(true);
+    setSearchError(null);
+
+    const timer = setTimeout(async () => {
       try {
         const results = await customerService.searchCustomers({
-          query: searchQuery,
+          query: trimmed,
           limit: 10,
         });
-        setCustomers(results || []);
-      } catch (error) {
-        console.error('Failed to search customers:', error);
-        // Use mock data for demo
-        setCustomers(generateMockCustomers(searchQuery));
-      } finally {
-        setLoading(false);
-      }
-    };
 
-    const debounceTimeout = setTimeout(searchCustomers, 300);
-    return () => clearTimeout(debounceTimeout);
+        // Drop stale responses — a faster subsequent search may
+        // already have resolved.
+        if (requestId !== searchRequestIdRef.current) return;
+        if (!mountedRef.current) return;
+
+        setCustomers(Array.isArray(results) ? results : []);
+        setSearching(false);
+      } catch (error) {
+        if (requestId !== searchRequestIdRef.current) return;
+        if (!mountedRef.current) return;
+
+        const message = extractErrorMessage(
+          error,
+          'Failed to search customers',
+        );
+        console.error('[CustomerSearchModal] search failed:', message);
+        setSearchError(message);
+        setCustomers([]);
+        setSearching(false);
+      }
+    }, SEARCH_DEBOUNCE_MS);
+
+    return () => clearTimeout(timer);
+  }, [searchQuery, isOpen]);
+
+  // ── Handlers ─────────────────────────────────────────────
+
+  const handleSelectCustomer = useCallback(
+    (customer: Customer) => {
+      onSelectCustomer(customer);
+      // Close the modal after selection — the parent's callback
+      // decides what happens next. Matches the create flow.
+      onClose();
+    },
+    [onSelectCustomer, onClose],
+  );
+
+  const handleClearSearch = useCallback(() => {
+    setSearchQuery('');
+    searchInputRef.current?.focus();
+  }, []);
+
+  /**
+   * Force the search effect to re-run for the current query. Used by
+   * the Retry button in the error state.
+   */
+  const handleRetrySearch = useCallback(() => {
+    setSearchQuery((q) => q);
+    // The effect won't re-fire if the string identity is unchanged.
+    // Bump a request id by resetting the error and letting the next
+    // effect run handle it. The simplest reliable trigger is to
+    // briefly clear the error and force a re-render with the same
+    // query — the effect's dep is `searchQuery`, so we mutate it
+    // minimally.
+    setSearchError(null);
+    setSearching(true);
+    // Kick off the same search directly.
+    const trimmed = searchQuery.trim();
+    if (trimmed.length < MIN_QUERY_LENGTH) return;
+    const requestId = ++searchRequestIdRef.current;
+    void customerService
+      .searchCustomers({ query: trimmed, limit: 10 })
+      .then((results) => {
+        if (requestId !== searchRequestIdRef.current) return;
+        if (!mountedRef.current) return;
+        setCustomers(Array.isArray(results) ? results : []);
+        setSearching(false);
+      })
+      .catch((error) => {
+        if (requestId !== searchRequestIdRef.current) return;
+        if (!mountedRef.current) return;
+        const message = extractErrorMessage(
+          error,
+          'Failed to search customers',
+        );
+        console.error('[CustomerSearchModal] search failed:', message);
+        setSearchError(message);
+        setCustomers([]);
+        setSearching(false);
+      });
   }, [searchQuery]);
 
-  // Generate mock customers for demo
-  const generateMockCustomers = (query: string): Customer[] => {
-    const mockCustomers: Customer[] = [
-      {
-        id: '1',
-        firstName: 'John',
-        lastName: 'Doe',
-        email: 'john.doe@example.com',
-        phoneNumber: '(555) 123-4567',
-        loyaltyPoints: 150,
-        totalSpent: 1250.00,
-        isActive: true,
-        createdAt: new Date().toISOString(),
-      },
-      {
-        id: '2',
-        firstName: 'Jane',
-        lastName: 'Smith',
-        email: 'jane.smith@example.com',
-        phoneNumber: '(555) 234-5678',
-        loyaltyPoints: 320,
-        totalSpent: 2450.75,
-        isActive: true,
-        createdAt: new Date().toISOString(),
-      },
-      {
-        id: '3',
-        firstName: 'Robert',
-        lastName: 'Johnson',
-        email: 'robert.j@example.com',
-        phoneNumber: '(555) 345-6789',
-        loyaltyPoints: 85,
-        totalSpent: 680.50,
-        isActive: true,
-        createdAt: new Date().toISOString(),
-      },
-      {
-        id: '4',
-        firstName: 'Maria',
-        lastName: 'Garcia',
-        email: 'maria.garcia@example.com',
-        phoneNumber: '(555) 456-7890',
-        loyaltyPoints: 210,
-        totalSpent: 1890.00,
-        isActive: true,
-        createdAt: new Date().toISOString(),
-      },
-      {
-        id: '5',
-        firstName: 'David',
-        lastName: 'Wilson',
-        email: 'david.w@example.com',
-        phoneNumber: '(555) 567-8901',
-        loyaltyPoints: 45,
-        totalSpent: 320.25,
-        isActive: true,
-        createdAt: new Date().toISOString(),
-      },
-    ];
+  const handleCreateCustomer = useCallback(async () => {
+    const form = {
+      firstName: createForm.firstName.trim(),
+      lastName: createForm.lastName.trim(),
+      email: createForm.email.trim(),
+      phoneNumber: createForm.phoneNumber.trim(),
+    };
 
-    if (!query) return mockCustomers;
-    const lowerQuery = query.toLowerCase();
-    return mockCustomers.filter(
-      (c) =>
-        c.firstName.toLowerCase().includes(lowerQuery) ||
-        c.lastName.toLowerCase().includes(lowerQuery) ||
-        c.email.toLowerCase().includes(lowerQuery) ||
-        c.phoneNumber.includes(query)
-    );
-  };
-
-  const handleCreateCustomer = async () => {
-    if (!createForm.firstName || !createForm.lastName || !createForm.email) {
-      showToast('Please fill in all required fields', 'warning');
+    // Caller-owned validation. The form component does its own
+    // check; this is a defensive duplicate in case the callback is
+    // invoked directly.
+    if (!form.firstName || !form.lastName || !form.email) {
+      toast.warning('Please fill in all required fields');
       return;
     }
 
     setIsCreating(true);
     try {
       const newCustomer = await customerService.createCustomer({
-        firstName: createForm.firstName,
-        lastName: createForm.lastName,
-        email: createForm.email,
-        phoneNumber: createForm.phoneNumber,
-        companyId: '',
+        firstName: form.firstName,
+        lastName: form.lastName,
+        email: form.email,
+        phoneNumber: form.phoneNumber || undefined,
         isActive: true,
       });
-      
-      if (newCustomer) {
-        showToast(`Customer ${createForm.firstName} ${createForm.lastName} created successfully`, 'success');
-        onSelectCustomer(newCustomer);
-        setShowCreateForm(false);
-        setCreateForm({
-          firstName: '',
-          lastName: '',
-          email: '',
-          phoneNumber: '',
-        });
-        onClose();
+
+      if (!mountedRef.current) return;
+
+      if (!newCustomer || !newCustomer.id) {
+        // The service contract is "returns a Customer or throws" —
+        // a falsy return is a contract violation, not a success.
+        throw new Error('Customer created but no ID was returned');
       }
-    } catch (error) {
-      // For demo, create a mock customer
-      const mockCustomer: Customer = {
-        id: `new-${Date.now()}`,
-        firstName: createForm.firstName,
-        lastName: createForm.lastName,
-        email: createForm.email,
-        phoneNumber: createForm.phoneNumber || 'N/A',
-        loyaltyPoints: 0,
-        totalSpent: 0,
-        isActive: true,
-        createdAt: new Date().toISOString(),
-      };
-      showToast(`Customer ${createForm.firstName} ${createForm.lastName} created successfully`, 'success');
-      onSelectCustomer(mockCustomer);
-      setShowCreateForm(false);
-      setCreateForm({
-        firstName: '',
-        lastName: '',
-        email: '',
-        phoneNumber: '',
-      });
+
+      toast.success(
+        `Customer ${form.firstName} ${form.lastName} created`,
+      );
+      onSelectCustomer(newCustomer);
       onClose();
+    } catch (error) {
+      if (!mountedRef.current) return;
+
+      const message = extractErrorMessage(
+        error,
+        'Failed to create customer',
+      );
+      console.error('[CustomerSearchModal] create failed:', message);
+      toast.error(message);
     } finally {
-      setIsCreating(false);
+      if (mountedRef.current) setIsCreating(false);
     }
-  };
+  }, [createForm, onSelectCustomer, onClose]);
+
+  // ── Render ───────────────────────────────────────────────
 
   if (!isOpen) return null;
 
+  const trimmedQuery = searchQuery.trim();
+  const showEmptySearch = trimmedQuery.length < MIN_QUERY_LENGTH;
+  const showNoResults =
+    !showEmptySearch && !searching && customers.length === 0 && !searchError;
+
   return (
-    <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4" onClick={onClose}>
-      <div className="bg-white dark:bg-gray-800 rounded-xl w-full max-w-2xl max-h-[80vh] flex flex-col shadow-2xl" onClick={(e) => e.stopPropagation()}>
+    <div
+      className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="customer-search-title"
+      onClick={onClose}
+    >
+      <div
+        className="bg-white dark:bg-gray-800 rounded-xl w-full max-w-2xl max-h-[80vh] flex flex-col shadow-2xl"
+        onClick={(e) => e.stopPropagation()}
+      >
         {/* Header */}
         <div className="p-6 border-b border-gray-200 dark:border-gray-700 flex items-center justify-between flex-shrink-0">
           <div>
-            <h2 className="text-xl font-bold text-gray-900 dark:text-white flex items-center gap-2">
-              <Users className="w-5 h-5 text-blue-500" />
+            <h2
+              id="customer-search-title"
+              className="text-xl font-bold text-gray-900 dark:text-white flex items-center gap-2"
+            >
+              <Users className="w-5 h-5 text-blue-500" aria-hidden="true" />
               Find Customer
             </h2>
             <p className="text-sm text-gray-500 dark:text-gray-400">
@@ -229,87 +344,137 @@ export function CustomerSearchModal({
             </p>
           </div>
           <button
+            type="button"
             onClick={onClose}
-            className="p-2 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-colors"
+            aria-label="Close"
+            className="p-2 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-colors focus-ring"
           >
-            <X className="w-5 h-5 text-gray-500" />
+            <X className="w-5 h-5 text-gray-500" aria-hidden="true" />
           </button>
         </div>
 
         {/* Search Bar */}
         <div className="p-6 border-b border-gray-200 dark:border-gray-700 flex-shrink-0">
           <div className="relative">
-            <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-5 h-5" />
+            <Search
+              className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 w-5 h-5 pointer-events-none"
+              aria-hidden="true"
+            />
             <input
-              type="text"
-              placeholder="Search by name, email, or phone..."
+              ref={searchInputRef}
+              type="search"
+              placeholder="Search by name, email, or phone…"
+              aria-label="Search customers"
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              className="w-full pl-10 pr-4 py-2.5 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white dark:bg-gray-700 text-gray-900 dark:text-white placeholder-gray-400 dark:placeholder-gray-500"
+              autoComplete="off"
+              className="w-full pl-10 pr-10 py-2.5 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white dark:bg-gray-700 text-gray-900 dark:text-white placeholder-gray-400 dark:placeholder-gray-500 focus:outline-none"
               autoFocus
             />
             {searchQuery && (
               <button
-                onClick={() => setSearchQuery('')}
-                className="absolute right-3 top-1/2 transform -translate-y-1/2 text-gray-400 hover:text-gray-600"
+                type="button"
+                onClick={handleClearSearch}
+                aria-label="Clear search"
+                className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 focus-ring rounded"
               >
-                <X className="w-4 h-4" />
+                <X className="w-4 h-4" aria-hidden="true" />
               </button>
             )}
           </div>
         </div>
 
-        {/* Results */}
-        <div className="flex-1 overflow-y-auto p-6">
-          {loading ? (
+        {/* Results — flex-1 min-h-0 so it actually shrinks when the
+            create form appears. Without min-h-0 the flex item keeps
+            its content height and pushes the form off-screen. */}
+        <div className="flex-1 min-h-0 overflow-y-auto p-6">
+          {searching ? (
             <div className="flex items-center justify-center py-12">
-              <Loader2 className="w-8 h-8 text-blue-500 animate-spin" />
-              <span className="ml-2 text-gray-500 dark:text-gray-400">Searching...</span>
+              <Loader2
+                className="w-8 h-8 text-blue-500 animate-spin"
+                aria-hidden="true"
+              />
+              <span className="ml-2 text-gray-500 dark:text-gray-400">
+                Searching…
+              </span>
+            </div>
+          ) : searchError ? (
+            <div
+              role="alert"
+              className="flex items-start gap-2 rounded-lg bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 p-3 text-sm text-red-700 dark:text-red-300"
+            >
+              <AlertCircle
+                className="w-4 h-4 flex-shrink-0 mt-0.5"
+                aria-hidden="true"
+              />
+              <div className="flex-1">
+                <p>{searchError}</p>
+                <button
+                  type="button"
+                  onClick={handleRetrySearch}
+                  className="mt-1 text-xs font-medium underline focus-ring rounded"
+                >
+                  Retry
+                </button>
+              </div>
             </div>
           ) : customers.length > 0 ? (
-            <div className="space-y-2">
+            <div className="space-y-2" role="list">
               {customers.map((customer) => (
                 <CustomerResultItem
                   key={customer.id}
                   customer={customer}
-                  isSelected={selectedCustomer?.id === customer.id}
-                  onSelect={() => {
-                    setSelectedCustomer(customer);
-                    onSelectCustomer(customer);
-                  }}
+                  onSelect={() => handleSelectCustomer(customer)}
                 />
               ))}
             </div>
-          ) : searchQuery.length >= 2 && !loading ? (
+          ) : showNoResults ? (
             <div className="text-center py-12">
-              <Users className="w-12 h-12 text-gray-300 dark:text-gray-600 mx-auto mb-2" />
-              <p className="text-gray-500 dark:text-gray-400">No customers found</p>
+              <Users
+                className="w-12 h-12 text-gray-300 dark:text-gray-600 mx-auto mb-2"
+                aria-hidden="true"
+              />
+              <p className="text-gray-500 dark:text-gray-400">
+                No customers found
+              </p>
               <button
+                type="button"
                 onClick={() => setShowCreateForm(true)}
-                className="mt-2 text-blue-600 dark:text-blue-400 hover:underline flex items-center gap-1 mx-auto"
+                className="mt-2 text-blue-600 dark:text-blue-400 hover:underline flex items-center gap-1 mx-auto focus-ring rounded"
               >
-                <Plus className="w-4 h-4" />
+                <Plus className="w-4 h-4" aria-hidden="true" />
                 Create New Customer
               </button>
             </div>
-          ) : (
+          ) : showEmptySearch ? (
             <div className="text-center py-12 text-gray-400 dark:text-gray-500">
-              <Users className="w-12 h-12 mx-auto mb-2 opacity-50" />
-              <p>Type at least 2 characters to search</p>
+              <Users
+                className="w-12 h-12 mx-auto mb-2 opacity-50"
+                aria-hidden="true"
+              />
+              <p>
+                Type at least {MIN_QUERY_LENGTH} characters to search
+              </p>
+            </div>
+          ) : null}
+
+          {/* Create form — moved inside the scrollable region so it
+              scrolls with the results and doesn't push them off. */}
+          {showCreateForm && (
+            <div className="mt-4">
+              <CreateCustomerForm
+                formData={createForm}
+                onChange={setCreateForm}
+                onCancel={() => {
+                  setShowCreateForm(false);
+                  setCreateForm(EMPTY_CREATE_FORM);
+                }}
+                onSubmit={() => void handleCreateCustomer()}
+                isCreating={isCreating}
+              />
             </div>
           )}
         </div>
-
-        {/* Create Customer Form */}
-        {showCreateForm && (
-          <CreateCustomerForm
-            formData={createForm}
-            onChange={setCreateForm}
-            onCancel={() => setShowCreateForm(false)}
-            onSubmit={handleCreateCustomer}
-            isCreating={isCreating}
-          />
-        )}
       </div>
     </div>
   );
@@ -321,41 +486,55 @@ export function CustomerSearchModal({
 
 interface CustomerResultItemProps {
   customer: Customer;
-  isSelected: boolean;
   onSelect: () => void;
 }
 
-function CustomerResultItem({ customer, isSelected, onSelect }: CustomerResultItemProps) {
+function CustomerResultItem({ customer, onSelect }: CustomerResultItemProps) {
+  const email = displayOrNull(customer.email);
+  const phone = displayOrNull(customer.phoneNumber);
+  const loyaltyPoints =
+    typeof customer.loyaltyPoints === 'number' ? customer.loyaltyPoints : 0;
+  const totalSpent =
+    typeof customer.totalSpent === 'number' ? customer.totalSpent : 0;
+
   return (
-    <div
+    <button
+      type="button"
+      role="listitem"
       onClick={onSelect}
-      className={`p-3 border border-gray-200 dark:border-gray-700 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 cursor-pointer transition-colors flex items-center justify-between ${
-        isSelected ? 'bg-blue-50 dark:bg-blue-900/20 border-blue-400 dark:border-blue-600' : ''
-      }`}
+      className="w-full p-3 border border-gray-200 dark:border-gray-700 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 cursor-pointer transition-colors flex items-center justify-between text-left focus-ring"
     >
-      <div>
-        <p className="font-medium text-gray-900 dark:text-white">
+      <div className="min-w-0">
+        <p className="font-medium text-gray-900 dark:text-white truncate">
           {customer.firstName} {customer.lastName}
         </p>
-        <div className="flex items-center gap-3 text-sm text-gray-500 dark:text-gray-400">
-          <span className="flex items-center gap-1">
-            <Mail className="w-3 h-3" />
-            {customer.email}
-          </span>
-          <span className="flex items-center gap-1">
-            <Phone className="w-3 h-3" />
-            {customer.phoneNumber}
-          </span>
+        <div className="flex flex-wrap items-center gap-3 text-sm text-gray-500 dark:text-gray-400">
+          {email && (
+            <span className="flex items-center gap-1 truncate">
+              <Mail className="w-3 h-3 flex-shrink-0" aria-hidden="true" />
+              <span className="truncate">{email}</span>
+            </span>
+          )}
+          {phone && (
+            <span className="flex items-center gap-1 tabular-nums">
+              <Phone className="w-3 h-3 flex-shrink-0" aria-hidden="true" />
+              {phone}
+            </span>
+          )}
         </div>
       </div>
-      <div className="text-right">
-        <p className="text-sm text-gray-500 dark:text-gray-400">Loyalty Points</p>
-        <p className="font-bold text-blue-600 dark:text-blue-400">{customer.loyaltyPoints || 0}</p>
-        <p className="text-xs text-gray-400 dark:text-gray-500">
-          Spent: {formatCurrency(customer.totalSpent || 0)}
+      <div className="text-right flex-shrink-0 ml-3">
+        <p className="text-xs text-gray-500 dark:text-gray-400">
+          Loyalty Points
+        </p>
+        <p className="font-bold text-blue-600 dark:text-blue-400 tabular-nums">
+          {loyaltyPoints}
+        </p>
+        <p className="text-xs text-gray-400 dark:text-gray-500 tabular-nums">
+          Spent: {formatCurrency(totalSpent)}
         </p>
       </div>
-    </div>
+    </button>
   );
 }
 
@@ -364,13 +543,8 @@ function CustomerResultItem({ customer, isSelected, onSelect }: CustomerResultIt
 // ============================================
 
 interface CreateCustomerFormProps {
-  formData: {
-    firstName: string;
-    lastName: string;
-    email: string;
-    phoneNumber: string;
-  };
-  onChange: (data: any) => void;
+  formData: CreateFormState;
+  onChange: (data: CreateFormState) => void;
   onCancel: () => void;
   onSubmit: () => void;
   isCreating: boolean;
@@ -385,112 +559,189 @@ function CreateCustomerForm({
 }: CreateCustomerFormProps) {
   const [errors, setErrors] = useState<Record<string, string>>({});
 
-  const validate = () => {
-    const newErrors: Record<string, string> = {};
-    if (!formData.firstName.trim()) newErrors.firstName = 'First name is required';
-    if (!formData.lastName.trim()) newErrors.lastName = 'Last name is required';
-    if (!formData.email.trim()) {
-      newErrors.email = 'Email is required';
-    } else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(formData.email)) {
-      newErrors.email = 'Invalid email format';
-    }
-    setErrors(newErrors);
-    return Object.keys(newErrors).length === 0;
-  };
+  // Clear a field's error the moment the user edits it.
+  const updateField = useCallback(
+    <K extends keyof CreateFormState>(
+      key: K,
+      value: CreateFormState[K],
+    ) => {
+      onChange({ ...formData, [key]: value });
+      setErrors((prev) => {
+        if (!prev[key]) return prev;
+        const next = { ...prev };
+        delete next[key];
+        return next;
+      });
+    },
+    [formData, onChange],
+  );
 
-  const handleSubmit = () => {
-    if (validate()) {
-      onSubmit();
+  const validate = useCallback((): boolean => {
+    const next: Record<string, string> = {};
+
+    if (!formData.firstName.trim()) next.firstName = 'First name is required';
+    if (!formData.lastName.trim()) next.lastName = 'Last name is required';
+
+    const email = formData.email.trim();
+    if (!email) {
+      next.email = 'Email is required';
+    } else if (!EMAIL_PATTERN.test(email)) {
+      next.email = 'Invalid email format';
     }
-  };
+
+    setErrors(next);
+    return Object.keys(next).length === 0;
+  }, [formData]);
+
+  const handleSubmit = useCallback(
+    (e: React.FormEvent) => {
+      e.preventDefault();
+      if (isCreating) return;
+      if (!validate()) return;
+      onSubmit();
+    },
+    [isCreating, validate, onSubmit],
+  );
 
   return (
-    <div className="p-6 border-t border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800/50 flex-shrink-0">
+    <form
+      onSubmit={handleSubmit}
+      className="p-4 border border-gray-200 dark:border-gray-700 rounded-lg bg-gray-50 dark:bg-gray-800/50"
+    >
       <h3 className="text-sm font-semibold text-gray-700 dark:text-gray-300 mb-3 flex items-center gap-2">
-        <Plus className="w-4 h-4 text-blue-500" />
+        <Plus className="w-4 h-4 text-blue-500" aria-hidden="true" />
         Create New Customer
       </h3>
+
       <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
         <div>
-          <label className="block text-xs font-medium text-gray-700 dark:text-gray-300 mb-1">
+          <label
+            htmlFor="new-customer-first-name"
+            className="block text-xs font-medium text-gray-700 dark:text-gray-300 mb-1"
+          >
             First Name <span className="text-red-500">*</span>
           </label>
           <input
+            id="new-customer-first-name"
             type="text"
             value={formData.firstName}
-            onChange={(e) => onChange({ ...formData, firstName: e.target.value })}
-            className={`w-full px-3 py-1.5 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:outline-none bg-white dark:bg-gray-700 text-gray-900 dark:text-white ${
-              errors.firstName ? 'border-red-500' : 'border-gray-300 dark:border-gray-600'
+            onChange={(e) => updateField('firstName', e.target.value)}
+            disabled={isCreating}
+            autoComplete="given-name"
+            className={`w-full px-3 py-1.5 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:outline-none bg-white dark:bg-gray-700 text-gray-900 dark:text-white disabled:opacity-50 ${
+              errors.firstName
+                ? 'border-red-500'
+                : 'border-gray-300 dark:border-gray-600'
             }`}
             placeholder="John"
           />
           {errors.firstName && (
-            <p className="text-xs text-red-500 mt-1">{errors.firstName}</p>
+            <p className="text-xs text-red-500 mt-1" role="alert">
+              {errors.firstName}
+            </p>
           )}
         </div>
+
         <div>
-          <label className="block text-xs font-medium text-gray-700 dark:text-gray-300 mb-1">
+          <label
+            htmlFor="new-customer-last-name"
+            className="block text-xs font-medium text-gray-700 dark:text-gray-300 mb-1"
+          >
             Last Name <span className="text-red-500">*</span>
           </label>
           <input
+            id="new-customer-last-name"
             type="text"
             value={formData.lastName}
-            onChange={(e) => onChange({ ...formData, lastName: e.target.value })}
-            className={`w-full px-3 py-1.5 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:outline-none bg-white dark:bg-gray-700 text-gray-900 dark:text-white ${
-              errors.lastName ? 'border-red-500' : 'border-gray-300 dark:border-gray-600'
+            onChange={(e) => updateField('lastName', e.target.value)}
+            disabled={isCreating}
+            autoComplete="family-name"
+            className={`w-full px-3 py-1.5 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:outline-none bg-white dark:bg-gray-700 text-gray-900 dark:text-white disabled:opacity-50 ${
+              errors.lastName
+                ? 'border-red-500'
+                : 'border-gray-300 dark:border-gray-600'
             }`}
             placeholder="Doe"
           />
           {errors.lastName && (
-            <p className="text-xs text-red-500 mt-1">{errors.lastName}</p>
+            <p className="text-xs text-red-500 mt-1" role="alert">
+              {errors.lastName}
+            </p>
           )}
         </div>
+
         <div>
-          <label className="block text-xs font-medium text-gray-700 dark:text-gray-300 mb-1">
+          <label
+            htmlFor="new-customer-email"
+            className="block text-xs font-medium text-gray-700 dark:text-gray-300 mb-1"
+          >
             Email <span className="text-red-500">*</span>
           </label>
           <input
+            id="new-customer-email"
             type="email"
             value={formData.email}
-            onChange={(e) => onChange({ ...formData, email: e.target.value })}
-            className={`w-full px-3 py-1.5 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:outline-none bg-white dark:bg-gray-700 text-gray-900 dark:text-white ${
-              errors.email ? 'border-red-500' : 'border-gray-300 dark:border-gray-600'
+            onChange={(e) => updateField('email', e.target.value)}
+            disabled={isCreating}
+            autoComplete="email"
+            className={`w-full px-3 py-1.5 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:outline-none bg-white dark:bg-gray-700 text-gray-900 dark:text-white disabled:opacity-50 ${
+              errors.email
+                ? 'border-red-500'
+                : 'border-gray-300 dark:border-gray-600'
             }`}
             placeholder="john.doe@example.com"
           />
           {errors.email && (
-            <p className="text-xs text-red-500 mt-1">{errors.email}</p>
+            <p className="text-xs text-red-500 mt-1" role="alert">
+              {errors.email}
+            </p>
           )}
         </div>
+
         <div>
-          <label className="block text-xs font-medium text-gray-700 dark:text-gray-300 mb-1">
+          <label
+            htmlFor="new-customer-phone"
+            className="block text-xs font-medium text-gray-700 dark:text-gray-300 mb-1"
+          >
             Phone Number
           </label>
           <input
+            id="new-customer-phone"
             type="tel"
             value={formData.phoneNumber}
-            onChange={(e) => onChange({ ...formData, phoneNumber: e.target.value })}
-            className="w-full px-3 py-1.5 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:outline-none bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+            onChange={(e) => updateField('phoneNumber', e.target.value)}
+            disabled={isCreating}
+            autoComplete="tel"
+            className="w-full px-3 py-1.5 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:outline-none bg-white dark:bg-gray-700 text-gray-900 dark:text-white disabled:opacity-50"
             placeholder="(555) 123-4567"
           />
         </div>
       </div>
-      <div className="flex justify-end gap-2 mt-3">
+
+      <div className="flex justify-end gap-2 mt-4">
         <button
+          type="button"
           onClick={onCancel}
-          className="px-4 py-1.5 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors text-sm"
+          disabled={isCreating}
+          className="px-4 py-1.5 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors text-sm disabled:opacity-50 focus-ring"
         >
           Cancel
         </button>
         <button
-          onClick={handleSubmit}
+          type="submit"
           disabled={isCreating}
-          className="px-4 py-1.5 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors text-sm flex items-center gap-2 disabled:opacity-50"
+          className="px-4 py-1.5 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors text-sm flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed focus-ring"
         >
-          {isCreating ? <Loader2 className="w-4 h-4 animate-spin" /> : <Plus className="w-4 h-4" />}
-          {isCreating ? 'Creating...' : 'Create Customer'}
+          {isCreating ? (
+            <Loader2 className="w-4 h-4 animate-spin" aria-hidden="true" />
+          ) : (
+            <Plus className="w-4 h-4" aria-hidden="true" />
+          )}
+          {isCreating ? 'Creating…' : 'Create Customer'}
         </button>
       </div>
-    </div>
+    </form>
   );
 }
+
+export default CustomerSearchModal;

@@ -6,60 +6,22 @@ import Link from 'next/link';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   ArrowLeft, Edit, Trash2, Mail, Phone, MapPin,
-  Award, TrendingUp, ShoppingBag, Calendar, Clock,
-  Star, Users, DollarSign, Loader2, Gift, User,
-  RefreshCw, Package, CreditCard
+  Award, ShoppingBag, Calendar, Clock,
+  Star, Users, DollarSign, Loader2, Gift,
+  RefreshCw,
 } from 'lucide-react';
-// FIXED: Corrected import paths (5 levels up from [id] folder)
-import { customerService } from '../../../../../services/customerService';
+import {
+  customerService,
+  type CustomerDetail,
+  type CustomerStats,
+  type CustomerSale,
+  type LoyaltyHistoryEntry,
+} from '../../../../../services/customerService';
 import { useAuth } from '../../../../../hooks/useAuth';
 import { usePermission } from '../../../../../hooks/usePermission';
 import { toast } from '../../../../../utils/toast-manager';
 import { formatCurrency, formatDate } from '../../../../../utils/formatters';
 import { PermissionResource } from '../../../../../types/enums';
-
-interface Customer {
-  id: string;
-  firstName: string;
-  lastName: string;
-  email: string;
-  phoneNumber: string;
-  address?: string;
-  city?: string;
-  state?: string;
-  zipCode?: string;
-  country?: string;
-  notes?: string;
-  isActive: boolean;
-  loyaltyPoints: number;
-  totalSpent: number;
-  lastPurchaseAt?: string;
-  createdAt: string;
-  updatedAt: string;
-}
-
-interface CustomerStats {
-  totalOrders: number;
-  totalSpent: number;
-  averageOrder: number;
-  lastPurchase: string | null;
-}
-
-interface Sale {
-  id: string;
-  receiptNumber: string;
-  total: number;
-  saleDate: string;
-  items?: Array<{ id: string; quantity: number; total: number; productName?: string }>;
-}
-
-interface LoyaltyHistoryEntry {
-  id: string;
-  points: number;
-  type: string;
-  notes?: string;
-  createdAt: string;
-}
 
 export default function CustomerDetailPage() {
   const params = useParams();
@@ -68,8 +30,8 @@ export default function CustomerDetailPage() {
   const { user } = useAuth();
   const { canView, canEdit, canDelete, canManage } = usePermission();
 
-  const [customer, setCustomer] = useState<Customer | null>(null);
-  const [sales, setSales] = useState<Sale[]>([]);
+  const [customer, setCustomer] = useState<CustomerDetail | null>(null);
+  const [sales, setSales] = useState<CustomerSale[]>([]);
   const [loyaltyHistory, setLoyaltyHistory] = useState<LoyaltyHistoryEntry[]>([]);
   const [stats, setStats] = useState<CustomerStats | null>(null);
   const [loading, setLoading] = useState(true);
@@ -94,23 +56,15 @@ export default function CustomerDetailPage() {
     try {
       if (showLoading) setLoading(true);
 
-      const [customerData, statsData, salesData] = await Promise.all([
+      const [customerData, statsData] = await Promise.all([
         customerService.getCustomerById(id),
         customerService.getCustomerStats(id),
-        customerService.getAllCustomers({ page: 1, limit: 10 }), // For loyalty history (mock)
       ]);
 
       setCustomer(customerData);
       setStats(statsData);
-
-      // Extract sales from customer data if available
-      const customerSales = (customerData as any).sales || [];
-      setSales(customerSales);
-
-      // Extract loyalty history from customer data if available
-      const loyalty = (customerData as any).loyaltyHistory || [];
-      setLoyaltyHistory(loyalty);
-
+      setSales(customerData.sales ?? []);
+      setLoyaltyHistory(customerData.loyaltyHistory ?? []);
     } catch (error) {
       console.error('Failed to load customer:', error);
       toast.error('Failed to load customer');
@@ -213,6 +167,11 @@ export default function CustomerDetailPage() {
   const tier = getLoyaltyTier(customer.loyaltyPoints || 0);
   const TierIcon = tier.icon;
 
+  // Derive "last purchase" from embedded sales (backend embeds them),
+  // falling back to lastPurchaseAt if the customer record carries it.
+  const lastPurchaseDate =
+    sales[0]?.saleDate ?? (customer as any).lastPurchaseAt ?? null;
+
   return (
     <div className="space-y-6 p-6">
       {/* Header */}
@@ -303,7 +262,9 @@ export default function CustomerDetailPage() {
             <ShoppingBag className="w-5 h-5 text-brand-600" />
             <div>
               <p className="text-sm text-gray-500 dark:text-gray-400">Orders</p>
-              <p className="text-xl font-bold text-gray-900 dark:text-white tabular-nums">{stats?.totalOrders || 0}</p>
+              <p className="text-xl font-bold text-gray-900 dark:text-white tabular-nums">
+                {stats?.totalOrders ?? 0}
+              </p>
             </div>
           </div>
         </div>
@@ -312,7 +273,9 @@ export default function CustomerDetailPage() {
             <DollarSign className="w-5 h-5 text-success-600" />
             <div>
               <p className="text-sm text-gray-500 dark:text-gray-400">Average Order</p>
-              <p className="text-xl font-bold text-gray-900 dark:text-white tabular-nums">{formatCurrency(stats?.averageOrder || 0)}</p>
+              <p className="text-xl font-bold text-gray-900 dark:text-white tabular-nums">
+                {formatCurrency(stats?.averageSaleValue ?? 0)}
+              </p>
             </div>
           </div>
         </div>
@@ -322,7 +285,7 @@ export default function CustomerDetailPage() {
             <div>
               <p className="text-sm text-gray-500 dark:text-gray-400">Last Purchase</p>
               <p className="text-xl font-bold text-gray-900 dark:text-white">
-                {stats?.lastPurchase ? formatDate(stats.lastPurchase) : 'Never'}
+                {lastPurchaseDate ? formatDate(lastPurchaseDate) : 'Never'}
               </p>
             </div>
           </div>
@@ -332,7 +295,9 @@ export default function CustomerDetailPage() {
             <Clock className="w-5 h-5 text-warning-600" />
             <div>
               <p className="text-sm text-gray-500 dark:text-gray-400">Member Since</p>
-              <p className="text-xl font-bold text-gray-900 dark:text-white">{formatDate(customer.createdAt)}</p>
+              <p className="text-xl font-bold text-gray-900 dark:text-white">
+                {formatDate(customer.createdAt)}
+              </p>
             </div>
           </div>
         </div>

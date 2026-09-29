@@ -7,62 +7,65 @@ import { useAuth } from '../../hooks/useAuth';
 import { userService } from '../../services/userService';
 import { businessUnitService } from '../../services/businessUnitService';
 import { toast } from 'react-hot-toast';
-import { 
-  Users, User, Building, Shield, Key, Lock, Unlock,
-  Plus, Minus, X, Check, Save, Loader2, AlertCircle,
-  CheckCircle, XCircle, Eye, EyeOff, Search, Filter,
-  RefreshCw, Copy, Info, AlertTriangle, ChevronDown,
-  ChevronUp, ChevronLeft, ChevronRight, MoreVertical,
-  Star, Heart, ThumbsUp, MessageSquare, Share2,
-  FileText, Download, Upload, Settings,
-  Zap, Sparkles, Award, Crown, Medal, Trophy,
-  Target, Crosshair, Gauge,
-  CreditCard, DollarSign, Percent,
-  Tag, Store, ClipboardList, Truck, Boxes, Layers,
-  FolderTree, Database, Server, Cloud, Wifi,
-  Bluetooth, Battery, Sun, Moon, Wind, Droplet,
-  Flame, Leaf, TreePine, Mountain, Waves, Compass,
-  Map, Navigation, Route, UserPlus, UserCheck,
-  UserX, BadgeCheck, Ban, RotateCcw, History,
-  UsersIcon, UserCog, UserCircle, UserSquare,
-  UserRound, UserRoundCheck, UserRoundCog, UserRoundPlus,
-  UserRoundSearch, UserRoundX, UsersRound, GitBranch,
-  GitCommit, GitFork, GitMerge, GitPullRequest,
-  Network, ShareIcon, Link2, Unlink,
-  FolderPlus, FolderMinus, FolderOpen, FolderClosed,
-  FolderInput, FolderOutput, FolderSearch, FolderSync,
-  FolderTreeIcon, FolderX, TagIcon,
-  Tags, Hash, Grid, Layout, LayoutGrid, LayoutList,
-  Columns, Rows, PanelTop, PanelBottom, PanelLeft,
-  PanelRight, Maximize, Minimize, Move, Trash2,
-  Edit2, UserMinus, Briefcase, Globe,
-  // ✅ Removed duplicate Bookmark import - only imported once here
-  Bookmark
+import {
+  Users,
+  Building,
+  Shield,
+  Plus,
+  X,
+  Save,
+  Loader2,
+  AlertCircle,
+  CheckCircle,
+  XCircle,
+  Search,
+  ChevronDown,
+  ChevronUp,
+  Star,
+  Heart,
+  Briefcase,
+  Settings,
+  Globe,
+  Bookmark,
+  Tag,
+  Store,
+  Truck,
+  Database,
+  Server,
+  Cloud,
+  UserPlus,
+  UserCheck,
+  UserMinus,
+  Trash2,
+  Pencil,
+  UserCog,
+  UserCircle,
+  UserSquare,
+  UserRound,
+  UserRoundCheck,
+  UserRoundCog,
+  UserRoundPlus,
+  UsersRound,
+  GitBranch,
+  GitMerge,
+  Network,
+  FolderOpen,
 } from 'lucide-react';
 import { PERMISSIONS } from '../../types/permissions';
 import { UserRole } from '../../types/enums';
 
+// ✅ Import canonical types — do NOT re-declare them locally.
+import type { User, UserGroup as CanonicalUserGroup, BusinessUnit } from '../../types/user';
+
 // ============================================
-// TYPES - Aligned with API response types
+// TYPES
 // ============================================
 
-// ✅ FIXED: Matches the API response type with optional description
-interface UserGroup {
-  id: string;
-  name: string;
-  description?: string; // ✅ Made optional to match API
-  icon?: string;
-  color?: string;
-  members: GroupMember[];
-  permissions: string[];
-  createdAt: string;
-  updatedAt: string;
-  createdBy: string;
-  isActive: boolean;
-  businessUnitId?: string;
-  businessUnit?: BusinessUnit;
-}
-
+/**
+ * The component's view model for a group member. This is not the
+ * canonical `UserGroupMember` type from the API — it's a flattened
+ * representation used only for rendering.
+ */
 interface GroupMember {
   userId: string;
   role: UserRole;
@@ -70,32 +73,19 @@ interface GroupMember {
   isLead: boolean;
 }
 
-// ✅ FIXED: Matches the API response type with businessUnits as BusinessUnitUser[]
-interface User {
-  id: string;
-  email: string;
-  firstName: string;
-  lastName: string;
-  role: UserRole;
-  isActive: boolean;
-  permissions?: string[];
-  businessUnits?: BusinessUnit[] | any[]; // ✅ Allow both types
-  avatar?: string;
-}
-
-interface BusinessUnit {
-  id: string;
-  name: string;
-  code: string;
-  isActive?: boolean;
-}
-
-interface GroupPermission {
-  id: string;
-  label: string;
-  description: string;
-  resource: string;
-  action: string;
+/**
+ * The component's view model for a group. Extends the canonical
+ * `UserGroup` with a resolved `members: GroupMember[]` array and an
+ * optional resolved `businessUnit`.
+ *
+ * `description` is optional to match the canonical type (which is
+ * `string | null | undefined`).
+ */
+interface UserGroup extends Omit<CanonicalUserGroup, 'description'> {
+  description?: string;
+  members: GroupMember[];
+  businessUnitId?: string;
+  businessUnit?: BusinessUnit;
 }
 
 interface UserGroupsProps {
@@ -236,9 +226,8 @@ const GROUP_COLORS = [
   { value: 'bg-rose-100 text-rose-800 dark:bg-rose-900/30 dark:text-rose-400', name: 'Rose' },
 ];
 
-// ✅ FIXED: Removed icons that don't exist in lucide-react
 const GROUP_ICONS = [
-  { value: 'Users', component: <UsersIcon className="w-5 h-5" /> },
+  { value: 'Users', component: <Users className="w-5 h-5" /> },
   { value: 'UserCog', component: <UserCog className="w-5 h-5" /> },
   { value: 'UserCircle', component: <UserCircle className="w-5 h-5" /> },
   { value: 'UserSquare', component: <UserSquare className="w-5 h-5" /> },
@@ -248,7 +237,6 @@ const GROUP_ICONS = [
   { value: 'UserRoundPlus', component: <UserRoundPlus className="w-5 h-5" /> },
   { value: 'UsersRound', component: <UsersRound className="w-5 h-5" /> },
   { value: 'Network', component: <Network className="w-5 h-5" /> },
-  // ✅ Removed 'Nodes' - doesn't exist in lucide-react
   { value: 'GitBranch', component: <GitBranch className="w-5 h-5" /> },
   { value: 'GitMerge', component: <GitMerge className="w-5 h-5" /> },
   { value: 'FolderOpen', component: <FolderOpen className="w-5 h-5" /> },
@@ -283,9 +271,8 @@ export function UserGroups({
   editable = true,
   className = '',
 }: UserGroupsProps) {
-  const router = useRouter();
   const { can, isSuperAdmin, isAdmin } = useAuth();
-  
+
   // State management
   const [groups, setGroups] = useState<UserGroup[]>(initialGroups);
   const [users, setUsers] = useState<User[]>([]);
@@ -312,10 +299,6 @@ export function UserGroups({
   });
   const [editGroup, setEditGroup] = useState<UserGroup | null>(null);
   const [expandedGroups, setExpandedGroups] = useState<Set<string>>(new Set());
-  const [sortConfig, setSortConfig] = useState<{ key: string; direction: 'asc' | 'desc' }>({
-    key: 'name',
-    direction: 'asc',
-  });
   const [groupStats, setGroupStats] = useState({
     totalGroups: 0,
     totalMembers: 0,
@@ -328,192 +311,11 @@ export function UserGroups({
 
   const canManageGroups = isSuperAdmin || isAdmin || can(PERMISSIONS.USER_MANAGE);
 
-  // Load users
-  const loadUsers = useCallback(async () => {
-    try {
-      const response = await userService.getAllUsers({ limit: 1000 });
-      // ✅ FIXED: Safely handle the response data
-      const userData = response?.data || response || [];
-      setUsers(Array.isArray(userData) ? userData : []);
-    } catch (error) {
-      console.error('Failed to load users:', error);
-      // Use mock data as fallback
-      setUsers([
-        {
-          id: 'user_1',
-          email: 'john.doe@example.com',
-          firstName: 'John',
-          lastName: 'Doe',
-          role: UserRole.MANAGER,
-          isActive: true,
-          permissions: ['user:view', 'inventory:view'],
-          businessUnits: [{ id: 'bu_1', name: 'Headquarters', code: 'HQ' }],
-        },
-        {
-          id: 'user_2',
-          email: 'jane.smith@example.com',
-          firstName: 'Jane',
-          lastName: 'Smith',
-          role: UserRole.EDITOR,
-          isActive: true,
-          permissions: ['inventory:view', 'inventory:create'],
-          businessUnits: [{ id: 'bu_2', name: 'Branch 1', code: 'BR1' }],
-        },
-        {
-          id: 'user_3',
-          email: 'bob.wilson@example.com',
-          firstName: 'Bob',
-          lastName: 'Wilson',
-          role: UserRole.EMPLOYEE,
-          isActive: true,
-          permissions: ['inventory:view'],
-          businessUnits: [{ id: 'bu_1', name: 'Headquarters', code: 'HQ' }],
-        },
-        {
-          id: 'user_4',
-          email: 'alice.brown@example.com',
-          firstName: 'Alice',
-          lastName: 'Brown',
-          role: UserRole.VIEWER,
-          isActive: true,
-          permissions: ['inventory:view'],
-          businessUnits: [{ id: 'bu_2', name: 'Branch 1', code: 'BR1' }],
-        },
-        {
-          id: 'user_5',
-          email: 'charlie.davis@example.com',
-          firstName: 'Charlie',
-          lastName: 'Davis',
-          role: UserRole.CASHIER,
-          isActive: true,
-          permissions: ['sale:view', 'sale:create'],
-          businessUnits: [{ id: 'bu_3', name: 'Branch 2', code: 'BR2' }],
-        },
-      ]);
-    }
-  }, []);
-
-  // Load business units
-  const loadBusinessUnits = useCallback(async () => {
-    try {
-      const response = await businessUnitService?.getAllBusinessUnits?.();
-      
-      if (response && Array.isArray(response)) {
-        setBusinessUnits(response);
-      } else if (response?.data && Array.isArray(response.data)) {
-        setBusinessUnits(response.data);
-      }
-    } catch (error) {
-      console.error('Failed to load business units:', error);
-      // Use mock data as fallback
-      setBusinessUnits([
-        { id: 'bu_1', name: 'Headquarters', code: 'HQ', isActive: true },
-        { id: 'bu_2', name: 'Branch 1', code: 'BR1', isActive: true },
-        { id: 'bu_3', name: 'Branch 2', code: 'BR2', isActive: true },
-        { id: 'bu_4', name: 'Warehouse', code: 'WH', isActive: true },
-      ]);
-    }
-  }, []);
-
-  // Load groups (if no initial groups provided)
-  const loadGroups = useCallback(async () => {
-    if (initialGroups.length > 0) {
-      updateGroupStats(initialGroups);
-      return;
-    }
-    
-    try {
-      setLoading(true);
-      const response = await userService.getGroups({ limit: 100 });
-      
-      // ✅ FIXED: Safely handle the response data
-      const groupData = response?.data || response || [];
-      
-      if (Array.isArray(groupData) && groupData.length > 0) {
-        // ✅ FIXED: Ensure description is always a string
-        const mappedGroups = groupData.map((g: any) => ({
-          ...g,
-          description: g.description || '',
-        }));
-        setGroups(mappedGroups);
-        updateGroupStats(mappedGroups);
-      } else {
-        // Use mock data as fallback
-        await new Promise(resolve => setTimeout(resolve, 500));
-        const mockGroups: UserGroup[] = [
-          {
-            id: 'group_1',
-            name: 'Management Team',
-            description: 'Senior management and leadership team',
-            color: GROUP_COLORS[0].value,
-            icon: 'Users',
-            members: [
-              { userId: 'user_1', role: UserRole.MANAGER, joinedAt: new Date().toISOString(), isLead: true },
-            ],
-            permissions: ['user:view', 'user:create', 'user:edit', 'inventory:view', 'inventory:manage', 'report:view', 'report:create'],
-            createdAt: new Date().toISOString(),
-            updatedAt: new Date().toISOString(),
-            createdBy: 'Admin',
-            isActive: true,
-            businessUnitId: 'bu_1',
-          },
-          {
-            id: 'group_2',
-            name: 'Inventory Team',
-            description: 'Inventory management and stock control',
-            color: GROUP_COLORS[1].value,
-            icon: 'FolderOpen',
-            members: [
-              { userId: 'user_2', role: UserRole.EDITOR, joinedAt: new Date().toISOString(), isLead: true },
-              { userId: 'user_3', role: UserRole.EMPLOYEE, joinedAt: new Date().toISOString(), isLead: false },
-            ],
-            permissions: ['inventory:view', 'inventory:create', 'inventory:edit', 'inventory:delete', 'product:view'],
-            createdAt: new Date().toISOString(),
-            updatedAt: new Date().toISOString(),
-            createdBy: 'Admin',
-            isActive: true,
-            businessUnitId: 'bu_1',
-          },
-          {
-            id: 'group_3',
-            name: 'Sales Team',
-            description: 'Sales and customer relations',
-            color: GROUP_COLORS[2].value,
-            icon: 'UserRoundCheck',
-            members: [
-              { userId: 'user_5', role: UserRole.CASHIER, joinedAt: new Date().toISOString(), isLead: true },
-            ],
-            permissions: ['sale:view', 'sale:create', 'pos:view', 'pos:create', 'product:view'],
-            createdAt: new Date().toISOString(),
-            updatedAt: new Date().toISOString(),
-            createdBy: 'Admin',
-            isActive: true,
-            businessUnitId: 'bu_3',
-          },
-        ];
-        setGroups(mockGroups);
-        updateGroupStats(mockGroups);
-      }
-    } catch (error: any) {
-      console.error('Failed to load groups:', error);
-      setError(error?.message || 'Failed to load groups');
-    } finally {
-      setLoading(false);
-    }
-  }, [initialGroups]);
-
-  // Initial load
-  useEffect(() => {
-    loadUsers();
-    loadBusinessUnits();
-    loadGroups();
-  }, [loadUsers, loadBusinessUnits, loadGroups]);
-
   // Update group stats
   const updateGroupStats = useCallback((groupList: UserGroup[]) => {
     const totalMembers = groupList.reduce((sum, group) => sum + group.members.length, 0);
     const totalPermissions = groupList.reduce((sum, group) => sum + group.permissions.length, 0);
-    
+
     setGroupStats({
       totalGroups: groupList.length,
       totalMembers,
@@ -523,21 +325,125 @@ export function UserGroups({
     });
   }, []);
 
+  // Load users
+  const loadUsers = useCallback(async () => {
+    try {
+      const response = await userService.getAllUsers({ limit: 1000 });
+      // response is PaginatedResponse<User> where User comes from
+      // types/user. That is exactly the `User` we imported, so this
+      // assignment is now type-correct.
+      const userData = response?.data ?? [];
+      setUsers(Array.isArray(userData) ? userData : []);
+    } catch (error) {
+      console.error('Failed to load users:', error);
+      setUsers([]);
+    }
+  }, []);
+
+  // Load business units
+  const loadBusinessUnits = useCallback(async () => {
+    try {
+      const response = await businessUnitService?.getAllBusinessUnits?.();
+
+      if (response && Array.isArray(response)) {
+        setBusinessUnits(response as BusinessUnit[]);
+      } else if (response?.data && Array.isArray(response.data)) {
+        setBusinessUnits(response.data as BusinessUnit[]);
+      } else {
+        setBusinessUnits([]);
+      }
+    } catch (error) {
+      console.error('Failed to load business units:', error);
+      setBusinessUnits([]);
+    }
+  }, []);
+
+  // Load groups (if no initial groups provided)
+  const loadGroups = useCallback(async () => {
+    if (initialGroups.length > 0) {
+      updateGroupStats(initialGroups);
+      return;
+    }
+
+    try {
+      setLoading(true);
+      const response = await userService.getGroups({ limit: 100 });
+
+      const groupData = response?.data ?? [];
+
+      if (Array.isArray(groupData) && groupData.length > 0) {
+        // The API returns UserGroup (canonical type) which has
+        // `members` as UserGroupMember[] and `description` as
+        // `string | null`. Normalize into our view model.
+        const mappedGroups: UserGroup[] = groupData.map((g: any) => ({
+          id: g.id,
+          name: g.name,
+          description: g.description ?? '',
+          icon: g.icon ?? undefined,
+          color: g.color ?? undefined,
+          permissions: Array.isArray(g.permissions) ? g.permissions : [],
+          isActive: typeof g.isActive === 'boolean' ? g.isActive : true,
+          createdBy: g.createdBy ?? '',
+          createdById: g.createdById ?? undefined,
+          parentGroupId: g.parentGroupId ?? undefined,
+          metadata: g.metadata ?? undefined,
+          createdAt: g.createdAt ?? new Date().toISOString(),
+          updatedAt: g.updatedAt ?? new Date().toISOString(),
+          businessUnitId: g.businessUnitId ?? undefined,
+          businessUnit: g.businessUnit ?? undefined,
+          members: Array.isArray(g.members)
+            ? g.members.map((m: any) => ({
+                userId: m.userId,
+                role: (m.role ?? UserRole.USER) as UserRole,
+                joinedAt: m.joinedAt ?? new Date().toISOString(),
+                isLead: Boolean(m.isLead),
+              }))
+            : [],
+        }));
+        setGroups(mappedGroups);
+        updateGroupStats(mappedGroups);
+      } else {
+        setGroups([]);
+        updateGroupStats([]);
+      }
+    } catch (error: any) {
+      console.error('Failed to load groups:', error);
+      setError(error?.message || 'Failed to load groups');
+    } finally {
+      setLoading(false);
+    }
+  }, [initialGroups, updateGroupStats]);
+
+  // Initial load
+  useEffect(() => {
+    loadUsers();
+    loadBusinessUnits();
+    loadGroups();
+  }, [loadUsers, loadBusinessUnits, loadGroups]);
+
   // Handle create group
   const handleCreateGroup = useCallback(async () => {
     try {
       setSaving(true);
       setError(null);
-      
+
       if (!newGroup.name.trim()) {
         toast.error('Group name is required');
         return;
       }
-      
+
       const selectedBU = businessUnits.find(bu => bu.id === newGroup.businessUnitId);
-      
+
+      const result = await userService.createGroup({
+        name: newGroup.name.trim(),
+        description: newGroup.description.trim(),
+        icon: newGroup.icon,
+        color: newGroup.color,
+        permissions: [],
+      });
+
       const group: UserGroup = {
-        id: `group_${Date.now()}`,
+        id: result.id || `group_${Date.now()}`,
         name: newGroup.name.trim(),
         description: newGroup.description.trim(),
         color: newGroup.color,
@@ -551,31 +457,19 @@ export function UserGroups({
         businessUnitId: newGroup.businessUnitId || undefined,
         businessUnit: selectedBU,
       };
-      
-      // Call API to create group
-      const result = await userService.createGroup({
-        name: group.name,
-        description: group.description,
-        icon: group.icon,
-        color: group.color,
-        permissions: group.permissions,
-      });
-      
-      if (result) {
-        group.id = result.id || group.id;
-      }
-      
-      setGroups(prev => [...prev, group]);
-      updateGroupStats([...groups, group]);
+
+      const nextGroups = [...groups, group];
+      setGroups(nextGroups);
+      updateGroupStats(nextGroups);
       setShowCreateModal(false);
       setNewGroup({ name: '', description: '', color: GROUP_COLORS[0].value, icon: 'Users', businessUnitId: '' });
       setSuccessMessage('Group created successfully');
       toast.success('Group created successfully');
-      
+
       if (onGroupCreate) {
         onGroupCreate(group);
       }
-      
+
       setTimeout(() => setSuccessMessage(null), 3000);
     } catch (error: any) {
       console.error('Failed to create group:', error);
@@ -589,43 +483,42 @@ export function UserGroups({
   // Handle update group
   const handleUpdateGroup = useCallback(async () => {
     if (!editGroup) return;
-    
+
     try {
       setSaving(true);
       setError(null);
-      
+
       if (!editGroup.name.trim()) {
         toast.error('Group name is required');
         return;
       }
-      
-      const updatedGroup = {
+
+      const updatedGroup: UserGroup = {
         ...editGroup,
         name: editGroup.name.trim(),
         description: editGroup.description?.trim() || '',
         updatedAt: new Date().toISOString(),
       };
-      
-      // Call API to update group
+
       await userService.updateGroup(editGroup.id, {
         name: updatedGroup.name,
         description: updatedGroup.description,
-        icon: updatedGroup.icon,
-        color: updatedGroup.color,
+        icon: updatedGroup.icon ?? undefined,
+        color: updatedGroup.color ?? undefined,
         isActive: updatedGroup.isActive,
         permissions: updatedGroup.permissions,
       });
-      
+
       setGroups(prev => prev.map(g => g.id === updatedGroup.id ? updatedGroup : g));
       setShowEditModal(false);
       setEditGroup(null);
       setSuccessMessage('Group updated successfully');
       toast.success('Group updated successfully');
-      
+
       if (onGroupUpdate) {
         onGroupUpdate(updatedGroup);
       }
-      
+
       setTimeout(() => setSuccessMessage(null), 3000);
     } catch (error: any) {
       console.error('Failed to update group:', error);
@@ -639,25 +532,25 @@ export function UserGroups({
   // Handle delete group
   const handleDeleteGroup = useCallback(async () => {
     if (!selectedGroup) return;
-    
+
     try {
       setSaving(true);
       setError(null);
-      
-      // Call API to delete group
+
       await userService.deleteGroup(selectedGroup.id);
-      
-      setGroups(prev => prev.filter(g => g.id !== selectedGroup.id));
-      updateGroupStats(groups.filter(g => g.id !== selectedGroup.id));
+
+      const nextGroups = groups.filter(g => g.id !== selectedGroup.id);
+      setGroups(nextGroups);
+      updateGroupStats(nextGroups);
       setShowDeleteModal(false);
       setSelectedGroup(null);
       setSuccessMessage('Group deleted successfully');
       toast.success('Group deleted successfully');
-      
+
       if (onGroupDelete) {
         onGroupDelete(selectedGroup.id);
       }
-      
+
       setTimeout(() => setSuccessMessage(null), 3000);
     } catch (error: any) {
       console.error('Failed to delete group:', error);
@@ -671,30 +564,29 @@ export function UserGroups({
   // Handle add members
   const handleAddMembers = useCallback(async () => {
     if (!selectedGroup) return;
-    
+
     try {
       setSaving(true);
       setError(null);
-      
-      // Call API to assign users to group
+
       await userService.assignUsersToGroup(selectedGroup.id, Array.from(selectedMembers), {
         role: memberRole,
         isLead: memberIsLead,
       });
-      
+
       const newMembers: GroupMember[] = Array.from(selectedMembers).map(userId => ({
         userId,
         role: memberRole,
         joinedAt: new Date().toISOString(),
         isLead: memberIsLead,
       }));
-      
-      const updatedGroup = {
+
+      const updatedGroup: UserGroup = {
         ...selectedGroup,
         members: [...selectedGroup.members, ...newMembers],
         updatedAt: new Date().toISOString(),
       };
-      
+
       setGroups(prev => prev.map(g => g.id === updatedGroup.id ? updatedGroup : g));
       setSelectedGroup(updatedGroup);
       setShowMembersModal(false);
@@ -703,7 +595,7 @@ export function UserGroups({
       setMemberIsLead(false);
       setSuccessMessage('Members added successfully');
       toast.success('Members added successfully');
-      
+
       setTimeout(() => setSuccessMessage(null), 3000);
     } catch (error: any) {
       console.error('Failed to add members:', error);
@@ -717,20 +609,19 @@ export function UserGroups({
   // Handle remove member
   const handleRemoveMember = useCallback(async (userId: string) => {
     if (!selectedGroup) return;
-    
+
     try {
       setSaving(true);
       setError(null);
-      
-      // Call API to remove user from group
+
       await userService.removeUsersFromGroup(selectedGroup.id, [userId]);
-      
-      const updatedGroup = {
+
+      const updatedGroup: UserGroup = {
         ...selectedGroup,
         members: selectedGroup.members.filter(m => m.userId !== userId),
         updatedAt: new Date().toISOString(),
       };
-      
+
       setGroups(prev => prev.map(g => g.id === updatedGroup.id ? updatedGroup : g));
       setSelectedGroup(updatedGroup);
       toast.success('Member removed successfully');
@@ -746,26 +637,25 @@ export function UserGroups({
   // Handle update permissions
   const handleUpdatePermissions = useCallback(async () => {
     if (!selectedGroup) return;
-    
+
     try {
       setSaving(true);
       setError(null);
-      
-      // Call API to update group permissions
+
       await userService.updateGroupPermissions(selectedGroup.id, Array.from(selectedPermissions));
-      
-      const updatedGroup = {
+
+      const updatedGroup: UserGroup = {
         ...selectedGroup,
         permissions: Array.from(selectedPermissions),
         updatedAt: new Date().toISOString(),
       };
-      
+
       setGroups(prev => prev.map(g => g.id === updatedGroup.id ? updatedGroup : g));
       setSelectedGroup(updatedGroup);
       setShowPermissionsModal(false);
       setSuccessMessage('Permissions updated successfully');
       toast.success('Permissions updated successfully');
-      
+
       setTimeout(() => setSuccessMessage(null), 3000);
     } catch (error: any) {
       console.error('Failed to update permissions:', error);
@@ -789,41 +679,15 @@ export function UserGroups({
     });
   }, []);
 
-  // Handle sort
-  const handleSort = useCallback((key: string) => {
-    setSortConfig(prev => ({
-      key,
-      direction: prev.key === key && prev.direction === 'asc' ? 'desc' : 'asc',
-    }));
-  }, []);
-
-  // Filter and sort groups
+  // Filter groups
   const filteredGroups = useMemo(() => {
-    let filtered = groups;
-    
-    if (searchQuery) {
-      const query = searchQuery.toLowerCase();
-      filtered = filtered.filter(group => 
-        group.name.toLowerCase().includes(query) ||
-        (group.description?.toLowerCase() || '').includes(query)
-      );
-    }
-    
-    const sorted = [...filtered].sort((a: any, b: any) => {
-      const aValue = a[sortConfig.key];
-      const bValue = b[sortConfig.key];
-      
-      if (typeof aValue === 'string' && typeof bValue === 'string') {
-        return sortConfig.direction === 'asc' 
-          ? aValue.localeCompare(bValue) 
-          : bValue.localeCompare(aValue);
-      }
-      
-      return sortConfig.direction === 'asc' ? aValue - bValue : bValue - aValue;
-    });
-    
-    return sorted;
-  }, [groups, searchQuery, sortConfig]);
+    if (!searchQuery) return groups;
+    const query = searchQuery.toLowerCase();
+    return groups.filter(group =>
+      group.name.toLowerCase().includes(query) ||
+      (group.description?.toLowerCase() || '').includes(query)
+    );
+  }, [groups, searchQuery]);
 
   // Get user by ID
   const getUserById = useCallback((userId: string) => {
@@ -838,7 +702,7 @@ export function UserGroups({
   // Get group icon
   const getGroupIcon = useCallback((iconName: string) => {
     const icon = GROUP_ICONS.find(i => i.value === iconName);
-    return icon?.component || <UsersIcon className="w-5 h-5" />;
+    return icon?.component || <Users className="w-5 h-5" />;
   }, []);
 
   // Get color class
@@ -849,15 +713,6 @@ export function UserGroups({
   // Get initials
   const getInitials = useCallback((firstName: string, lastName: string) => {
     return `${firstName?.charAt(0) || ''}${lastName?.charAt(0) || ''}`.toUpperCase();
-  }, []);
-
-  // Format date
-  const formatDate = useCallback((date: string) => {
-    return new Date(date).toLocaleDateString('en-US', {
-      month: 'short',
-      day: 'numeric',
-      year: 'numeric',
-    });
   }, []);
 
   // Loading state
@@ -876,7 +731,7 @@ export function UserGroups({
       <div className="flex items-center justify-between flex-wrap gap-4">
         <div>
           <h2 className="text-xl font-bold text-gray-900 dark:text-white flex items-center gap-2">
-            <UsersIcon className="w-6 h-6 text-blue-500" />
+            <Users className="w-6 h-6 text-blue-500" />
             User Groups & Teams
           </h2>
           <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">
@@ -929,7 +784,7 @@ export function UserGroups({
         <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 p-4">
           <div className="flex items-center gap-3">
             <div className="p-2 bg-blue-100 dark:bg-blue-900/30 rounded-lg">
-              <UsersIcon className="w-5 h-5 text-blue-600 dark:text-blue-400" />
+              <Users className="w-5 h-5 text-blue-600 dark:text-blue-400" />
             </div>
             <div>
               <p className="text-sm text-gray-500 dark:text-gray-400">Total Groups</p>
@@ -998,7 +853,7 @@ export function UserGroups({
       {/* Groups Grid */}
       {filteredGroups.length === 0 ? (
         <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 p-12 text-center">
-          <UsersIcon className="w-16 h-16 mx-auto text-gray-300 dark:text-gray-600 mb-4" />
+          <Users className="w-16 h-16 mx-auto text-gray-300 dark:text-gray-600 mb-4" />
           <h3 className="text-lg font-medium text-gray-900 dark:text-white">No Groups Found</h3>
           <p className="text-gray-500 dark:text-gray-400 mt-2">
             {searchQuery ? 'No groups match your search criteria.' : 'Create your first group to get started.'}
@@ -1009,7 +864,7 @@ export function UserGroups({
           {filteredGroups.map(group => {
             const isExpanded = expandedGroups.has(group.id);
             const businessUnit = getBusinessUnitById(group.businessUnitId || '');
-            
+
             return (
               <div
                 key={group.id}
@@ -1050,10 +905,10 @@ export function UserGroups({
                       {isExpanded ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
                     </button>
                   </div>
-                  
+
                   <div className="flex items-center gap-3 mt-3 flex-wrap">
                     <span className="text-xs text-gray-500 dark:text-gray-400 flex items-center gap-1">
-                      <UsersIcon className="w-3 h-3" />
+                      <Users className="w-3 h-3" />
                       {group.members.length} members
                     </span>
                     <span className="text-xs text-gray-500 dark:text-gray-400 flex items-center gap-1">
@@ -1084,7 +939,7 @@ export function UserGroups({
                             {group.members.slice(0, 3).map(member => {
                               const user = getUserById(member.userId);
                               if (!user) return null;
-                              
+
                               return (
                                 <div key={member.userId} className="flex items-center gap-2">
                                   <div className="w-7 h-7 rounded-full bg-gradient-to-br from-blue-500 to-indigo-500 flex items-center justify-center text-white text-xs font-medium">
@@ -1141,7 +996,7 @@ export function UserGroups({
                           }}
                           className="px-3 py-1.5 text-sm text-blue-600 hover:bg-blue-50 dark:hover:bg-blue-900/20 rounded-lg transition-colors flex items-center gap-1"
                         >
-                          <Edit2 className="w-4 h-4" />
+                          <Pencil className="w-4 h-4" />
                           Edit
                         </button>
                         <button
@@ -1198,7 +1053,7 @@ export function UserGroups({
               >
                 <X className="w-5 h-5" />
               </button>
-              
+
               <div className="flex items-center gap-3 mb-6">
                 <div className="p-2 bg-blue-100 dark:bg-blue-900/30 rounded-lg">
                   <Plus className="w-6 h-6 text-blue-600" />
@@ -1334,10 +1189,10 @@ export function UserGroups({
               >
                 <X className="w-5 h-5" />
               </button>
-              
+
               <div className="flex items-center gap-3 mb-6">
                 <div className="p-2 bg-blue-100 dark:bg-blue-900/30 rounded-lg">
-                  <Edit2 className="w-6 h-6 text-blue-600" />
+                  <Pencil className="w-6 h-6 text-blue-600" />
                 </div>
                 <div>
                   <h3 className="text-lg font-bold text-gray-900 dark:text-white">Edit Group</h3>
@@ -1498,7 +1353,7 @@ export function UserGroups({
               >
                 <X className="w-5 h-5" />
               </button>
-              
+
               <div className="flex items-center gap-3 mb-6">
                 <div className="p-2 bg-green-100 dark:bg-green-900/30 rounded-lg">
                   <UserPlus className="w-6 h-6 text-green-600" />
@@ -1520,7 +1375,7 @@ export function UserGroups({
                       selectedGroup.members.map(member => {
                         const user = getUserById(member.userId);
                         if (!user) return null;
-                        
+
                         return (
                           <div key={member.userId} className="flex items-center justify-between p-2 bg-gray-50 dark:bg-gray-700/50 rounded-lg">
                             <div className="flex items-center gap-2">
@@ -1553,7 +1408,7 @@ export function UserGroups({
                 {/* Add Members */}
                 <div>
                   <h4 className="text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Add Members</h4>
-                  
+
                   {/* Member Role Selection */}
                   <div className="flex items-center gap-3 mb-3">
                     <div className="flex-1">
@@ -1613,7 +1468,10 @@ export function UserGroups({
                             <p className="text-xs text-gray-500">{user.email}</p>
                             {user.businessUnits && user.businessUnits.length > 0 && (
                               <p className="text-xs text-gray-400">
-                                {user.businessUnits.map((bu: any) => bu.name || bu.businessUnit?.name || '').filter(Boolean).join(', ')}
+                                {user.businessUnits
+                                  .map((bu: any) => bu?.businessUnit?.name ?? bu?.name ?? '')
+                                  .filter(Boolean)
+                                  .join(', ')}
                               </p>
                             )}
                           </div>
@@ -1665,7 +1523,7 @@ export function UserGroups({
               >
                 <X className="w-5 h-5" />
               </button>
-              
+
               <div className="flex items-center gap-3 mb-6">
                 <div className="p-2 bg-purple-100 dark:bg-purple-900/30 rounded-lg">
                   <Shield className="w-6 h-6 text-purple-600" />

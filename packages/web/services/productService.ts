@@ -16,6 +16,84 @@ import type {
 export type { Product, ProductVariant };
 
 // ============================================
+// CREATE-SHAPED PAYLOADS
+// ============================================
+//
+// ⚠ `Partial<Product>` is a poor fit for a create payload.
+//
+//   On the wire, a variant is a create-shaped object: it has no
+//   `productId`, `createdAt`, or `updatedAt` yet — the server
+//   populates those. But `Partial<Product>` drags in the read-side
+//   `ProductVariant` shape, which REQUIRES those three fields, and
+//   the compiler rejects a correctly-shaped payload as a result.
+//
+//   The interfaces below are the create-side analog: they accept the
+//   fields a client may legitimately send, and leave the
+//   server-managed ones off entirely.
+//
+//   Rule of thumb: `Partial<Product>` describes a *read* row with
+//   some fields absent; `*Payload` describes a *write* payload where
+//   some fields don't exist.
+
+/**
+ * A variant as the client sends it when creating a product.
+ *
+ * The `id` field is optional (present only when a caller is
+ * referencing an existing variant), and `productId` / `createdAt` /
+ * `updatedAt` are absent by design — the server owns them.
+ */
+interface CreateVariantPayload {
+  id?: string;
+  name: string;
+  sku?: string;
+  price: number;
+  costPrice?: number;
+  stock?: number;
+  images?: string[];
+  attributes?: Record<string, unknown>;
+  isActive?: boolean;
+  barcode?: string;
+  inventoryId?: string | null;
+  location?: string;
+}
+
+/**
+ * Payload accepted by `createProductFromInventory`.
+ *
+ * Documents the fields the caller may supply. Fields the backend
+ * derives from the inventory row itself (`minStock`, `maxStock`,
+ * `location`, `notes`) are optional here — the server will fall back
+ * to the linked inventory's values when they're omitted.
+ */
+export interface CreateProductFromInventoryPayload {
+  name: string;
+  sku?: string;
+  description?: string;
+  unitPrice?: number;
+  costPrice?: number;
+  barcode?: string;
+  categoryId?: string;
+  supplierId?: string;
+  isActive?: boolean;
+  featured?: boolean;
+  isDigital?: boolean;
+  taxRate?: number;
+  weight?: number;
+  minStock?: number;
+  maxStock?: number;
+  tags?: string[];
+  images?: string[];
+  notes?: string;
+  seo?: Record<string, unknown>;
+  variants?: CreateVariantPayload[];
+  /**
+   * Optional. When omitted, the service falls back to the
+   * business unit stored on the linked inventory row.
+   */
+  businessUnitId?: string;
+}
+
+// ============================================
 // CONSTANTS
 // ============================================
 
@@ -238,7 +316,7 @@ function extractErrorMessage(error: any): string {
   );
 }
 
-function cleanProductData(data: Partial<Product>): any {
+function cleanProductData(data: Record<string, unknown>): any {
   const cleaned: any = {};
   for (const [key, value] of Object.entries(data)) {
     if (value !== undefined && value !== null) {
@@ -941,11 +1019,15 @@ export const productService = {
 
   // ─────────────────────────────────────────────
   // createProductFromInventory
+  //
+  // ⚠ Second parameter is a CREATE-shaped payload, not
+  //   `Partial<Product>`. See the `CreateProductFromInventoryPayload`
+  //   interface at the top of this file for the reasoning.
   // ─────────────────────────────────────────────
 
   async createProductFromInventory(
     inventoryId: string,
-    data: Partial<Product>,
+    data: CreateProductFromInventoryPayload,
   ): Promise<Product> {
     if (!isClient) {
       throw new Error('Cannot create product from inventory on server');
@@ -960,13 +1042,15 @@ export const productService = {
         );
       }
 
-      if (!data.sku || data.sku === 'SKU' || data.sku.trim() === '') {
-        data.sku = generateUniqueSKU(data.name);
+      let sku = data.sku;
+      if (!sku || sku === 'SKU' || sku.trim() === '') {
+        sku = generateUniqueSKU(data.name);
       }
-      data.sku = data.sku.toUpperCase();
+      sku = sku.toUpperCase();
 
       const cleanedData = cleanProductData({
         ...data,
+        sku,
         inventoryId,
         businessUnitId: resolvedBusinessUnitId,
       });

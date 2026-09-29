@@ -1,10 +1,11 @@
-// src/services/cartService.ts
+// packages/backend/src/services/cartService.ts
 
 import { BaseService } from './BaseService.js';
 import { AppError } from '../middleware/errorHandler.js';
 import { Prisma } from '../generated/prisma/index.js';
 import { realtimeService } from './realtimeService.js';
 import { computeCartTotals, round2 } from '../utils/money.js';
+import { currencyService } from './currencyService.js';
 
 // ============================================
 // TYPES
@@ -70,7 +71,7 @@ interface CartItemResponse {
 }
 
 export interface ExportOptions {
-  format: 'csv' | 'excel' | 'json' | 'pdf';
+  format: 'csv' | 'json';
   metrics: string[];
   dateRange: string;
   startDate?: string;
@@ -81,7 +82,7 @@ export interface ExportOptions {
 }
 
 export interface ExportHistoryOptions {
-  format: 'csv' | 'excel' | 'json' | 'pdf';
+  format: 'csv' | 'json';
   dateRange: string;
   startDate?: string;
   endDate?: string;
@@ -90,7 +91,7 @@ export interface ExportHistoryOptions {
 }
 
 export interface ExportAbandonedOptions {
-  format: 'csv' | 'excel' | 'json' | 'pdf';
+  format: 'csv' | 'json';
   hours: number;
   minValue?: number;
   status?: string;
@@ -1935,12 +1936,41 @@ export class CartService extends BaseService {
   // SETTINGS
   // ============================================
 
+  /**
+   * Read the cart settings for a business unit.
+   *
+   * ⚠ Phase 2: Only `currencyCode` is persisted. Phase 1 removed
+   *    the `currencySymbol` column from `CartSettings`; the symbol
+   *    is now derived from the code at read time by the caller
+   *    (frontend via `lib/currencies.ts`, backend via
+   *    `currencyService.tryGetCurrency(code)?.symbol`).
+   *
+   *    The default `currencyCode` is resolved from the registry via
+   *    `currencyService.resolveForBusiness`, keyed on the BU's own
+   *    currency — NOT hardcoded to `'USD'`. That default predated
+   *    the currency registry and would have labelled a UGX cart as
+   *    USD on a Ugandan deployment.
+   *
+   *    The resolved value only applies on first creation of the
+   *    settings row. Once persisted, the row is authoritative until
+   *    an admin updates it.
+   */
   async getCartSettings(businessUnitId: string): Promise<any> {
     let settings = await this.prisma.cartSettings.findFirst({
       where: { businessUnitId },
     });
 
     if (!settings) {
+      // Resolve the default currency from the BU's own currency
+      // (falling through to DEFAULT_CURRENCY env → registry default).
+      const bu = await this.prisma.businessUnit.findUnique({
+        where: { id: businessUnitId },
+        select: { currency: true },
+      });
+      const resolvedCurrency = currencyService.resolveForBusiness(
+        bu?.currency ?? null,
+      );
+
       settings = await this.prisma.cartSettings.create({
         data: {
           businessUnitId,
@@ -1969,8 +1999,14 @@ export class CartService extends BaseService {
           notifyOnAbandonedCart: true,
           abandonedCartHours: 24,
           notifyOnLowStock: true,
-          currencyCode: 'USD',
-          currencySymbol: '$',
+          // ⚠ Phase 2: `currencySymbol` was removed here — the
+          //   schema no longer stores it. Phase 1 deleted the
+          //   column from `CartSettings` (and its siblings); the
+          //   symbol is derivable from the code via the registry.
+          //   Writing it would fail the generated Prisma client's
+          //   type check and, if the client were stale, would 500
+          //   the insert on the first GET /cart/settings.
+          currencyCode: resolvedCurrency,
           showStockBadge: true,
           showVariantImages: true,
           isActive: true,
@@ -1981,13 +2017,38 @@ export class CartService extends BaseService {
     return settings;
   }
 
+  /**
+   * Update the cart settings for a business unit.
+   *
+   * ⚠ Phase 2: `currencySymbol` is stripped from the incoming patch
+   *    before it reaches Prisma.
+   *
+   *    The controller's `CART_SETTINGS_ALLOWED_KEYS` whitelist (see
+   *    `cartController.ts`) already drops it, but this service is
+   *    also reachable from internal callers that don't go through
+   *    that controller. Guarding at the persistence boundary makes
+   *    the invariant hold regardless of caller: Phase 1 deleted the
+   *    column, and nothing should be able to write it back.
+   *
+   *    `currencyCode` is the only currency field this method will
+   *    persist.
+   */
   async updateCartSettings(
     businessUnitId: string,
     data: any,
   ): Promise<any> {
+    // ── Phase 2: strip removed fields ───────────────────────
+    // `currencySymbol` no longer exists on the model. If a caller
+    // (old controller version, direct internal caller, script)
+    // still sends it, Prisma would either throw on the unknown
+    // field or silently drop it depending on the client version.
+    // Strip it here so behavior is deterministic.
+    const cleanData = { ...(data ?? {}) };
+    delete (cleanData as any).currencySymbol;
+
     const settings = await this.prisma.cartSettings.update({
       where: { businessUnitId },
-      data: { ...data, updatedAt: new Date() },
+      data: { ...cleanData, updatedAt: new Date() },
     });
 
     return settings;

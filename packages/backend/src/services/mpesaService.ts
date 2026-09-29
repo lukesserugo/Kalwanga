@@ -229,6 +229,15 @@ export class MpesaService {
 
   /**
    * Initiate STK Push (Lipa Na M-Pesa Online).
+   *
+   * ⚠ Currency is NOT a parameter on the request body. Safaricom's
+   *   STK Push API reads the currency from the shortcode's country
+   *   configuration on Safaricom's side (a Kenyan shortcode
+   *   transacts in KES, a Ugandan one in UGX, etc.). No
+   *   caller-supplied currency is sent, and none is accepted on
+   *   this interface. The `KES` reference in the log line below is
+   *   historical and only useful as a debug label when the
+   *   shortcode is Kenyan.
    */
   async initiateSTKPush(params: STKPushRequest): Promise<STKPushResponse> {
     if (!this.isConfigured()) {
@@ -432,12 +441,34 @@ export class MpesaService {
     }
   }
 
+  /**
+   * Initiate a B2C payout (Business → Customer).
+   *
+   * ⚠ Currency is NOT a parameter on the request body. Safaricom's
+   *   B2C v1 API reads the currency from the shortcode's country
+   *   configuration on Safaricom's side — a Kenyan shortcode pays
+   *   out in KES, a Ugandan one in UGX, etc. The `requestBody`
+   *   below does not include a `Currency` field, and adding one
+   *   would be silently ignored (or, worse, trigger a mismatch
+   *   rejection) depending on the shortcode's provisioning.
+   *
+   *   This interface therefore does NOT accept a `currency`
+   *   argument. `paymentController.processMpesaB2C` used to pass
+   *   one, which was a Phase 2 misread of the API — the caller's
+   *   value was never consumed. See that controller's doc comment
+   *   for the current contract.
+   *
+   *   Contrast with STK Push: same reasoning applies there. The
+   *   common thread is that M-Pesa's currency is a property of the
+   *   shortcode, not of the request.
+   */
   async processB2CPayment(params: {
     phoneNumber: string;
     amount: number;
     commandId: 'BusinessPayment' | 'SalaryPayment' | 'PromotionPayment';
     remarks: string;
     occasion?: string;
+    // NOTE: no `currency` field. See the JSDoc above.
   }): Promise<any> {
     if (!this.isConfigured()) {
       throw new AppError('M-Pesa is not configured.', 503);

@@ -31,6 +31,25 @@ export const updateCartItemQuantitySchema = z.object({
   quantity: z.number().int().min(0),
 });
 
+/**
+ * Settings patch accepted by `PUT /cart/settings`.
+ *
+ * ⚠ `currencySymbol` was removed. The symbol is derived from
+ *   `currencyCode` via `lib/currencies.ts`; storing it alongside the
+ *   code allowed the two to drift (a code change to UGX with a stale
+ *   `$` symbol). Only `currencyCode` is settable.
+ *
+ * ⚠ The backend validates this against a strict allow-list in
+ *   `cartController.ts` (`CART_SETTINGS_ALLOWED_KEYS`). Both files
+ *   must be updated together when a field is added or removed. A
+ *   field present in one but not the other either 400s at this
+ *   schema layer or 400s at the controller whitelist — either way
+ *   it's a bug.
+ *
+ * ⚠ `currencySymbol` intentionally absent — see Phase 1 (schema
+ *   migration that removed the column) and Phase 2 (this change plus
+ *   the matching whitelist removal in `cartController.ts`).
+ */
 export const updateCartSettingsSchema = z.object({
   allowGuestCheckout: z.boolean().optional(),
   requireCustomerForReturn: z.boolean().optional(),
@@ -58,7 +77,7 @@ export const updateCartSettingsSchema = z.object({
   abandonedCartHours: z.number().int().min(1).max(720).optional(),
   notifyOnLowStock: z.boolean().optional(),
   currencyCode: z.string().optional(),
-  currencySymbol: z.string().optional(),
+  // ⚠ `currencySymbol` intentionally absent — see JSDoc above.
   showStockBadge: z.boolean().optional(),
   showVariantImages: z.boolean().optional(),
   isActive: z.boolean().optional(),
@@ -86,6 +105,22 @@ export const updateCartNotesSchema = z.object({
   notes: z.string().optional(),
 });
 
+/**
+ * Body accepted by `POST /cart/checkout` (and its canonical alias
+ * `POST /checkout`).
+ *
+ * ⚠ `tipAmount` and `cardNonce` are intentionally NOT declared here.
+ *   The offline checkout path ignores both — `cardNonce` is only
+ *   consumed by `POST /checkout/online`, and `tipAmount` isn't read
+ *   by `CheckoutService.processCheckout` at all. Declaring them here
+ *   would let a caller think they did something.
+ *
+ * `idempotencyKey` mirrors the controller's `checkoutSchema` and is
+ * forwarded to `CheckoutService.processCheckout` for its
+ * short-circuit. `Sale.idempotencyKey` is `@unique`; a retry with
+ * the same key returns the original Sale instead of creating a
+ * duplicate.
+ */
 export const cartCheckoutSchema = z.object({
   cartId: cartIdSchema,
   customerId: z.string().optional().nullable(),
@@ -94,10 +129,9 @@ export const cartCheckoutSchema = z.object({
   cashRegisterId: z.string().optional(),
   cashRegisterSessionId: z.string().optional(),
   notes: z.string().optional(),
-  tipAmount: z.number().min(0).optional(),
-  cardNonce: z.string().optional(),
   discount: z.number().nonnegative().optional(),
   applyLoyaltyPoints: z.boolean().optional(),
+  idempotencyKey: z.string().min(1).max(255).optional(),
 });
 
 export const transferCartSchema = z.object({
@@ -117,8 +151,21 @@ export const splitCartSchema = z.object({
     .min(1),
 });
 
+/**
+ * Export format union is `csv` or `json`.
+ *
+ * ⚠ The backend has no Excel or PDF generator. The cart export
+ *   endpoints in `cartController.ts` currently emit CSV only. A
+ *   caller requesting `'excel'` would receive a CSV body with an
+ *   `.xlsx` filename, which Excel refuses to open. A caller
+ *   requesting `'pdf'` would receive the same CSV mislabelled.
+ *   Both are worse than a schema rejection.
+ *
+ *   When a real Excel or PDF generator lands, re-add the value here
+ *   and implement the corresponding branch in the controller.
+ */
 export const exportAnalyticsSchema = z.object({
-  format: z.enum(['csv', 'excel', 'json', 'pdf']).default('csv'),
+  format: z.enum(['csv', 'json']).default('csv'),
   metrics: z.array(z.string()).default([]),
   dateRange: z
     .enum(['today', 'yesterday', 'week', 'month', 'quarter', 'year', 'custom'])
@@ -131,7 +178,7 @@ export const exportAnalyticsSchema = z.object({
 });
 
 export const exportHistorySchema = z.object({
-  format: z.enum(['csv', 'excel', 'json', 'pdf']).default('csv'),
+  format: z.enum(['csv', 'json']).default('csv'),
   dateRange: z
     .enum([
       'today',
@@ -150,7 +197,7 @@ export const exportHistorySchema = z.object({
 });
 
 export const exportAbandonedSchema = z.object({
-  format: z.enum(['csv', 'excel', 'json', 'pdf']).default('csv'),
+  format: z.enum(['csv', 'json']).default('csv'),
   hours: z.number().int().min(1).max(720).default(24),
   minValue: z.number().min(0).optional(),
   status: z.string().optional(),
@@ -167,17 +214,15 @@ export const abandonedCartsQuerySchema = z.object({
   dateRange: z.string().optional(),
 });
 
-export const recoverCartSchema = z.object({
-  cartId: cartIdSchema,
-  notifyUser: z.boolean().default(true),
-  message: z.string().optional(),
-});
-
-export const sendReminderSchema = z.object({
-  cartId: cartIdSchema,
-  message: z.string().optional(),
-  email: z.string().email().optional(),
-});
+// NOTE: `recoverCartSchema` and `sendReminderSchema` were removed.
+//
+// The backend routes file (`packages/backend/src/routes/cart.ts`)
+// does not register `/cart/recover` or `/cart/send-reminder`. Any
+// request to those paths returned a 404, and the schemas here only
+// encouraged callers to write to a nonexistent endpoint.
+//
+// When the backend adds the routes, re-add the schemas here and the
+// matching validator methods in `validators/cartValidation.ts`.
 
 export type AddCartItemInput = z.infer<typeof addCartItemSchema>;
 export type AddMultipleCartItemsInput = z.infer<typeof addMultipleCartItemsSchema>;
@@ -194,5 +239,3 @@ export type ExportAnalyticsInput = z.infer<typeof exportAnalyticsSchema>;
 export type ExportHistoryInput = z.infer<typeof exportHistorySchema>;
 export type ExportAbandonedInput = z.infer<typeof exportAbandonedSchema>;
 export type AbandonedCartsQueryInput = z.infer<typeof abandonedCartsQuerySchema>;
-export type RecoverCartInput = z.infer<typeof recoverCartSchema>;
-export type SendReminderInput = z.infer<typeof sendReminderSchema>;

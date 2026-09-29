@@ -2,24 +2,29 @@
 
 'use client';
 
-import React, { useState, useCallback, useEffect, useRef, useMemo } from 'react';
+import React, {
+  useState,
+  useCallback,
+  useEffect,
+  useRef,
+  useMemo,
+} from 'react';
 import { useRouter } from 'next/navigation';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   ArrowLeft, Truck, Package, Search, X,
   Warehouse, Building, Loader2, AlertCircle,
   ArrowRight, Lock, Info, MapPin, Minus, Plus,
-  CheckCircle, Building2, AlertTriangle,
-  Shield, Clock, Calendar, User, DollarSign,
-  Tag, Hash, Globe, Star, Award, Archive,
-  FileText, Printer, Download, Eye, Edit,
+  CheckCircle, Building2, Clock,
   ChevronUp, ChevronDown, History,
 } from 'lucide-react';
 import { useAuth } from '../../../../../hooks/useAuth';
 import { usePermission } from '../../../../../hooks/usePermission';
-import { inventoryService } from '../../../../../services/inventoryService';
+import {
+  inventoryService,
+  type FlatInventory,
+} from '../../../../../services/inventoryService';
 import { productService } from '../../../../../services/productService';
-import { companyService } from '../../../../../services/companyService';
 import { toast } from '../../../../../utils/toast-manager';
 import { formatCurrency, formatDate } from '../../../../../utils/formatters';
 import { PermissionResource } from '../../../../../types/enums';
@@ -27,24 +32,34 @@ import { PermissionResource } from '../../../../../types/enums';
 // ============================================
 // TYPES
 // ============================================
+//
+// The backend is the single source of truth.
+//
+//   • `Product` mirrors what `productService.getAllProducts` returns:
+//     nullable `category`, `supplier`, `barcode`, `images`, etc.
+//   • `Inventory` is a narrow view of the backend's `FlatInventoryItem`
+//     — only the fields this page actually renders.
+//   • `BusinessUnit` is the local UI view of `usePermission`'s BU list.
+//   • `TransferHistoryItem` reflects the shape the backend returns
+//     for `GET /inventory/transactions?transactionType=TRANSFER_IN`.
 
 interface Product {
   id: string;
   name: string;
   sku: string;
   unitPrice: number;
-  costPrice?: number;
-  barcode?: string | null;
-  images?: string[];
-  description?: string;
-  category?: { id: string; name: string } | null;
-  supplier?: { id: string; name: string } | null;
-  weight?: number;
-  taxRate?: number;
-  tags?: string[];
-  isDigital?: boolean;
-  isActive?: boolean;
-  featured?: boolean;
+  costPrice: number;
+  barcode: string | null;
+  images: string[];
+  description: string;
+  category: { id: string; name: string } | null;
+  supplier: { id: string; name: string } | null;
+  weight: number;
+  taxRate: number;
+  tags: string[];
+  isDigital: boolean;
+  isActive: boolean;
+  featured: boolean;
 }
 
 interface Inventory {
@@ -53,13 +68,13 @@ interface Inventory {
   quantity: number;
   reserved: number;
   location: string;
-  available?: number;
-  reorderPoint?: number;
-  reorderQuantity?: number;
-  shelfNumber?: string;
-  status?: string;
-  unit?: string;
-  images?: string[];
+  available: number;
+  reorderPoint: number;
+  reorderQuantity: number;
+  shelfNumber: string;
+  status: string;
+  unit: string;
+  images: string[];
 }
 
 interface BusinessUnit {
@@ -68,7 +83,6 @@ interface BusinessUnit {
   code: string;
   type?: string;
   isActive?: boolean;
-  companyId?: string;
   companyName?: string;
 }
 
@@ -104,8 +118,107 @@ const DEFAULT_LOCATIONS = [
   'In Transit',
   'Store A',
   'Store B',
-  'Outlet'
+  'Outlet',
 ];
+
+// ============================================
+// HELPERS
+// ============================================
+
+function unwrapPayload<T = any>(response: any): T | null {
+  if (!response) return null;
+  if (typeof response !== 'object') return response as T;
+  if ('data' in response && response.data !== undefined) return response.data;
+  return response as T;
+}
+
+function unwrapArray<T = any>(response: any): T[] {
+  if (!response) return [];
+  if (Array.isArray(response)) return response as T[];
+
+  if (typeof response === 'object') {
+    if (Array.isArray((response as any).data)) return (response as any).data;
+    if (Array.isArray((response as any).items)) return (response as any).items;
+    if ((response as any).data && Array.isArray((response as any).data.data)) {
+      return (response as any).data.data;
+    }
+    if ((response as any).data && Array.isArray((response as any).data.items)) {
+      return (response as any).data.items;
+    }
+  }
+  return [];
+}
+
+function isValidBusinessUnitId(id: string | null | undefined): id is string {
+  if (!id) return false;
+  return !['default', 'default-business-unit', 'undefined', 'null', ''].includes(
+    id,
+  );
+}
+
+/**
+ * Map the raw product row from `productService.getAllProducts` into
+ * the strict `Product` shape used by this page. Every nullable field
+ * gets a defined default so the JSX never has to guard.
+ */
+function normalizeProduct(raw: any): Product | null {
+  if (!raw || !raw.id) return null;
+  return {
+    id: String(raw.id),
+    name: String(raw.name ?? 'Unknown Product'),
+    sku: String(raw.sku ?? 'N/A'),
+    unitPrice: typeof raw.unitPrice === 'number' ? raw.unitPrice : 0,
+    costPrice: typeof raw.costPrice === 'number' ? raw.costPrice : 0,
+    barcode: raw.barcode ?? null,
+    images: Array.isArray(raw.images) ? raw.images : [],
+    description: String(raw.description ?? ''),
+    category:
+      raw.category && typeof raw.category === 'object'
+        ? { id: String(raw.category.id), name: String(raw.category.name) }
+        : null,
+    supplier:
+      raw.supplier && typeof raw.supplier === 'object'
+        ? { id: String(raw.supplier.id), name: String(raw.supplier.name) }
+        : null,
+    weight: typeof raw.weight === 'number' ? raw.weight : 0,
+    taxRate: typeof raw.taxRate === 'number' ? raw.taxRate : 0,
+    tags: Array.isArray(raw.tags) ? raw.tags : [],
+    isDigital: raw.isDigital === true,
+    isActive: raw.isActive !== false,
+    featured: raw.featured === true,
+  };
+}
+
+/**
+ * Map the backend's `FlatInventoryItem` into this page's narrow
+ * `Inventory`. The backend normalizes `quantity`, `reserved`,
+ * `available`, `location`, and `reorderPoint` — we just pick the
+ * fields the UI uses and coerce nullable ones to safe defaults.
+ */
+function normalizeInventory(raw: FlatInventory | null): Inventory | null {
+  if (!raw) return null;
+  const quantity = typeof raw.quantity === 'number' ? raw.quantity : 0;
+  const reserved = typeof raw.reserved === 'number' ? raw.reserved : 0;
+  const available =
+    typeof raw.available === 'number' ? raw.available : quantity - reserved;
+
+  return {
+    id: String(raw.id ?? ''),
+    productId: String(raw.productId ?? ''),
+    quantity,
+    reserved,
+    location: raw.location ?? 'Warehouse',
+    available,
+    reorderPoint:
+      typeof raw.reorderPoint === 'number' ? raw.reorderPoint : 5,
+    reorderQuantity:
+      typeof raw.reorderQuantity === 'number' ? raw.reorderQuantity : 10,
+    shelfNumber: '',
+    status: raw.status ?? 'ACTIVE',
+    unit: 'each',
+    images: Array.isArray(raw.images) ? raw.images : [],
+  };
+}
 
 // ============================================
 // SUB-COMPONENTS
@@ -117,23 +230,25 @@ const ProductCard: React.FC<{
   onSelect: () => void;
   onClear: () => void;
   loading?: boolean;
-}> = ({ product, inventory, onSelect, onClear, loading }) => {
-  const availableStock = inventory ? (inventory.available || inventory.quantity) : 0;
-  const hasImage = product.images && product.images.length > 0;
+}> = ({ product, inventory, onClear, loading }) => {
+  const availableStock = inventory
+    ? inventory.available
+    : 0;
+  const hasImage = product.images.length > 0;
 
   return (
     <motion.div
       initial={{ opacity: 0, y: 10 }}
       animate={{ opacity: 1, y: 0 }}
-      className="p-4 bg-brand-50 dark:bg-brand-950/20 rounded-lg border border-brand-200 dark:border-brand-800"
+      className="mt-3 p-4 bg-brand-50 dark:bg-brand-950/20 rounded-lg border border-brand-200 dark:border-brand-800"
     >
       <div className="flex items-start justify-between">
         <div className="flex items-start gap-3 min-w-0">
           <div className="w-12 h-12 bg-gray-100 dark:bg-gray-700 rounded-lg flex items-center justify-center overflow-hidden flex-shrink-0">
             {hasImage ? (
-              <img 
-                src={product.images![0]} 
-                alt={product.name} 
+              <img
+                src={product.images[0]}
+                alt={product.name}
                 className="w-full h-full object-cover"
                 onError={(e) => {
                   (e.target as HTMLImageElement).style.display = 'none';
@@ -144,7 +259,7 @@ const ProductCard: React.FC<{
             )}
           </div>
           <div className="flex-1 min-w-0">
-            <p className="font-medium text-gray-900 dark:text-white flex items-center gap-2">
+            <p className="font-medium text-gray-900 dark:text-white flex items-center gap-2 flex-wrap">
               {product.name}
               {product.isDigital && (
                 <span className="text-xs bg-brand-100 dark:bg-brand-950/30 text-brand-600 dark:text-brand-400 px-1.5 py-0.5 rounded-full">
@@ -157,9 +272,13 @@ const ProductCard: React.FC<{
                 </span>
               )}
             </p>
-            <p className="text-sm text-gray-600 dark:text-gray-400 font-mono">SKU: {product.sku}</p>
+            <p className="text-sm text-gray-600 dark:text-gray-400 font-mono">
+              SKU: {product.sku}
+            </p>
             {product.barcode && (
-              <p className="text-xs text-gray-500 dark:text-gray-400 font-mono">Barcode: {product.barcode}</p>
+              <p className="text-xs text-gray-500 dark:text-gray-400 font-mono">
+                Barcode: {product.barcode}
+              </p>
             )}
             <p className="text-sm text-gray-600 dark:text-gray-400 mt-1 tabular-nums">
               Price: {formatCurrency(product.unitPrice)}
@@ -177,19 +296,29 @@ const ProductCard: React.FC<{
           </div>
         </div>
         <div className="text-right flex-shrink-0 ml-4">
-          <p className="text-sm text-gray-500 dark:text-gray-400">Available Stock</p>
-          <p className={`text-lg font-bold tabular-nums ${
-            availableStock === 0 ? 'text-danger-600 dark:text-danger-400' :
-            availableStock <= (inventory?.reorderPoint || 5) ? 'text-warning-600 dark:text-warning-400' :
-            'text-success-600 dark:text-success-400'
-          }`}>
+          <p className="text-sm text-gray-500 dark:text-gray-400">
+            Available Stock
+          </p>
+          <p
+            className={`text-lg font-bold tabular-nums ${
+              availableStock === 0
+                ? 'text-danger-600 dark:text-danger-400'
+                : availableStock <= (inventory?.reorderPoint || 5)
+                  ? 'text-warning-600 dark:text-warning-400'
+                  : 'text-success-600 dark:text-success-400'
+            }`}
+          >
             {availableStock} {inventory?.unit || 'units'}
           </p>
           {inventory && inventory.reserved > 0 && (
-            <p className="text-xs text-gray-400 tabular-nums">({inventory.reserved} reserved)</p>
+            <p className="text-xs text-gray-400 tabular-nums">
+              ({inventory.reserved} reserved)
+            </p>
           )}
-          {inventory && inventory.reorderPoint && (
-            <p className="text-xs text-gray-400 tabular-nums">Reorder at {inventory.reorderPoint}</p>
+          {inventory && (
+            <p className="text-xs text-gray-400 tabular-nums">
+              Reorder at {inventory.reorderPoint}
+            </p>
           )}
         </div>
       </div>
@@ -199,17 +328,14 @@ const ProductCard: React.FC<{
             <MapPin className="w-3 h-3" />
             Location: {inventory.location || 'Warehouse'}
           </span>
-          {inventory.shelfNumber && (
-            <span className="flex items-center gap-1">
-              <Tag className="w-3 h-3" />
-              Shelf: {inventory.shelfNumber}
-            </span>
-          )}
           {inventory.status && (
-            <span className={`px-1.5 py-0.5 rounded-full ${
-              inventory.status === 'ACTIVE' ? 'bg-success-100 dark:bg-success-950/30 text-success-700 dark:text-success-300' :
-              'bg-gray-100 dark:bg-gray-700/50 text-gray-600 dark:text-gray-400'
-            }`}>
+            <span
+              className={`px-1.5 py-0.5 rounded-full ${
+                inventory.status === 'ACTIVE'
+                  ? 'bg-success-100 dark:bg-success-950/30 text-success-700 dark:text-success-300'
+                  : 'bg-gray-100 dark:bg-gray-700/50 text-gray-600 dark:text-gray-400'
+              }`}
+            >
               {inventory.status}
             </span>
           )}
@@ -218,7 +344,8 @@ const ProductCard: React.FC<{
       <button
         type="button"
         onClick={onClear}
-        className="mt-3 text-sm text-brand-accent-600 dark:text-brand-accent-400 hover:text-brand-accent-800 dark:hover:text-brand-accent-300 transition-colors flex items-center gap-1 focus-ring"
+        disabled={loading}
+        className="mt-3 text-sm text-brand-accent-600 dark:text-brand-accent-400 hover:text-brand-accent-800 dark:hover:text-brand-accent-300 transition-colors flex items-center gap-1 focus-ring disabled:opacity-50"
       >
         <X className="w-4 h-4" />
         Remove Selection
@@ -227,7 +354,9 @@ const ProductCard: React.FC<{
   );
 };
 
-const TransferHistoryItem: React.FC<{ transfer: TransferHistory }> = ({ transfer }) => {
+const TransferHistoryItem: React.FC<{ transfer: TransferHistory }> = ({
+  transfer,
+}) => {
   return (
     <motion.div
       initial={{ opacity: 0, y: 10 }}
@@ -260,7 +389,6 @@ const TransferHistoryItem: React.FC<{ transfer: TransferHistory }> = ({ transfer
             {formatDate(transfer.createdAt)}
           </div>
           <div className="flex items-center gap-1 justify-end mt-0.5">
-            <User className="w-3 h-3" />
             {transfer.user.firstName} {transfer.user.lastName}
           </div>
         </div>
@@ -276,16 +404,13 @@ const TransferHistoryItem: React.FC<{ transfer: TransferHistory }> = ({ transfer
 export default function TransferPage() {
   const router = useRouter();
   const { user, isAuthenticated } = useAuth();
-  const { hasPermission } = usePermission();
-  
-  // Refs
+  const { hasPermission, getBusinessUnits, getCurrentBusinessUnit } =
+    usePermission();
+
   const searchTimeoutRef = useRef<NodeJS.Timeout | null>(null);
-  const loadedRef = useRef(false);
   const businessUnitsLoadedRef = useRef(false);
-  
-  // State
+
   const [loading, setLoading] = useState(false);
-  const [initializing, setInitializing] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
   const [searchResults, setSearchResults] = useState<Product[]>([]);
   const [selectedProduct, setSelectedProduct] = useState<Product | null>(null);
@@ -301,206 +426,110 @@ export default function TransferPage() {
   const [transferHistory, setTransferHistory] = useState<TransferHistory[]>([]);
   const [loadingHistory, setLoadingHistory] = useState(false);
   const [showHistory, setShowHistory] = useState(false);
-  
-  // Business units
+
   const [businessUnits, setBusinessUnits] = useState<BusinessUnit[]>([]);
-  const [selectedBusinessUnitId, setSelectedBusinessUnitId] = useState<string>('');
+  const [selectedBusinessUnitId, setSelectedBusinessUnitId] =
+    useState<string>('');
   const [loadingBusinessUnits, setLoadingBusinessUnits] = useState(true);
-  const [businessUnitError, setBusinessUnitError] = useState<string | null>(null);
-  
-  // Locations from database
+  const [businessUnitError, setBusinessUnitError] = useState<string | null>(
+    null,
+  );
+
   const [locations, setLocations] = useState<string[]>(DEFAULT_LOCATIONS);
   const [loadingLocations, setLoadingLocations] = useState(false);
 
-  // Permission checks
-  const canTransferInventory = 
+  const canTransferInventory =
     hasPermission(`${PermissionResource.INVENTORY}:create`) ||
     hasPermission(`${PermissionResource.INVENTORY}:manage`) ||
     hasPermission(`${PermissionResource.INVENTORY}:transfer`) ||
     user?.role === 'SUPER_ADMIN';
 
   // ============================================
-  // FETCH BUSINESS UNITS
+  // BUSINESS UNITS
   // ============================================
 
   const fetchBusinessUnits = useCallback(async () => {
     if (businessUnitsLoadedRef.current) return;
-    
+
     setLoadingBusinessUnits(true);
     setBusinessUnitError(null);
     try {
-      console.log('📤 Fetching business units...');
-      
-      let units: BusinessUnit[] = [];
-      
-      try {
-        const stored = localStorage.getItem('businessUnits');
-        if (stored) {
-          const parsed = JSON.parse(stored);
-          if (Array.isArray(parsed) && parsed.length > 0) {
-            units = parsed.filter((bu: any) => {
-              const id = bu.id || bu.businessUnitId;
-              return id && id !== 'default' && id !== 'default-business-unit';
-            }).map((bu: any) => ({
-              id: bu.id || bu.businessUnitId,
-              name: bu.name || bu.businessUnit?.name || 'Unnamed',
-              code: bu.code || bu.businessUnit?.code || '',
-              type: bu.type || bu.businessUnit?.type || 'STORE',
+      // Primary source: usePermission hook (which is populated from
+      // the auth/sync payload — the same source the backend trusts).
+      const hookUnits = getBusinessUnits();
+      const hookCurrent = getCurrentBusinessUnit();
+
+      const mapped: BusinessUnit[] = Array.isArray(hookUnits)
+        ? hookUnits
+            .filter((bu: any) => isValidBusinessUnitId(bu?.id))
+            .map((bu: any) => ({
+              id: String(bu.id),
+              name: bu.name || 'Unnamed Business Unit',
+              code: bu.code || '',
+              type: bu.type || 'STORE',
               isActive: bu.isActive !== false,
-              companyName: bu.companyName || bu.businessUnit?.company?.name,
-            }));
-            console.log(`✅ Found ${units.length} business units from localStorage`);
-          }
-        }
-      } catch (storageError) {
-        console.warn('Failed to parse from localStorage:', storageError);
-      }
+              companyName: bu.companyName,
+            }))
+        : [];
 
-      if (units.length === 0 && user) {
-        const userAny = user as any;
-        if (userAny?.businessUnits && Array.isArray(userAny.businessUnits)) {
-          units = userAny.businessUnits
-            .map((bu: any) => {
-              const id = bu.businessUnitId || bu.id;
-              if (!id || id === 'default' || id === 'default-business-unit') return null;
-              return {
-                id: id,
-                name: bu.businessUnit?.name || bu.name || 'Unnamed',
-                code: bu.businessUnit?.code || bu.code || '',
-                type: bu.businessUnit?.type || bu.type || 'STORE',
-                isActive: bu.businessUnit?.isActive !== undefined ? bu.businessUnit.isActive : true,
-                companyName: bu.businessUnit?.company?.name || bu.companyName,
-              };
-            })
-            .filter((bu: BusinessUnit | null): bu is BusinessUnit => bu !== null);
-          console.log(`✅ Found ${units.length} business units from user context`);
-        }
-      }
+      setBusinessUnits(mapped);
 
-      if (units.length === 0) {
-        try {
-          const companies = await companyService.getAll({ limit: 100 });
-          if (companies?.data && Array.isArray(companies.data)) {
-            for (const company of companies.data) {
-              if (company.businessUnits && Array.isArray(company.businessUnits)) {
-                company.businessUnits.forEach((bu: any) => {
-                  if (bu.id && bu.id !== 'default' && bu.id !== 'default-business-unit') {
-                    units.push({
-                      id: bu.id,
-                      name: bu.name || 'Unnamed',
-                      code: bu.code || '',
-                      type: bu.type || 'STORE',
-                      isActive: bu.isActive !== false,
-                      companyName: company.name,
-                    });
-                  }
-                });
-              }
-            }
-            console.log(`✅ Found ${units.length} business units from company service`);
-          }
-        } catch (companyError) {
-          console.warn('Failed to fetch from company service:', companyError);
-        }
-      }
+      if (mapped.length > 0) {
+        const preferred =
+          (hookCurrent && mapped.find((u) => u.id === hookCurrent.id)) ||
+          mapped.find((u) => u.isActive !== false) ||
+          mapped[0];
 
-      if (units.length === 0) {
-        const savedId = localStorage.getItem('businessUnitId');
-        if (savedId && savedId !== 'default' && savedId !== 'default-business-unit') {
-          units.push({
-            id: savedId,
-            name: 'Default Business Unit',
-            code: 'DEFAULT',
-            type: 'STORE',
-            isActive: true,
-          });
-          console.log(`✅ Using fallback business unit from localStorage: ${savedId}`);
-        }
-      }
-
-      const uniqueUnits = units.filter((unit, index, self) => 
-        index === self.findIndex((u) => u.id === unit.id)
-      );
-
-      console.log(`📊 Total unique business units: ${uniqueUnits.length}`);
-      setBusinessUnits(uniqueUnits);
-
-      if (uniqueUnits.length > 0) {
-        const savedId = localStorage.getItem('selectedBusinessUnitId') || localStorage.getItem('businessUnitId');
-        if (savedId) {
-          const saved = uniqueUnits.find(bu => bu.id === savedId && bu.isActive !== false);
-          if (saved) {
-            setSelectedBusinessUnitId(saved.id);
-            fetchLocations(saved.id);
-            businessUnitsLoadedRef.current = true;
-            setLoadingBusinessUnits(false);
-            return;
-          }
-        }
-        const active = uniqueUnits.find(bu => bu.isActive !== false);
-        if (active) {
-          setSelectedBusinessUnitId(active.id);
-          localStorage.setItem('businessUnitId', active.id);
-          fetchLocations(active.id);
+        if (preferred) {
+          setSelectedBusinessUnitId(preferred.id);
         }
       } else {
-        setBusinessUnitError('No business units available. Please create one first.');
+        setBusinessUnitError(
+          'No business units available. Please create one first.',
+        );
       }
-
-      businessUnitsLoadedRef.current = true;
-      
-    } catch (error) {
-      console.error('Error fetching business units:', error);
+    } catch (err) {
+      console.error('[inventory/transfer] fetchBusinessUnits failed:', err);
       setBusinessUnitError('Failed to load business units. Please refresh.');
       toast.error('Failed to load business units');
     } finally {
+      businessUnitsLoadedRef.current = true;
       setLoadingBusinessUnits(false);
     }
-  }, [user]);
+  }, [getBusinessUnits, getCurrentBusinessUnit]);
 
   // ============================================
-  // FETCH LOCATIONS
+  // LOCATIONS
   // ============================================
 
   const fetchLocations = useCallback(async (businessUnitId: string) => {
-    if (!businessUnitId || businessUnitId === 'default' || businessUnitId === 'default-business-unit') {
+    if (!isValidBusinessUnitId(businessUnitId)) {
       setLocations(DEFAULT_LOCATIONS);
       return;
     }
 
     setLoadingLocations(true);
     try {
-      console.log(`📤 Loading locations for business unit: ${businessUnitId}`);
-      
-      let locationList: string[] = [];
-      
-      try {
-        const inventoryData = await inventoryService.getAllInventory(businessUnitId);
-        if (inventoryData && typeof inventoryData === 'object') {
-          if (inventoryData.items && Array.isArray(inventoryData.items)) {
-            const uniqueLocations = new Set<string>();
-            inventoryData.items.forEach((item: any) => {
-              if (item.location) {
-                uniqueLocations.add(item.location);
-              }
-            });
-            locationList = Array.from(uniqueLocations);
-            console.log(`📍 Found ${locationList.length} unique locations from inventory`);
-          }
-        }
-      } catch (error) {
-        console.warn('Failed to fetch locations from inventory:', error);
+      // Pull every inventory row for the resolved BU and collect
+      // distinct location names. The backend resolves the BU itself
+      // when we pass an explicit id, which we do here.
+      const inventoryData = await inventoryService.getAllInventory(
+        businessUnitId,
+      );
+
+      const items = Array.isArray(inventoryData?.items)
+        ? inventoryData.items
+        : [];
+      const unique = new Set<string>();
+      for (const item of items) {
+        const loc = (item as any).location;
+        if (typeof loc === 'string' && loc.trim()) unique.add(loc.trim());
       }
 
-      if (locationList.length === 0) {
-        locationList = DEFAULT_LOCATIONS;
-        console.log('📤 Using default locations');
-      }
-
-      setLocations(locationList);
-      
-    } catch (error) {
-      console.warn('Failed to fetch locations:', error);
+      const list = unique.size > 0 ? Array.from(unique) : DEFAULT_LOCATIONS;
+      setLocations(list);
+    } catch (err) {
+      console.warn('[inventory/transfer] fetchLocations failed:', err);
       setLocations(DEFAULT_LOCATIONS);
     } finally {
       setLoadingLocations(false);
@@ -508,24 +537,25 @@ export default function TransferPage() {
   }, []);
 
   // ============================================
-  // FETCH TRANSFER HISTORY
+  // TRANSFER HISTORY
   // ============================================
 
   const fetchTransferHistory = useCallback(async () => {
-    if (!selectedBusinessUnitId || selectedBusinessUnitId === 'default') return;
+    if (!isValidBusinessUnitId(selectedBusinessUnitId)) return;
 
     setLoadingHistory(true);
     try {
-      const transactions = await inventoryService.getInventoryTransactions({
-        businessUnitId: selectedBusinessUnitId,
+      const response = await inventoryService.getInventoryTransactions({
         transactionType: 'TRANSFER_IN',
         limit: 20,
       });
-      
-      const history: TransferHistory[] = (transactions?.data || []).map((tx: any) => ({
-        id: tx.id || '',
+
+      const rows = unwrapArray<any>(response);
+      const history: TransferHistory[] = rows.map((tx: any) => ({
+        id: String(tx.id ?? ''),
         productName: tx.product?.name || 'Unknown Product',
-        fromLocation: tx.fromLocation || tx.location || 'Unknown',
+        fromLocation:
+          tx.fromLocation || tx.inventory?.location || 'Unknown',
         toLocation: tx.toLocation || 'Unknown',
         quantity: Math.abs(tx.quantity || 0),
         createdAt: tx.createdAt || new Date().toISOString(),
@@ -536,8 +566,8 @@ export default function TransferPage() {
       }));
 
       setTransferHistory(history);
-    } catch (error) {
-      console.warn('Failed to load transfer history:', error);
+    } catch (err) {
+      console.warn('[inventory/transfer] fetchTransferHistory failed:', err);
       setTransferHistory([]);
     } finally {
       setLoadingHistory(false);
@@ -545,121 +575,95 @@ export default function TransferPage() {
   }, [selectedBusinessUnitId]);
 
   // ============================================
-  // SEARCH PRODUCTS
+  // PRODUCT SEARCH
   // ============================================
 
-  const handleSearch = useCallback(async (query: string) => {
-    setSearchQuery(query);
-    setSearchResults([]);
-    
-    if (query.length < 2) return;
-    
-    if (searchTimeoutRef.current) {
-      clearTimeout(searchTimeoutRef.current);
-    }
-    
-    searchTimeoutRef.current = setTimeout(async () => {
-      setSearching(true);
-      setError(null);
-      try {
-        console.log(`🔍 Searching for: ${query}`);
-        const results = await productService.getAllProducts({ 
-          search: query, 
-          limit: 10,
-          businessUnitId: selectedBusinessUnitId || undefined,
-        });
-        
-        let products: Product[] = [];
-        if (results && typeof results === 'object') {
-          let productList: any[] = [];
-          if (Array.isArray(results)) {
-            productList = results;
-          } else if (results.data && Array.isArray(results.data)) {
-            productList = results.data;
-          }
-          
-          products = productList.map((p: any) => ({
-            id: p.id,
-            name: p.name,
-            sku: p.sku,
-            unitPrice: p.unitPrice || 0,
-            costPrice: p.costPrice || 0,
-            barcode: p.barcode || null,
-            images: p.images || [],
-            description: p.description || '',
-            category: p.category ? { id: p.category.id, name: p.category.name } : null,
-            supplier: p.supplier ? { id: p.supplier.id, name: p.supplier.name } : null,
-            weight: p.weight || 0,
-            taxRate: p.taxRate || 0,
-            tags: p.tags || [],
-            isDigital: p.isDigital || false,
-            isActive: p.isActive !== false,
-            featured: p.featured || false,
-          }));
+  const handleSearch = useCallback(
+    (query: string) => {
+      setSearchQuery(query);
+      setSearchResults([]);
+
+      if (query.length < 2) return;
+
+      if (searchTimeoutRef.current) clearTimeout(searchTimeoutRef.current);
+
+      searchTimeoutRef.current = setTimeout(async () => {
+        setSearching(true);
+        setError(null);
+        try {
+          const results = await productService.getAllProducts({
+            search: query,
+            limit: 10,
+            businessUnitId: selectedBusinessUnitId || undefined,
+          });
+
+          const raw = unwrapArray<any>(results);
+          const products = raw
+            .map(normalizeProduct)
+            .filter((p): p is Product => p !== null);
+
+          setSearchResults(products);
+        } catch (err: any) {
+          console.error('[inventory/transfer] search failed:', err);
+          setError(
+            err?.response?.data?.message ||
+              err?.message ||
+              'Failed to search products',
+          );
+          setSearchResults([]);
+        } finally {
+          setSearching(false);
         }
-        
-        console.log(`🔍 Found ${products.length} products`);
-        setSearchResults(products);
-      } catch (error: any) {
-        console.error('Search failed:', error);
-        setError(error?.message || 'Failed to search products');
-        setSearchResults([]);
-      } finally {
-        setSearching(false);
-      }
-    }, 300);
-  }, [selectedBusinessUnitId]);
+      }, 300);
+    },
+    [selectedBusinessUnitId],
+  );
 
   // ============================================
   // SELECT PRODUCT
   // ============================================
 
-  const handleSelectProduct = useCallback(async (product: Product) => {
-    if (!selectedBusinessUnitId || selectedBusinessUnitId === 'default') {
-      toast.error('Please select a business unit first');
-      return;
-    }
-
-    setSelectedProduct(product);
-    setSearchQuery('');
-    setSearchResults([]);
-    setError(null);
-    
-    try {
-      console.log(`📤 Getting inventory for product: ${product.id}`);
-      const inv = await inventoryService.getInventoryByProduct(product.id, selectedBusinessUnitId);
-      console.log('📥 Inventory response:', inv);
-      
-      if (inv) {
-        const mappedInventory: Inventory = {
-          id: inv.id || '',
-          productId: inv.productId || product.id,
-          quantity: inv.quantity || inv.stock || 0,
-          reserved: inv.reserved || 0,
-          location: inv.location || 'Warehouse',
-          available: (inv.quantity || inv.stock || 0) - (inv.reserved || 0),
-          reorderPoint: inv.reorderPoint || 5,
-          reorderQuantity: inv.reorderQuantity || 10,
-          shelfNumber: inv.shelfNumber || '',
-          status: inv.status || 'ACTIVE',
-          unit: inv.unit || 'each',
-          images: inv.images || [],
-        };
-        setInventory(mappedInventory);
-        if (mappedInventory.location) {
-          setFormData(prev => ({ ...prev, fromLocation: mappedInventory.location || '' }));
-        }
-        toast.success(`Product ${product.name} loaded successfully`);
-      } else {
-        setInventory(null);
-        toast.warning('Product not found in inventory');
+  const handleSelectProduct = useCallback(
+    async (product: Product) => {
+      if (!isValidBusinessUnitId(selectedBusinessUnitId)) {
+        toast.error('Please select a business unit first');
+        return;
       }
-    } catch (error: any) {
-      console.error('Failed to load inventory:', error);
-      setInventory(null);
-      toast.warning('Could not load inventory for this product');
-    }
-  }, [selectedBusinessUnitId]);
+
+      setSelectedProduct(product);
+      setSearchQuery('');
+      setSearchResults([]);
+      setError(null);
+
+      try {
+        const inv = await inventoryService.getInventoryByProduct(
+          product.id,
+          selectedBusinessUnitId,
+        );
+
+        const mapped = normalizeInventory(inv);
+
+        if (mapped) {
+          setInventory(mapped);
+          if (mapped.location) {
+            setFormData((prev) => ({
+              ...prev,
+              fromLocation: mapped.location,
+            }));
+          }
+          toast.success(`Product ${product.name} loaded successfully`);
+        } else {
+          setInventory(null);
+          toast.warning('Product not found in inventory');
+        }
+      } catch (err) {
+        console.error('[inventory/transfer] load inventory failed:', err);
+        setInventory(null);
+        toast.warning('Could not load inventory for this product');
+      }
+    },
+    [selectedBusinessUnitId],
+  );
 
   // ============================================
   // SUBMIT TRANSFER
@@ -668,33 +672,33 @@ export default function TransferPage() {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError(null);
-    
+
     if (!selectedProduct) {
       toast.error('Please select a product');
       return;
     }
-    
-    if (!selectedBusinessUnitId || selectedBusinessUnitId === 'default') {
+
+    if (!isValidBusinessUnitId(selectedBusinessUnitId)) {
       toast.error('Please select a valid business unit');
       return;
     }
-    
+
     if (!formData.fromLocation || !formData.toLocation) {
       toast.error('Please specify both locations');
       return;
     }
-    
+
     if (formData.fromLocation === formData.toLocation) {
       toast.error('Source and destination must be different');
       return;
     }
-    
+
     if (formData.quantity <= 0) {
       toast.error('Quantity must be greater than 0');
       return;
     }
-    
-    const availableStock = inventory ? (inventory.available || inventory.quantity) : 0;
+
+    const availableStock = inventory?.available ?? 0;
     if (formData.quantity > availableStock) {
       toast.error(`Not enough stock. Available: ${availableStock}`);
       return;
@@ -702,6 +706,8 @@ export default function TransferPage() {
 
     setLoading(true);
     try {
+      // Backend resolves the BU from req.user, but we still send the
+      // explicit selection so multi-BU users target the right one.
       await inventoryService.transferStock({
         productId: selectedProduct.id,
         fromLocation: formData.fromLocation,
@@ -710,13 +716,16 @@ export default function TransferPage() {
         notes: formData.notes || undefined,
         businessUnitId: selectedBusinessUnitId,
       });
-      
+
       toast.success('Stock transferred successfully');
       router.push('/admin/inventory');
       router.refresh();
-    } catch (error: any) {
-      console.error('Transfer failed:', error);
-      const message = error?.response?.data?.message || error?.message || 'Failed to transfer stock';
+    } catch (err: any) {
+      console.error('[inventory/transfer] submit failed:', err);
+      const message =
+        err?.response?.data?.message ||
+        err?.message ||
+        'Failed to transfer stock';
       setError(message);
       toast.error(message);
     } finally {
@@ -738,26 +747,30 @@ export default function TransferPage() {
     setError(null);
   };
 
-  const handleLocationChange = (field: 'fromLocation' | 'toLocation', value: string) => {
-    setFormData(prev => ({ ...prev, [field]: value }));
+  const handleLocationChange = (
+    field: 'fromLocation' | 'toLocation',
+    value: string,
+  ) => {
+    setFormData((prev) => ({ ...prev, [field]: value }));
   };
 
   const handleBusinessUnitSelect = (businessUnitId: string) => {
-    const selected = businessUnits.find(bu => bu.id === businessUnitId);
+    const selected = businessUnits.find((bu) => bu.id === businessUnitId);
     if (selected && selected.isActive !== false) {
       setSelectedBusinessUnitId(businessUnitId);
-      localStorage.setItem('selectedBusinessUnitId', businessUnitId);
-      localStorage.setItem('businessUnitId', businessUnitId);
       toast.success(`Switched to ${selected.name}`);
       handleClearSelection();
       fetchLocations(businessUnitId);
-      fetchTransferHistory();
     } else if (selected && selected.isActive === false) {
       toast.error('This business unit is inactive');
     } else {
       toast.error('Invalid business unit selected');
     }
   };
+
+  // ============================================
+  // EFFECTS
+  // ============================================
 
   useEffect(() => {
     if (isAuthenticated) {
@@ -766,26 +779,39 @@ export default function TransferPage() {
   }, [isAuthenticated, fetchBusinessUnits]);
 
   useEffect(() => {
-    if (selectedBusinessUnitId && selectedBusinessUnitId !== 'default') {
+    if (isValidBusinessUnitId(selectedBusinessUnitId)) {
       fetchLocations(selectedBusinessUnitId);
-      fetchTransferHistory();
+      if (showHistory) {
+        fetchTransferHistory();
+      }
     }
-  }, [selectedBusinessUnitId, fetchLocations, fetchTransferHistory]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedBusinessUnitId, fetchLocations]);
 
   useEffect(() => {
     return () => {
-      if (searchTimeoutRef.current) {
-        clearTimeout(searchTimeoutRef.current);
-      }
+      if (searchTimeoutRef.current) clearTimeout(searchTimeoutRef.current);
     };
   }, []);
+
+  const availableStock = inventory?.available ?? 0;
+  const selectedBU = useMemo(
+    () => businessUnits.find((bu) => bu.id === selectedBusinessUnitId),
+    [businessUnits, selectedBusinessUnitId],
+  );
+
+  // ============================================
+  // SEARCH RESULTS RENDERER
+  // ============================================
 
   const renderSearchResults = () => {
     if (searching) {
       return (
         <div className="absolute top-full left-0 right-0 mt-1 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg shadow-lg z-10 p-4 text-center">
           <Loader2 className="w-5 h-5 animate-spin text-brand-600 mx-auto" />
-          <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">Searching...</p>
+          <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">
+            Searching...
+          </p>
         </div>
       );
     }
@@ -794,8 +820,12 @@ export default function TransferPage() {
       return (
         <div className="absolute top-full left-0 right-0 mt-1 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg shadow-lg z-10 p-4 text-center">
           <Package className="w-8 h-8 text-gray-300 dark:text-gray-600 mx-auto mb-2" />
-          <p className="text-sm text-gray-500 dark:text-gray-400">No products found</p>
-          <p className="text-xs text-gray-400 dark:text-gray-500">Try a different search term</p>
+          <p className="text-sm text-gray-500 dark:text-gray-400">
+            No products found
+          </p>
+          <p className="text-xs text-gray-400 dark:text-gray-500">
+            Try a different search term
+          </p>
         </div>
       );
     }
@@ -812,10 +842,10 @@ export default function TransferPage() {
             >
               <div className="flex items-center gap-3 min-w-0">
                 <div className="w-8 h-8 bg-gray-100 dark:bg-gray-700 rounded-lg flex items-center justify-center overflow-hidden flex-shrink-0">
-                  {product.images && product.images.length > 0 ? (
-                    <img 
-                      src={product.images[0]} 
-                      alt={product.name} 
+                  {product.images.length > 0 ? (
+                    <img
+                      src={product.images[0]}
+                      alt={product.name}
                       className="w-full h-full object-cover"
                       onError={(e) => {
                         (e.target as HTMLImageElement).style.display = 'none';
@@ -826,10 +856,16 @@ export default function TransferPage() {
                   )}
                 </div>
                 <div className="flex-1 min-w-0">
-                  <p className="font-medium text-gray-900 dark:text-white truncate">{product.name}</p>
-                  <p className="text-xs text-gray-500 dark:text-gray-400 font-mono">SKU: {product.sku}</p>
+                  <p className="font-medium text-gray-900 dark:text-white truncate">
+                    {product.name}
+                  </p>
+                  <p className="text-xs text-gray-500 dark:text-gray-400 font-mono">
+                    SKU: {product.sku}
+                  </p>
                   {product.category && (
-                    <p className="text-xs text-gray-400 dark:text-gray-500">{product.category.name}</p>
+                    <p className="text-xs text-gray-400 dark:text-gray-500">
+                      {product.category.name}
+                    </p>
                   )}
                 </div>
               </div>
@@ -850,14 +886,22 @@ export default function TransferPage() {
     return null;
   };
 
+  // ============================================
+  // AUTH / PERMISSION GATES
+  // ============================================
+
   if (!isAuthenticated) {
     return (
       <div className="flex flex-col items-center justify-center min-h-[60vh] p-8">
         <div className="w-24 h-24 bg-gray-100 dark:bg-gray-700 rounded-full flex items-center justify-center mb-4">
           <Lock className="w-12 h-12 text-gray-400" />
         </div>
-        <h2 className="text-2xl font-bold text-gray-700 dark:text-gray-300">Please Login</h2>
-        <p className="text-gray-500 dark:text-gray-400 mt-2">You need to be logged in to transfer stock.</p>
+        <h2 className="text-2xl font-bold text-gray-700 dark:text-gray-300">
+          Please Login
+        </h2>
+        <p className="text-gray-500 dark:text-gray-400 mt-2">
+          You need to be logged in to transfer stock.
+        </p>
       </div>
     );
   }
@@ -874,8 +918,12 @@ export default function TransferPage() {
           <div className="w-24 h-24 bg-gray-100 dark:bg-gray-700 rounded-full flex items-center justify-center mx-auto mb-4">
             <Lock className="w-12 h-12 text-gray-400" />
           </div>
-          <h2 className="text-2xl font-bold text-gray-700 dark:text-gray-300">Access Restricted</h2>
-          <p className="text-gray-500 dark:text-gray-400 mt-2">You don't have permission to transfer stock.</p>
+          <h2 className="text-2xl font-bold text-gray-700 dark:text-gray-300">
+            Access Restricted
+          </h2>
+          <p className="text-gray-500 dark:text-gray-400 mt-2">
+            You don't have permission to transfer stock.
+          </p>
           <button
             onClick={() => router.push('/admin/inventory')}
             className="mt-4 px-6 py-2 bg-brand-600 text-white rounded-lg hover:bg-brand-700 transition-colors shadow-brand focus-ring"
@@ -887,15 +935,14 @@ export default function TransferPage() {
     );
   }
 
-  const availableStock = inventory ? (inventory.available || inventory.quantity) : 0;
-  const selectedBU = businessUnits.find(bu => bu.id === selectedBusinessUnitId);
-
   if (loadingBusinessUnits) {
     return (
       <div className="flex items-center justify-center min-h-[60vh]">
         <div className="text-center">
           <Loader2 className="w-12 h-12 text-brand-500 animate-spin mx-auto mb-4" />
-          <p className="text-gray-500 dark:text-gray-400">Loading business units...</p>
+          <p className="text-gray-500 dark:text-gray-400">
+            Loading business units...
+          </p>
         </div>
       </div>
     );
@@ -906,8 +953,12 @@ export default function TransferPage() {
       <div className="flex flex-col items-center justify-center min-h-[60vh] p-8">
         <div className="text-center">
           <Building2 className="w-16 h-16 text-gray-300 dark:text-gray-600 mx-auto mb-4" />
-          <h2 className="text-2xl font-bold text-gray-700 dark:text-gray-300">No Business Units</h2>
-          <p className="text-gray-500 dark:text-gray-400 mt-2">Please create a business unit first.</p>
+          <h2 className="text-2xl font-bold text-gray-700 dark:text-gray-300">
+            No Business Units
+          </h2>
+          <p className="text-gray-500 dark:text-gray-400 mt-2">
+            {businessUnitError || 'Please create a business unit first.'}
+          </p>
           <button
             onClick={() => router.push('/admin/settings')}
             className="mt-4 px-6 py-2 bg-brand-600 text-white rounded-lg hover:bg-brand-700 transition-colors shadow-brand focus-ring"
@@ -918,6 +969,18 @@ export default function TransferPage() {
       </div>
     );
   }
+
+  // ============================================
+  // RENDER
+  // ============================================
+
+  const canSubmit =
+    !loading &&
+    !!selectedProduct &&
+    isValidBusinessUnitId(selectedBusinessUnitId) &&
+    formData.quantity > 0 &&
+    formData.fromLocation !== formData.toLocation &&
+    formData.quantity <= availableStock;
 
   return (
     <div className="max-w-3xl mx-auto p-4 sm:p-6">
@@ -936,7 +999,9 @@ export default function TransferPage() {
               <Truck className="w-6 h-6 text-brand-500" />
               Transfer Stock
             </h1>
-            <p className="text-gray-500 dark:text-gray-400">Move inventory between locations</p>
+            <p className="text-gray-500 dark:text-gray-400">
+              Move inventory between locations
+            </p>
           </div>
         </div>
         {selectedBU && (
@@ -947,16 +1012,19 @@ export default function TransferPage() {
         )}
       </div>
 
-      {/* Error Banner */}
+      {/* ERROR BANNER */}
       {error && (
         <div className="mb-6 p-4 bg-brand-accent-50 dark:bg-brand-accent-950/20 border border-brand-accent-200 dark:border-brand-accent-800 rounded-xl flex items-start gap-3">
           <AlertCircle className="w-5 h-5 text-brand-accent-600 dark:text-brand-accent-400 flex-shrink-0 mt-0.5" />
           <div className="flex-1">
-            <p className="text-sm text-brand-accent-700 dark:text-brand-accent-300">{error}</p>
+            <p className="text-sm text-brand-accent-700 dark:text-brand-accent-300">
+              {error}
+            </p>
           </div>
           <button
             onClick={() => setError(null)}
             className="p-1 hover:bg-brand-accent-100 dark:hover:bg-brand-accent-800/30 rounded transition focus-ring"
+            aria-label="Dismiss error"
           >
             <X className="w-4 h-4 text-brand-accent-600 dark:text-brand-accent-400" />
           </button>
@@ -977,12 +1045,15 @@ export default function TransferPage() {
             <option value="">Select a business unit</option>
             {businessUnits.map((bu) => (
               <option key={bu.id} value={bu.id}>
-                {bu.name} {bu.code ? `(${bu.code})` : ''} {bu.isActive === false ? '(Inactive)' : ''}
+                {bu.name} {bu.code ? `(${bu.code})` : ''}{' '}
+                {bu.isActive === false ? '(Inactive)' : ''}
               </option>
             ))}
           </select>
           {businessUnitError && (
-            <p className="mt-1 text-sm text-brand-accent-600 dark:text-brand-accent-400">{businessUnitError}</p>
+            <p className="mt-1 text-sm text-brand-accent-600 dark:text-brand-accent-400">
+              {businessUnitError}
+            </p>
           )}
         </div>
       )}
@@ -1008,7 +1079,11 @@ export default function TransferPage() {
                   placeholder="Search by name or SKU..."
                   value={searchQuery}
                   onChange={(e) => handleSearch(e.target.value)}
-                  disabled={loading || !!selectedProduct || !selectedBusinessUnitId || selectedBusinessUnitId === 'default'}
+                  disabled={
+                    loading ||
+                    !!selectedProduct ||
+                    !isValidBusinessUnitId(selectedBusinessUnitId)
+                  }
                   className="w-full pl-10 pr-4 py-2.5 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-brand-500 focus:border-brand-500 focus:outline-none dark:bg-gray-700 dark:text-white disabled:opacity-60 disabled:cursor-not-allowed transition-colors"
                 />
               </div>
@@ -1024,9 +1099,7 @@ export default function TransferPage() {
               )}
             </div>
 
-            <AnimatePresence>
-              {renderSearchResults()}
-            </AnimatePresence>
+            <AnimatePresence>{renderSearchResults()}</AnimatePresence>
           </div>
 
           <AnimatePresence>
@@ -1041,12 +1114,12 @@ export default function TransferPage() {
             )}
           </AnimatePresence>
 
-          {!selectedBusinessUnitId || selectedBusinessUnitId === 'default' ? (
+          {!isValidBusinessUnitId(selectedBusinessUnitId) && (
             <p className="mt-2 text-sm text-warning-600 dark:text-warning-400 flex items-center gap-1">
               <AlertCircle className="w-4 h-4" />
               Please select a business unit first
             </p>
-          ) : null}
+          )}
         </div>
 
         {/* LOCATIONS */}
@@ -1060,7 +1133,9 @@ export default function TransferPage() {
               <input
                 type="text"
                 value={formData.fromLocation}
-                onChange={(e) => handleLocationChange('fromLocation', e.target.value)}
+                onChange={(e) =>
+                  handleLocationChange('fromLocation', e.target.value)
+                }
                 className="w-full pl-10 pr-4 py-2.5 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-brand-500 focus:border-brand-500 focus:outline-none dark:bg-gray-700 dark:text-white transition-colors"
                 placeholder="Enter source location"
                 list="locationList"
@@ -1068,7 +1143,7 @@ export default function TransferPage() {
                 disabled={loading || loadingLocations}
               />
               <datalist id="locationList">
-                {locations.map(loc => (
+                {locations.map((loc) => (
                   <option key={loc} value={loc} />
                 ))}
               </datalist>
@@ -1079,12 +1154,14 @@ export default function TransferPage() {
                 Loading locations...
               </p>
             )}
-            {inventory && inventory.location && formData.fromLocation !== inventory.location && (
-              <p className="mt-1 text-xs text-warning-600 dark:text-warning-400 flex items-center gap-1">
-                <AlertCircle className="w-3 h-3" />
-                Current location is "{inventory.location}"
-              </p>
-            )}
+            {inventory &&
+              inventory.location &&
+              formData.fromLocation !== inventory.location && (
+                <p className="mt-1 text-xs text-warning-600 dark:text-warning-400 flex items-center gap-1">
+                  <AlertCircle className="w-3 h-3" />
+                  Current location is "{inventory.location}"
+                </p>
+              )}
           </div>
           <div>
             <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
@@ -1095,7 +1172,9 @@ export default function TransferPage() {
               <input
                 type="text"
                 value={formData.toLocation}
-                onChange={(e) => handleLocationChange('toLocation', e.target.value)}
+                onChange={(e) =>
+                  handleLocationChange('toLocation', e.target.value)
+                }
                 className="w-full pl-10 pr-4 py-2.5 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-brand-500 focus:border-brand-500 focus:outline-none dark:bg-gray-700 dark:text-white transition-colors"
                 placeholder="Enter destination location"
                 list="locationList"
@@ -1103,25 +1182,33 @@ export default function TransferPage() {
                 disabled={loading || loadingLocations}
               />
             </div>
-            {formData.fromLocation && formData.toLocation && formData.fromLocation === formData.toLocation && (
-              <p className="mt-1 text-xs text-brand-accent-600 dark:text-brand-accent-400 flex items-center gap-1">
-                <AlertCircle className="w-3 h-3" />
-                Source and destination must be different
-              </p>
-            )}
+            {formData.fromLocation &&
+              formData.toLocation &&
+              formData.fromLocation === formData.toLocation && (
+                <p className="mt-1 text-xs text-brand-accent-600 dark:text-brand-accent-400 flex items-center gap-1">
+                  <AlertCircle className="w-3 h-3" />
+                  Source and destination must be different
+                </p>
+              )}
           </div>
         </div>
 
         {/* QUANTITY */}
         <div>
           <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-            Quantity to Transfer <span className="text-brand-accent-500">*</span>
+            Quantity to Transfer{' '}
+            <span className="text-brand-accent-500">*</span>
           </label>
           <div className="flex flex-wrap items-center gap-4">
             <div className="flex items-center gap-2">
               <button
                 type="button"
-                onClick={() => setFormData(prev => ({ ...prev, quantity: Math.max(1, prev.quantity - 1) }))}
+                onClick={() =>
+                  setFormData((prev) => ({
+                    ...prev,
+                    quantity: Math.max(1, prev.quantity - 1),
+                  }))
+                }
                 className="p-1.5 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-brand-50 dark:hover:bg-gray-700 hover:border-brand-300 dark:hover:border-brand-700 transition-colors disabled:opacity-50 focus-ring"
                 disabled={loading || !selectedProduct || formData.quantity <= 1}
               >
@@ -1130,7 +1217,12 @@ export default function TransferPage() {
               <input
                 type="number"
                 value={formData.quantity}
-                onChange={(e) => setFormData({ ...formData, quantity: Math.max(0, parseInt(e.target.value) || 0) })}
+                onChange={(e) =>
+                  setFormData({
+                    ...formData,
+                    quantity: Math.max(0, parseInt(e.target.value) || 0),
+                  })
+                }
                 min="1"
                 max={availableStock || 0}
                 className="w-20 px-3 py-2.5 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-brand-500 focus:border-brand-500 focus:outline-none dark:bg-gray-700 dark:text-white text-center tabular-nums transition-colors"
@@ -1139,9 +1231,21 @@ export default function TransferPage() {
               />
               <button
                 type="button"
-                onClick={() => setFormData(prev => ({ ...prev, quantity: Math.min(availableStock || 1, prev.quantity + 1) }))}
+                onClick={() =>
+                  setFormData((prev) => ({
+                    ...prev,
+                    quantity: Math.min(
+                      availableStock || 1,
+                      prev.quantity + 1,
+                    ),
+                  }))
+                }
                 className="p-1.5 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-brand-50 dark:hover:bg-gray-700 hover:border-brand-300 dark:hover:border-brand-700 transition-colors disabled:opacity-50 focus-ring"
-                disabled={loading || !selectedProduct || formData.quantity >= availableStock}
+                disabled={
+                  loading ||
+                  !selectedProduct ||
+                  formData.quantity >= availableStock
+                }
               >
                 <Plus className="w-4 h-4" />
               </button>
@@ -1154,7 +1258,12 @@ export default function TransferPage() {
             {inventory && availableStock > 0 && (
               <button
                 type="button"
-                onClick={() => setFormData(prev => ({ ...prev, quantity: availableStock }))}
+                onClick={() =>
+                  setFormData((prev) => ({
+                    ...prev,
+                    quantity: availableStock,
+                  }))
+                }
                 className="text-sm text-brand-600 dark:text-brand-400 hover:text-brand-800 dark:hover:text-brand-300 transition-colors focus-ring"
                 disabled={loading || !selectedProduct}
               >
@@ -1181,7 +1290,9 @@ export default function TransferPage() {
           </label>
           <textarea
             value={formData.notes}
-            onChange={(e) => setFormData({ ...formData, notes: e.target.value })}
+            onChange={(e) =>
+              setFormData({ ...formData, notes: e.target.value })
+            }
             rows={3}
             className="w-full px-4 py-2.5 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-brand-500 focus:border-brand-500 focus:outline-none dark:bg-gray-700 dark:text-white resize-y transition-colors"
             placeholder="Reason for transfer..."
@@ -1193,7 +1304,9 @@ export default function TransferPage() {
         <div className="flex flex-col sm:flex-row items-center justify-between gap-4 pt-4 border-t border-gray-200 dark:border-gray-700">
           <div className="flex items-center gap-2 text-sm text-gray-500 dark:text-gray-400">
             <Info className="w-4 h-4 text-brand-500" />
-            <span>Stock will be deducted from source and added to destination</span>
+            <span>
+              Stock will be deducted from source and added to destination
+            </span>
           </div>
           <div className="flex gap-3 w-full sm:w-auto">
             <button
@@ -1206,15 +1319,7 @@ export default function TransferPage() {
             </button>
             <button
               type="submit"
-              disabled={
-                loading || 
-                !selectedProduct || 
-                !selectedBusinessUnitId ||
-                selectedBusinessUnitId === 'default' ||
-                formData.quantity <= 0 || 
-                formData.fromLocation === formData.toLocation || 
-                formData.quantity > availableStock
-              }
+              disabled={!canSubmit}
               className="px-6 py-2 bg-brand-600 text-white rounded-lg hover:bg-brand-700 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2 flex-1 sm:flex-none transition-colors shadow-brand focus-ring"
             >
               {loading ? (
@@ -1232,20 +1337,36 @@ export default function TransferPage() {
           </div>
         </div>
 
-        {/* FORM FOOTER */}
+        {/* FOOTER STATUS */}
         <div className="flex flex-wrap items-center justify-between gap-2 pt-2 text-xs text-gray-400 dark:text-gray-500 border-t border-gray-100 dark:border-gray-700">
           <span className="flex items-center gap-2">
-            <span className={`w-1.5 h-1.5 rounded-full ${
-              selectedProduct && selectedBusinessUnitId && selectedBusinessUnitId !== 'default' ? 'bg-success-500' : 'bg-warning-500'
-            }`} />
-            {selectedProduct ? 'Product selected' : 'Select a product to transfer'}
+            <span
+              className={`w-1.5 h-1.5 rounded-full ${
+                selectedProduct &&
+                isValidBusinessUnitId(selectedBusinessUnitId)
+                  ? 'bg-success-500'
+                  : 'bg-warning-500'
+              }`}
+            />
+            {selectedProduct
+              ? 'Product selected'
+              : 'Select a product to transfer'}
           </span>
           <span className="flex items-center gap-2">
-            <CheckCircle className={`w-3 h-3 ${selectedBusinessUnitId && selectedBusinessUnitId !== 'default' ? 'text-success-500' : 'text-gray-400'}`} />
-            {selectedBusinessUnitId && selectedBusinessUnitId !== 'default' ? 'Business unit selected' : 'Select business unit'}
+            <CheckCircle
+              className={`w-3 h-3 ${
+                isValidBusinessUnitId(selectedBusinessUnitId)
+                  ? 'text-success-500'
+                  : 'text-gray-400'
+              }`}
+            />
+            {isValidBusinessUnitId(selectedBusinessUnitId)
+              ? 'Business unit selected'
+              : 'Select business unit'}
           </span>
           <span className="tabular-nums">
-            {locations.length} location{locations.length !== 1 ? 's' : ''} available
+            {locations.length} location{locations.length !== 1 ? 's' : ''}{' '}
+            available
           </span>
         </div>
       </motion.form>
@@ -1262,7 +1383,11 @@ export default function TransferPage() {
           <Clock className="w-4 h-4" />
           Transfer History ({transferHistory.length})
         </span>
-        {showHistory ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
+        {showHistory ? (
+          <ChevronUp className="w-4 h-4" />
+        ) : (
+          <ChevronDown className="w-4 h-4" />
+        )}
       </button>
 
       <AnimatePresence>
@@ -1278,18 +1403,27 @@ export default function TransferPage() {
               {loadingHistory ? (
                 <div className="p-8 text-center">
                   <Loader2 className="w-6 h-6 animate-spin mx-auto mb-2 text-brand-500" />
-                  <p className="text-sm text-gray-500 dark:text-gray-400">Loading history...</p>
+                  <p className="text-sm text-gray-500 dark:text-gray-400">
+                    Loading history...
+                  </p>
                 </div>
               ) : transferHistory.length === 0 ? (
                 <div className="p-8 text-center">
                   <History className="w-12 h-12 text-gray-300 dark:text-gray-600 mx-auto mb-3" />
-                  <p className="text-sm text-gray-500 dark:text-gray-400">No transfer history yet</p>
-                  <p className="text-xs text-gray-400 dark:text-gray-500">Transfers will appear here</p>
+                  <p className="text-sm text-gray-500 dark:text-gray-400">
+                    No transfer history yet
+                  </p>
+                  <p className="text-xs text-gray-400 dark:text-gray-500">
+                    Transfers will appear here
+                  </p>
                 </div>
               ) : (
                 <div className="divide-y divide-gray-100 dark:divide-gray-700 max-h-60 overflow-y-auto custom-scrollbar">
                   {transferHistory.map((transfer) => (
-                    <TransferHistoryItem key={transfer.id} transfer={transfer} />
+                    <TransferHistoryItem
+                      key={transfer.id}
+                      transfer={transfer}
+                    />
                   ))}
                 </div>
               )}

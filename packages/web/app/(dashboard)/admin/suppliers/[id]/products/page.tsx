@@ -2,20 +2,31 @@
 
 'use client';
 
-import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import Link from 'next/link';
-import { motion, AnimatePresence } from 'framer-motion';
+import { motion } from 'framer-motion';
 import {
-  ArrowLeft, Package, Search, RefreshCw, Plus,
-  Edit, Trash2, Loader2, Lock, AlertCircle,
-  X, CheckCircle, Eye, DollarSign, Tag, ShoppingBag,
-  Filter, Grid, List, Download, Printer, ExternalLink,
-  ChevronDown, ChevronUp, Info, Star, StarHalf
+  ArrowLeft,
+  Package,
+  Search,
+  RefreshCw,
+  Loader2,
+  Lock,
+  AlertCircle,
+  X,
+  Grid,
+  List,
+  Printer,
+  Star,
+  Tag,
 } from 'lucide-react';
 import { useAuth } from '../../../../../../hooks/useAuth';
 import { usePermission } from '../../../../../../hooks/usePermission';
-import { supplierService } from '../../../../../../services/supplierService';
+import {
+  supplierService,
+  type SupplierProduct,
+} from '../../../../../../services/supplierService';
 import { toast } from '../../../../../../utils/toast-manager';
 import { formatCurrency } from '../../../../../../utils/formatters';
 import { PermissionResource } from '../../../../../../types/enums';
@@ -24,42 +35,86 @@ import { PermissionResource } from '../../../../../../types/enums';
 // TYPES
 // ============================================
 
-interface SupplierProduct {
-  id: string;
-  productId?: string;
-  unitPrice: number;
-  leadTime?: number | null;
-  isPreferred: boolean;
-  isActive: boolean;
-  product?: {
-    id: string;
-    name: string;
-    sku: string;
-    barcode?: string | null;
-    unitPrice: number;
-    costPrice?: number | null;
-    category?: {
-      id: string;
-      name: string;
-    } | null;
-    images?: string[];
-    isActive: boolean;
-  };
-  variant?: {
-    id: string;
-    name: string;
-    sku: string;
-  } | null;
-  createdAt: string;
-  updatedAt: string;
-}
-
 interface ProductFilters {
   search: string;
   status: 'all' | 'active' | 'inactive';
   preferred: 'all' | 'preferred' | 'regular';
   sortBy: 'name' | 'price' | 'leadTime' | 'createdAt';
   sortOrder: 'asc' | 'desc';
+}
+
+// ============================================
+// HELPERS
+// ============================================
+
+/**
+ * The frontend service's `SupplierProduct` already carries every
+ * field the backend returns — no local reshaping is needed. These
+ * helpers just pick the right fallbacks when the nested `product`
+ * is missing or the raw payload used a slightly different key.
+ */
+function getProductName(p: SupplierProduct): string {
+  return (p as any).product?.name || 'Unknown Product';
+}
+
+function getProductSku(p: SupplierProduct): string {
+  const raw: any = p;
+  return raw.product?.sku || raw.variant?.sku || 'N/A';
+}
+
+function getProductCategory(p: SupplierProduct): string {
+  return (p as any).product?.category?.name || 'Uncategorized';
+}
+
+function getProductPrice(p: SupplierProduct): number {
+  const raw: any = p;
+  return raw.unitPrice ?? raw.product?.unitPrice ?? 0;
+}
+
+function getProductLeadTime(p: SupplierProduct): number | null {
+  const raw: any = p;
+  const value = raw.leadTime;
+  return typeof value === 'number' ? value : null;
+}
+
+function isProductPreferred(p: SupplierProduct): boolean {
+  return (p as any).isPreferred === true;
+}
+
+function isProductActive(p: SupplierProduct): boolean {
+  const raw: any = p;
+  if (typeof raw.isActive === 'boolean') return raw.isActive;
+  if (typeof raw.product?.isActive === 'boolean') return raw.product.isActive;
+  return true;
+}
+
+function getProductVariant(
+  p: SupplierProduct,
+): { id: string; name: string; sku: string } | null {
+  const raw: any = p;
+  if (raw.variant && typeof raw.variant === 'object') {
+    return {
+      id: String(raw.variant.id ?? ''),
+      name: String(raw.variant.name ?? ''),
+      sku: String(raw.variant.sku ?? ''),
+    };
+  }
+  return null;
+}
+
+/**
+ * The backend's `getSupplierProducts` returns a paginated envelope:
+ *   { products: [...], total, page, limit, totalPages }
+ * The frontend service forwards that shape. We unwrap to the array.
+ */
+function extractProductArray(response: any): SupplierProduct[] {
+  if (!response) return [];
+  if (Array.isArray(response)) return response as SupplierProduct[];
+  if (typeof response === 'object') {
+    if (Array.isArray(response.products)) return response.products;
+    if (Array.isArray(response.data)) return response.data;
+  }
+  return [];
 }
 
 // ============================================
@@ -120,7 +175,9 @@ const ProductFiltersBar: React.FC<{
             className="px-3 py-2 bg-gray-100 dark:bg-gray-700 rounded-lg text-sm text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-brand-500 border-0 disabled:opacity-50"
           >
             {statusOptions.map((opt) => (
-              <option key={opt.value} value={opt.value}>{opt.label}</option>
+              <option key={opt.value} value={opt.value}>
+                {opt.label}
+              </option>
             ))}
           </select>
 
@@ -131,7 +188,9 @@ const ProductFiltersBar: React.FC<{
             className="px-3 py-2 bg-gray-100 dark:bg-gray-700 rounded-lg text-sm text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-brand-500 border-0 disabled:opacity-50"
           >
             {preferredOptions.map((opt) => (
-              <option key={opt.value} value={opt.value}>{opt.label}</option>
+              <option key={opt.value} value={opt.value}>
+                {opt.label}
+              </option>
             ))}
           </select>
 
@@ -142,14 +201,24 @@ const ProductFiltersBar: React.FC<{
             className="px-3 py-2 bg-gray-100 dark:bg-gray-700 rounded-lg text-sm text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-brand-500 border-0 disabled:opacity-50"
           >
             {sortOptions.map((opt) => (
-              <option key={opt.value} value={opt.value}>Sort by {opt.label}</option>
+              <option key={opt.value} value={opt.value}>
+                Sort by {opt.label}
+              </option>
             ))}
           </select>
 
           <button
-            onClick={() => onFilterChange('sortOrder', filters.sortOrder === 'asc' ? 'desc' : 'asc')}
+            onClick={() =>
+              onFilterChange(
+                'sortOrder',
+                filters.sortOrder === 'asc' ? 'desc' : 'asc',
+              )
+            }
             disabled={loading}
             className="p-2 bg-gray-100 dark:bg-gray-700 rounded-lg hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors disabled:opacity-50 focus-ring"
+            aria-label={`Sort ${
+              filters.sortOrder === 'asc' ? 'descending' : 'ascending'
+            }`}
           >
             {filters.sortOrder === 'asc' ? '↑' : '↓'}
           </button>
@@ -174,13 +243,14 @@ const ProductCard: React.FC<{
   product: SupplierProduct;
   index: number;
 }> = ({ product, index }) => {
-  const productName = product.product?.name || 'Unknown Product';
-  const productSku = product.product?.sku || product.variant?.sku || 'N/A';
-  const categoryName = product.product?.category?.name || 'Uncategorized';
-  const price = product.unitPrice || product.product?.unitPrice || 0;
-  const leadTime = product.leadTime || null;
-  const isPreferred = product.isPreferred || false;
-  const isActive = product.isActive !== undefined ? product.isActive : (product.product?.isActive !== undefined ? product.product.isActive : true);
+  const name = getProductName(product);
+  const sku = getProductSku(product);
+  const category = getProductCategory(product);
+  const price = getProductPrice(product);
+  const leadTime = getProductLeadTime(product);
+  const preferred = isProductPreferred(product);
+  const active = isProductActive(product);
+  const variant = getProductVariant(product);
 
   return (
     <motion.div
@@ -189,9 +259,7 @@ const ProductCard: React.FC<{
       transition={{ delay: index * 0.05 }}
       whileHover={{ y: -4 }}
       className={`card-brand p-4 hover:shadow-card-hover transition-all ${
-        isActive
-          ? ''
-          : 'opacity-60'
+        active ? '' : 'opacity-60'
       }`}
     >
       <div className="flex items-start justify-between">
@@ -200,18 +268,22 @@ const ProductCard: React.FC<{
             <Package className="w-5 h-5 text-brand-500" />
           </div>
           <div className="min-w-0">
-            <h4 className="font-medium text-gray-900 dark:text-white truncate">{productName}</h4>
+            <h4 className="font-medium text-gray-900 dark:text-white truncate">
+              {name}
+            </h4>
             <div className="flex items-center gap-2 text-sm text-gray-500 dark:text-gray-400">
               <Tag className="w-3 h-3" />
-              <span className="font-mono">{productSku}</span>
+              <span className="font-mono">{sku}</span>
             </div>
-            {categoryName && (
-              <span className="text-xs text-gray-400 dark:text-gray-500">{categoryName}</span>
+            {category && (
+              <span className="text-xs text-gray-400 dark:text-gray-500">
+                {category}
+              </span>
             )}
           </div>
         </div>
         <div className="flex gap-1 flex-shrink-0 ml-2">
-          {isPreferred && (
+          {preferred && (
             <span className="px-2 py-0.5 bg-warning-100 dark:bg-warning-900/30 text-warning-700 dark:text-warning-300 rounded-full text-xs font-medium flex items-center gap-1">
               <Star className="w-3 h-3 fill-warning-400" />
               Preferred
@@ -228,28 +300,34 @@ const ProductCard: React.FC<{
           </p>
         </div>
         <div className="text-center p-2 bg-gray-50 dark:bg-gray-700/30 rounded-lg">
-          <p className="text-xs text-gray-500 dark:text-gray-400">Lead Time</p>
+          <p className="text-xs text-gray-500 dark:text-gray-400">
+            Lead Time
+          </p>
           <p className="text-sm font-semibold text-gray-900 dark:text-white tabular-nums">
             {leadTime ? `${leadTime} days` : 'N/A'}
           </p>
         </div>
         <div className="text-center p-2 bg-gray-50 dark:bg-gray-700/30 rounded-lg">
           <p className="text-xs text-gray-500 dark:text-gray-400">Status</p>
-          <span className={`text-xs font-medium px-2 py-0.5 rounded-full ${
-            isActive
-              ? 'bg-success-100 text-success-700 dark:bg-success-900/30 dark:text-success-300'
-              : 'bg-danger-100 text-danger-700 dark:bg-danger-900/30 dark:text-danger-300'
-          }`}>
-            {isActive ? 'Active' : 'Inactive'}
+          <span
+            className={`text-xs font-medium px-2 py-0.5 rounded-full ${
+              active
+                ? 'bg-success-100 text-success-700 dark:bg-success-900/30 dark:text-success-300'
+                : 'bg-danger-100 text-danger-700 dark:bg-danger-900/30 dark:text-danger-300'
+            }`}
+          >
+            {active ? 'Active' : 'Inactive'}
           </span>
         </div>
       </div>
 
-      {product.variant && (
+      {variant && (
         <div className="mt-2 text-xs text-gray-400 dark:text-gray-500 flex items-center gap-1">
           <span>Variant:</span>
-          <span className="font-medium text-gray-600 dark:text-gray-300">{product.variant.name}</span>
-          <span className="font-mono">({product.variant.sku})</span>
+          <span className="font-medium text-gray-600 dark:text-gray-300">
+            {variant.name}
+          </span>
+          <span className="font-mono">({variant.sku})</span>
         </div>
       )}
     </motion.div>
@@ -265,47 +343,67 @@ const ProductTable: React.FC<{
         <table className="w-full">
           <thead className="bg-gray-50 dark:bg-gray-700/50 border-b border-gray-200 dark:border-gray-700">
             <tr>
-              <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">Product</th>
-              <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider hidden md:table-cell">SKU</th>
-              <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider hidden lg:table-cell">Category</th>
-              <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">Price</th>
-              <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider hidden sm:table-cell">Lead Time</th>
-              <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">Status</th>
+              <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+                Product
+              </th>
+              <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider hidden md:table-cell">
+                SKU
+              </th>
+              <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider hidden lg:table-cell">
+                Category
+              </th>
+              <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+                Price
+              </th>
+              <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider hidden sm:table-cell">
+                Lead Time
+              </th>
+              <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+                Status
+              </th>
             </tr>
           </thead>
           <tbody className="divide-y divide-gray-200 dark:divide-gray-700">
             {products.map((product) => {
-              const productName = product.product?.name || 'Unknown Product';
-              const productSku = product.product?.sku || product.variant?.sku || 'N/A';
-              const categoryName = product.product?.category?.name || 'Uncategorized';
-              const price = product.unitPrice || product.product?.unitPrice || 0;
-              const leadTime = product.leadTime || null;
-              const isPreferred = product.isPreferred || false;
-              const isActive = product.isActive !== undefined ? product.isActive : (product.product?.isActive !== undefined ? product.product.isActive : true);
+              const name = getProductName(product);
+              const sku = getProductSku(product);
+              const category = getProductCategory(product);
+              const price = getProductPrice(product);
+              const leadTime = getProductLeadTime(product);
+              const preferred = isProductPreferred(product);
+              const active = isProductActive(product);
+              const variant = getProductVariant(product);
 
               return (
-                <tr key={product.id} className="hover:bg-gray-50 dark:hover:bg-gray-700/50 transition-colors">
+                <tr
+                  key={product.id}
+                  className="hover:bg-gray-50 dark:hover:bg-gray-700/50 transition-colors"
+                >
                   <td className="px-4 py-3">
                     <div className="flex items-center gap-2">
                       <Package className="w-4 h-4 text-gray-400" />
                       <div>
-                        <span className="font-medium text-gray-900 dark:text-white">{productName}</span>
-                        {isPreferred && (
-                          <span className="ml-2 text-xs text-warning-600 dark:text-warning-400">★ Preferred</span>
+                        <span className="font-medium text-gray-900 dark:text-white">
+                          {name}
+                        </span>
+                        {preferred && (
+                          <span className="ml-2 text-xs text-warning-600 dark:text-warning-400">
+                            ★ Preferred
+                          </span>
                         )}
-                        {product.variant && (
+                        {variant && (
                           <span className="block text-xs text-gray-400 dark:text-gray-500">
-                            {product.variant.name} ({product.variant.sku})
+                            {variant.name} ({variant.sku})
                           </span>
                         )}
                       </div>
                     </div>
                   </td>
                   <td className="px-4 py-3 text-sm text-gray-600 dark:text-gray-300 font-mono hidden md:table-cell">
-                    {productSku}
+                    {sku}
                   </td>
                   <td className="px-4 py-3 text-sm text-gray-600 dark:text-gray-300 hidden lg:table-cell">
-                    {categoryName}
+                    {category}
                   </td>
                   <td className="px-4 py-3 text-sm text-right font-medium text-gray-900 dark:text-white tabular-nums">
                     {formatCurrency(price)}
@@ -314,12 +412,14 @@ const ProductTable: React.FC<{
                     {leadTime ? `${leadTime} days` : '-'}
                   </td>
                   <td className="px-4 py-3">
-                    <span className={`px-2 py-1 rounded-full text-xs font-medium ${
-                      isActive
-                        ? 'bg-success-100 text-success-700 dark:bg-success-900/30 dark:text-success-300'
-                        : 'bg-danger-100 text-danger-700 dark:bg-danger-900/30 dark:text-danger-300'
-                    }`}>
-                      {isActive ? 'Active' : 'Inactive'}
+                    <span
+                      className={`px-2 py-1 rounded-full text-xs font-medium ${
+                        active
+                          ? 'bg-success-100 text-success-700 dark:bg-success-900/30 dark:text-success-300'
+                          : 'bg-danger-100 text-danger-700 dark:bg-danger-900/30 dark:text-danger-300'
+                      }`}
+                    >
+                      {active ? 'Active' : 'Inactive'}
                     </span>
                   </td>
                 </tr>
@@ -357,11 +457,9 @@ export default function SupplierProductsPage() {
     sortOrder: 'asc',
   });
 
-  const canViewProducts = canView(PermissionResource.SUPPLIER) || canManage(PermissionResource.SUPPLIER);
-  const supplierName = useMemo(() => {
-    // Try to get supplier name from localStorage or URL
-    return 'Supplier';
-  }, []);
+  const canViewProducts =
+    canView(PermissionResource.SUPPLIER) ||
+    canManage(PermissionResource.SUPPLIER);
 
   useEffect(() => {
     setIsClient(true);
@@ -371,27 +469,24 @@ export default function SupplierProductsPage() {
     if (isClient && supplierId) {
       loadProducts();
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [supplierId, isClient]);
 
   const loadProducts = async (showLoading = true) => {
     try {
       if (showLoading) setLoading(true);
       setError(null);
-      const data = await supplierService.getSupplierProducts(supplierId);
 
-      let productsData: any[] = [];
-      if (data && typeof data === 'object') {
-        if ('data' in data && Array.isArray(data.data)) {
-          productsData = data.data;
-        } else if (Array.isArray(data)) {
-          productsData = data;
-        }
-      }
-
-      setProducts(productsData);
-    } catch (error) {
-      console.error('Failed to load supplier products:', error);
-      setError('Failed to load products. Please try again.');
+      const response = await supplierService.getSupplierProducts(supplierId);
+      const list = extractProductArray(response);
+      setProducts(list);
+    } catch (err: any) {
+      console.error('Failed to load supplier products:', err);
+      const errorMessage =
+        err?.response?.data?.message ||
+        err?.message ||
+        'Failed to load products. Please try again.';
+      setError(errorMessage);
       toast.error('Failed to load products');
       setProducts([]);
     } finally {
@@ -407,7 +502,7 @@ export default function SupplierProductsPage() {
   };
 
   const handleFilterChange = (key: keyof ProductFilters, value: any) => {
-    setFilters(prev => ({ ...prev, [key]: value }));
+    setFilters((prev) => ({ ...prev, [key]: value }));
   };
 
   const handleResetFilters = () => {
@@ -420,52 +515,57 @@ export default function SupplierProductsPage() {
     });
   };
 
-  // Filter and sort products
+  // ============================================
+  // DERIVED
+  // ============================================
+
   const filteredProducts = useMemo(() => {
     let filtered = [...products];
 
-    // Search filter
     if (filters.search) {
-      const searchLower = filters.search.toLowerCase();
-      filtered = filtered.filter(p =>
-        (p.product?.name?.toLowerCase().includes(searchLower) || false) ||
-        (p.product?.sku?.toLowerCase().includes(searchLower) || false) ||
-        (p.variant?.sku?.toLowerCase().includes(searchLower) || false) ||
-        (p.variant?.name?.toLowerCase().includes(searchLower) || false)
-      );
-    }
-
-    // Status filter
-    if (filters.status !== 'all') {
-      const isActive = filters.status === 'active';
-      filtered = filtered.filter(p => {
-        const active = p.isActive !== undefined ? p.isActive : (p.product?.isActive !== undefined ? p.product.isActive : true);
-        return active === isActive;
+      const q = filters.search.toLowerCase();
+      filtered = filtered.filter((p) => {
+        const name = getProductName(p).toLowerCase();
+        const sku = getProductSku(p).toLowerCase();
+        return name.includes(q) || sku.includes(q);
       });
     }
 
-    // Preferred filter
-    if (filters.preferred !== 'all') {
-      const isPreferred = filters.preferred === 'preferred';
-      filtered = filtered.filter(p => p.isPreferred === isPreferred);
+    if (filters.status !== 'all') {
+      const wantActive = filters.status === 'active';
+      filtered = filtered.filter(
+        (p) => isProductActive(p) === wantActive,
+      );
     }
 
-    // Sort
+    if (filters.preferred !== 'all') {
+      const wantPreferred = filters.preferred === 'preferred';
+      filtered = filtered.filter(
+        (p) => isProductPreferred(p) === wantPreferred,
+      );
+    }
+
     filtered.sort((a, b) => {
       let comparison = 0;
       switch (filters.sortBy) {
         case 'name':
-          comparison = (a.product?.name || '').localeCompare(b.product?.name || '');
+          comparison = getProductName(a).localeCompare(getProductName(b));
           break;
         case 'price':
-          comparison = (a.unitPrice || a.product?.unitPrice || 0) - (b.unitPrice || b.product?.unitPrice || 0);
+          comparison = getProductPrice(a) - getProductPrice(b);
           break;
         case 'leadTime':
-          comparison = (a.leadTime || 0) - (b.leadTime || 0);
+          comparison =
+            (getProductLeadTime(a) ?? 0) - (getProductLeadTime(b) ?? 0);
           break;
-        case 'createdAt':
-          comparison = new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime();
+        case 'createdAt': {
+          const aRaw = (a as any).createdAt;
+          const bRaw = (b as any).createdAt;
+          comparison =
+            (aRaw ? new Date(aRaw).getTime() : 0) -
+            (bRaw ? new Date(bRaw).getTime() : 0);
           break;
+        }
         default:
           comparison = 0;
       }
@@ -475,28 +575,48 @@ export default function SupplierProductsPage() {
     return filtered;
   }, [products, filters]);
 
-  // Loading state
+  const activeCount = useMemo(
+    () => products.filter((p) => isProductActive(p)).length,
+    [products],
+  );
+  const preferredCount = useMemo(
+    () => products.filter((p) => isProductPreferred(p)).length,
+    [products],
+  );
+
+  // ============================================
+  // LOADING
+  // ============================================
+
   if (permissionLoading || !isClient || loading) {
     return (
       <div className="flex items-center justify-center min-h-[60vh] bg-gray-50 dark:bg-gray-900">
         <div className="text-center">
           <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-brand-500 dark:border-brand-400 mx-auto"></div>
-          <p className="mt-4 text-gray-600 dark:text-gray-400">Loading products...</p>
+          <p className="mt-4 text-gray-600 dark:text-gray-400">
+            Loading products...
+          </p>
         </div>
       </div>
     );
   }
 
-  // Permission check
+  // ============================================
+  // PERMISSION CHECK
+  // ============================================
+
   if (!canViewProducts) {
     return (
       <div className="flex flex-col items-center justify-center min-h-[60vh] bg-gray-50 dark:bg-gray-900 p-8">
         <div className="w-24 h-24 bg-gray-100 dark:bg-gray-700 rounded-full flex items-center justify-center mb-4">
           <Lock className="w-12 h-12 text-gray-400 dark:text-gray-500" />
         </div>
-        <h2 className="text-2xl font-bold text-gray-700 dark:text-gray-300">Access Restricted</h2>
+        <h2 className="text-2xl font-bold text-gray-700 dark:text-gray-300">
+          Access Restricted
+        </h2>
         <p className="text-gray-500 dark:text-gray-400 mt-2 text-center max-w-md">
-          You don't have permission to view supplier products. Please contact your administrator.
+          You don't have permission to view supplier products. Please contact
+          your administrator.
         </p>
         <button
           onClick={() => router.push(`/admin/suppliers/${supplierId}`)}
@@ -508,6 +628,10 @@ export default function SupplierProductsPage() {
       </div>
     );
   }
+
+  // ============================================
+  // RENDER
+  // ============================================
 
   return (
     <div className="min-h-screen bg-gray-50 dark:bg-gray-900 p-4 sm:p-6 transition-colors duration-200">
@@ -527,7 +651,9 @@ export default function SupplierProductsPage() {
                 Supplier Products
               </h1>
               <p className="text-sm text-gray-500 dark:text-gray-400 mt-1 flex items-center gap-2 flex-wrap">
-                <span className="tabular-nums">{products.length} products</span>
+                <span className="tabular-nums">
+                  {products.length} products
+                </span>
                 {filteredProducts.length !== products.length && (
                   <span className="text-brand-600 dark:text-brand-400 tabular-nums">
                     ({filteredProducts.length} filtered)
@@ -536,33 +662,43 @@ export default function SupplierProductsPage() {
                 <span className="w-1 h-1 rounded-full bg-gray-300 dark:bg-gray-600"></span>
                 <span className="flex items-center gap-1 tabular-nums">
                   <span className="w-2 h-2 rounded-full bg-success-500"></span>
-                  {products.filter(p => p.isActive !== false).length} active
+                  {activeCount} active
                 </span>
                 <span className="flex items-center gap-1 tabular-nums">
                   <span className="w-2 h-2 rounded-full bg-warning-400"></span>
-                  {products.filter(p => p.isPreferred).length} preferred
+                  {preferredCount} preferred
                 </span>
               </p>
             </div>
           </div>
           <div className="flex items-center gap-2 flex-wrap">
             <button
-              onClick={() => setViewMode(viewMode === 'grid' ? 'list' : 'grid')}
+              onClick={() =>
+                setViewMode(viewMode === 'grid' ? 'list' : 'grid')
+              }
               className="p-2 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors focus-ring"
               aria-label="Toggle view mode"
             >
-              {viewMode === 'grid' ? <List className="w-4 h-4" /> : <Grid className="w-4 h-4" />}
+              {viewMode === 'grid' ? (
+                <List className="w-4 h-4" />
+              ) : (
+                <Grid className="w-4 h-4" />
+              )}
             </button>
             <button
               onClick={handleRefresh}
               disabled={refreshing}
               className="p-2 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors disabled:opacity-50 focus-ring"
+              aria-label="Refresh products"
             >
-              <RefreshCw className={`w-4 h-4 ${refreshing ? 'animate-spin' : ''}`} />
+              <RefreshCw
+                className={`w-4 h-4 ${refreshing ? 'animate-spin' : ''}`}
+              />
             </button>
             <button
               onClick={() => window.print()}
               className="p-2 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors focus-ring"
+              aria-label="Print products"
             >
               <Printer className="w-4 h-4" />
             </button>
@@ -573,7 +709,9 @@ export default function SupplierProductsPage() {
         {error && (
           <div className="bg-danger-50 dark:bg-danger-900/20 border border-danger-200 dark:border-danger-800 rounded-lg p-4 flex items-center gap-3">
             <AlertCircle className="w-5 h-5 text-danger-500 flex-shrink-0" />
-            <span className="text-danger-700 dark:text-danger-300">{error}</span>
+            <span className="text-danger-700 dark:text-danger-300">
+              {error}
+            </span>
             <button
               onClick={() => loadProducts(false)}
               className="ml-auto px-3 py-1 bg-danger-100 dark:bg-danger-800/30 text-danger-700 dark:text-danger-300 rounded-lg hover:bg-danger-200 dark:hover:bg-danger-800/50 transition-colors text-sm focus-ring"
@@ -595,11 +733,15 @@ export default function SupplierProductsPage() {
         {filteredProducts.length === 0 ? (
           <div className="card-brand p-12 text-center">
             <Package className="w-16 h-16 text-gray-300 dark:text-gray-600 mx-auto mb-4" />
-            <h3 className="text-lg font-semibold text-gray-900 dark:text-white">No products found</h3>
+            <h3 className="text-lg font-semibold text-gray-900 dark:text-white">
+              No products found
+            </h3>
             <p className="text-gray-500 dark:text-gray-400 mt-2">
-              {filters.search || filters.status !== 'all' || filters.preferred !== 'all'
+              {filters.search ||
+              filters.status !== 'all' ||
+              filters.preferred !== 'all'
                 ? 'Try adjusting your filters or search terms'
-                : 'This supplier doesn\'t have any products yet'}
+                : "This supplier doesn't have any products yet"}
             </p>
           </div>
         ) : viewMode === 'grid' ? (

@@ -2,7 +2,7 @@
 
 'use client';
 
-import { useState, useEffect, useCallback, useMemo } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import { useUser } from '@clerk/nextjs';
 import { motion, AnimatePresence } from 'framer-motion';
@@ -23,11 +23,6 @@ import {
   Users,
   Package,
   FileText,
-  CreditCard,
-  Banknote,
-  Gift,
-  Wallet,
-  RotateCcw,
 } from 'lucide-react';
 import { saleService } from '../../../../../services/saleService';
 import {
@@ -37,15 +32,76 @@ import {
 } from '../../../../../utils/formatters';
 import { useAuth } from '../../../../../hooks/useAuth';
 import { toast } from '../../../../../utils/toast-manager';
+import { api } from '../../../../../services/api';
+
+// ============================================
+// LOCAL SERVICE EXTENSIONS
+// ============================================
+//
+// The frontend `saleService` does not declare `exportSales` or a
+// direct refund-list endpoint. The backend exposes:
+//
+//   GET /sales/refunds    → saleController.getRefunds
+//   GET /sales/export     → saleController.exportSales
+//
+// Both come back as `{ success, data: [...] }`. We call them via the
+// shared `api` client rather than mutating the shared service.
+
+async function fetchRefundsRemote(params: {
+  page?: number;
+  limit?: number;
+  search?: string;
+  startDate?: string;
+  endDate?: string;
+}): Promise<{ data: any[]; total?: number; totalPages?: number }> {
+  const response = await api.get<any>('/sales/refunds', { params });
+  const body =
+    response && typeof response === 'object' && 'data' in response
+      ? (response as any).data
+      : response;
+
+  const data = Array.isArray(body)
+    ? body
+    : Array.isArray(body?.data)
+      ? body.data
+      : [];
+  const pagination = body?.pagination ?? response?.pagination ?? {};
+
+  return {
+    data,
+    total: typeof pagination.total === 'number' ? pagination.total : data.length,
+    totalPages:
+      typeof pagination.totalPages === 'number' ? pagination.totalPages : 1,
+  };
+}
+
+async function exportSalesRemote(params: {
+  startDate?: string;
+  endDate?: string;
+  format?: 'json' | 'csv' | 'excel' | 'pdf';
+}): Promise<{ data: any[]; total?: number; format?: string }> {
+  const response = await api.get<any>('/sales/export', { params });
+  const body =
+    response && typeof response === 'object' && 'data' in response
+      ? (response as any).data
+      : response;
+
+  if (body && typeof body === 'object' && Array.isArray(body.data)) {
+    return {
+      data: body.data,
+      total: typeof body.total === 'number' ? body.total : body.data.length,
+      format: typeof body.format === 'string' ? body.format : params.format,
+    };
+  }
+  if (Array.isArray(body)) {
+    return { data: body, total: body.length, format: params.format };
+  }
+  return { data: [], total: 0, format: params.format };
+}
 
 // ============================================
 // INTERFACES
 // ============================================
-//
-// Refund statuses and methods are UPPERCASE to match the Prisma
-// enums. The backend only ever writes `status: 'PENDING'` today —
-// the other members of the enum exist but are unreachable from the
-// current API surface.
 
 type RefundStatus =
   | 'PENDING'
@@ -124,7 +180,7 @@ interface RefundStats {
 }
 
 // ============================================
-// HELPERS — backend → Refund shape
+// HELPERS
 // ============================================
 
 function normalizeRefundStatus(raw: string | null | undefined): RefundStatus {
@@ -155,17 +211,16 @@ function normalizeRefundMethod(raw: string | null | undefined): RefundMethod {
   }
 }
 
-function normalizeRefundType(raw: string | null | undefined): 'FULL' | 'PARTIAL' {
+function normalizeRefundType(
+  raw: string | null | undefined,
+): 'FULL' | 'PARTIAL' {
   const value = (raw || 'full').toUpperCase();
   return value === 'PARTIAL' ? 'PARTIAL' : 'FULL';
 }
 
 /**
- * Map a backend `Sale` (which carries `refunds[]`) plus one of its
- * refund rows into the frontend `Refund` shape this page renders.
- *
- * The backend's refund list endpoint returns sales, not refunds, so
- * the caller iterates `sale.refunds` and calls this once per refund.
+ * Map a backend `Sale` (with `refunds[]`) plus one of its refund rows
+ * into the frontend `Refund` shape this page renders.
  */
 function saleRefundToRefund(sale: any, refund: any): Refund {
   const customer = sale.customer || {};
@@ -180,7 +235,7 @@ function saleRefundToRefund(sale: any, refund: any): Refund {
       unitPrice: item.unitPrice || 0,
       total: item.total || 0,
       reason: item.reason ?? null,
-    })
+    }),
   );
 
   return {
@@ -191,8 +246,8 @@ function saleRefundToRefund(sale: any, refund: any): Refund {
     customerName: sale.customerName
       ? sale.customerName
       : customer.firstName
-      ? `${customer.firstName} ${customer.lastName}`.trim()
-      : 'Guest',
+        ? `${customer.firstName} ${customer.lastName}`.trim()
+        : 'Guest',
     customerEmail: customer.email || 'N/A',
     customerPhone: customer.phoneNumber,
     items,
@@ -211,7 +266,7 @@ function saleRefundToRefund(sale: any, refund: any): Refund {
 }
 
 // ============================================
-// HELPER FUNCTIONS
+// STYLE HELPERS
 // ============================================
 
 const DEFAULT_REFUND_STATS: RefundStats = {
@@ -285,16 +340,196 @@ const getRefundMethodColor = (method: string): string => {
   );
 };
 
-/** `STORE_CREDIT` → `STORE CREDIT`. */
 const humanizeMethod = (method: string): string =>
   method.replace(/_/g, ' ').toUpperCase();
 
-/** `PENDING` → `Pending`. */
 const titleCase = (value: string): string => {
   if (!value) return value;
   const lower = value.toLowerCase();
   return lower.charAt(0).toUpperCase() + lower.slice(1);
 };
+
+// ============================================
+// STATS HELPER
+// ============================================
+
+function computeRefundStats(refunds: Refund[]): RefundStats {
+  const totalAmount = refunds.reduce((sum, r) => sum + (r.total || 0), 0);
+
+  const byMethod: RefundStats['byMethod'] = {
+    CASH: 0,
+    CREDIT: 0,
+    STORE_CREDIT: 0,
+    ORIGINAL_PAYMENT: 0,
+    BANK_TRANSFER: 0,
+  };
+  refunds.forEach((r) => {
+    if (byMethod[r.refundMethod] !== undefined) {
+      byMethod[r.refundMethod] += 1;
+    }
+  });
+
+  return {
+    total: refunds.length,
+    pending: refunds.filter((r) => r.status === 'PENDING').length,
+    approved: refunds.filter((r) => r.status === 'APPROVED').length,
+    rejected: refunds.filter((r) => r.status === 'REJECTED').length,
+    completed: refunds.filter((r) => r.status === 'COMPLETED').length,
+    cancelled: refunds.filter((r) => r.status === 'CANCELLED').length,
+    totalAmount,
+    averageRefund: refunds.length > 0 ? totalAmount / refunds.length : 0,
+    byMethod,
+  };
+}
+
+// ============================================
+// REFUND HTML
+// ============================================
+
+function generateRefundHTML(refund: Refund): string {
+  return `
+    <!DOCTYPE html>
+    <html>
+      <head>
+        <title>Refund #${refund.refundNumber}</title>
+        <style>
+          * { margin: 0; padding: 0; box-sizing: border-box; }
+          body {
+            font-family: 'Courier New', monospace;
+            padding: 20px;
+            max-width: 320px;
+            margin: 0 auto;
+            background: white;
+            color: black;
+            font-size: 12px;
+            line-height: 1.4;
+          }
+          .header { text-align: center; border-bottom: 2px dashed #333; padding-bottom: 10px; margin-bottom: 10px; }
+          .header h3 { font-size: 16px; margin-bottom: 4px; }
+          .divider { border-top: 1px dashed #ccc; margin: 8px 0; }
+          .items { margin: 10px 0; }
+          .item { display: flex; justify-content: space-between; padding: 2px 0; }
+          .item .name { flex: 1; }
+          .item .qty { margin: 0 8px; color: #666; }
+          .item .price { font-weight: bold; white-space: nowrap; }
+          .totals { border-top: 2px dashed #333; padding-top: 10px; margin-top: 10px; }
+          .totals .row { display: flex; justify-content: space-between; padding: 2px 0; }
+          .totals .grand { font-size: 16px; font-weight: bold; border-top: 1px solid #333; padding-top: 8px; margin-top: 4px; }
+          .footer { text-align: center; border-top: 2px dashed #333; padding-top: 10px; margin-top: 10px; font-size: 11px; color: #666; }
+        </style>
+      </head>
+      <body>
+        <div class="header">
+          <h3>REFUND</h3>
+          <div><strong>#${refund.refundNumber}</strong></div>
+          <div>${formatDateTime(refund.createdAt)}</div>
+          <div>Status: ${titleCase(refund.status)}</div>
+        </div>
+
+        <div>
+          <div class="row"><span>Customer</span><span>${refund.customerName || 'Guest'}</span></div>
+          <div class="row"><span>Receipt</span><span>#${refund.receiptNumber}</span></div>
+          <div class="row"><span>Method</span><span>${humanizeMethod(refund.refundMethod)}</span></div>
+          <div class="row"><span>Type</span><span>${titleCase(refund.refundType)}</span></div>
+        </div>
+
+        <div class="divider"></div>
+
+        <div class="items">
+          ${refund.items
+            .map(
+              (item) => `
+            <div class="item">
+              <span class="name">${item.productName}</span>
+              <span class="qty">x${item.quantity}</span>
+              <span class="price">$${item.total.toFixed(2)}</span>
+            </div>
+          `,
+            )
+            .join('')}
+        </div>
+
+        <div class="totals">
+          <div class="row"><span>Subtotal</span><span>$${refund.subtotal.toFixed(2)}</span></div>
+          <div class="row"><span>Tax</span><span>$${refund.tax.toFixed(2)}</span></div>
+          <div class="row grand"><span>Total</span><span>$${refund.total.toFixed(2)}</span></div>
+        </div>
+
+        ${
+          refund.reason
+            ? `<div class="divider"></div><div><strong>Reason:</strong> ${refund.reason}</div>`
+            : ''
+        }
+
+        <div class="footer">
+          <div>This is a refund confirmation.</div>
+        </div>
+      </body>
+    </html>
+  `;
+}
+
+// ============================================
+// SUB-COMPONENTS
+// ============================================
+
+function StatCard({
+  title,
+  value,
+  color,
+  subtext,
+}: {
+  title: string;
+  value: number | string;
+  color: string;
+  subtext?: string;
+}) {
+  const colors: Record<string, string> = {
+    brand: 'text-brand-600 dark:text-brand-400',
+    warning: 'text-warning-600 dark:text-warning-400',
+    success: 'text-success-600 dark:text-success-400',
+    danger: 'text-danger-600 dark:text-danger-400',
+    gray: 'text-gray-600 dark:text-gray-400',
+  };
+
+  return (
+    <div className="card-brand p-4">
+      <p className="text-sm text-gray-500 dark:text-gray-400">{title}</p>
+      <p
+        className={`text-xl font-bold ${
+          colors[color] || 'text-gray-900 dark:text-white'
+        } tabular-nums`}
+      >
+        {value}
+      </p>
+      {subtext && (
+        <p className="text-xs text-gray-400 dark:text-gray-500 mt-0.5">
+          {subtext}
+        </p>
+      )}
+    </div>
+  );
+}
+
+function MethodBadge({
+  method,
+  count,
+  label,
+}: {
+  method: string;
+  count: number;
+  label?: string;
+}) {
+  const displayLabel = label || humanizeMethod(method);
+  const color = getRefundMethodColor(method);
+
+  return (
+    <div className={`px-2 py-1 rounded-lg text-center ${color}`}>
+      <p className="text-xs font-medium">{displayLabel}</p>
+      <p className="text-sm font-bold tabular-nums">{count}</p>
+    </div>
+  );
+}
 
 // ============================================
 // MAIN COMPONENT
@@ -327,11 +562,7 @@ export default function RefundsPage() {
   const [showDetailModal, setShowDetailModal] = useState(false);
   const [exporting, setExporting] = useState(false);
 
-  // Permissions
   const userRole = ((authUser?.role as string) || 'EMPLOYEE').toUpperCase();
-  const canManageRefunds = ['SUPER_ADMIN', 'ADMIN', 'MANAGER'].includes(
-    userRole
-  );
   const canViewRefunds = [
     'SUPER_ADMIN',
     'ADMIN',
@@ -340,7 +571,6 @@ export default function RefundsPage() {
     'CASHIER',
   ].includes(userRole);
 
-  // Redirect if not authorized
   useEffect(() => {
     if (isLoaded && !isSignedIn) {
       router.push('/login?redirect=/admin/sales/refunds');
@@ -355,15 +585,6 @@ export default function RefundsPage() {
   // ============================================
   // FETCH
   // ============================================
-  //
-  // The backend has no `/api/refunds` router. The refund list is
-  // derived from sales whose status is `REFUNDED`:
-  //
-  //     GET /api/sales/refunds → saleController.getRefunds
-  //
-  // which internally calls `getAllSales({ status: 'REFUNDED' })`.
-  // Each returned sale carries its own `refunds[]` array, which we
-  // flatten into one row per refund.
 
   const fetchRefunds = useCallback(
     async (silent = false) => {
@@ -383,51 +604,59 @@ export default function RefundsPage() {
           endDate: filters.endDate
             ? new Date(`${filters.endDate}T23:59:59.999Z`).toISOString()
             : undefined,
-          sortBy: 'saleDate',
-          sortOrder: 'desc',
         };
 
-        // Any status other than `all` is applied to the derived
-        // refund rows client-side after the sale list comes back.
-        const salesPage = await saleService.getAllSales({
-          ...params,
-          status: 'REFUNDED',
-        });
-
-        const rawSales: any[] = (salesPage as any).data || [];
+        // `/sales/refunds` returns sales whose status is REFUNDED,
+        // each carrying its own `refunds[]` array. Flatten one row
+        // per refund.
+        const response = await fetchRefundsRemote(params);
+        const rawSales: any[] = Array.isArray(response.data)
+          ? response.data
+          : [];
 
         const flattened: Refund[] = [];
         rawSales.forEach((sale: any) => {
           const saleRefunds: any[] = Array.isArray(sale.refunds)
             ? sale.refunds
             : [];
-          if (saleRefunds.length > 0) {
-            saleRefunds.forEach((refund: any) => {
-              flattened.push(saleRefundToRefund(sale, refund));
-            });
-          }
+          saleRefunds.forEach((refund: any) => {
+            flattened.push(saleRefundToRefund(sale, refund));
+          });
         });
 
-        // Apply the optional refund-status filter client-side.
+        // Client-side status filter — backend refund list has no
+        // status filter of its own.
         const filtered =
           filters.status === 'all'
             ? flattened
             : flattened.filter((r) => r.status === filters.status);
 
         setRefunds(filtered);
-        setTotalRefunds((salesPage as any).total || filtered.length);
-        setTotalPages((salesPage as any).totalPages || 1);
+        setTotalRefunds(
+          typeof response.total === 'number'
+            ? response.total
+            : filtered.length,
+        );
+        setTotalPages(
+          typeof response.totalPages === 'number'
+            ? response.totalPages
+            : 1,
+        );
         setStats(computeRefundStats(filtered));
       } catch (error: any) {
         console.error('Error fetching refunds:', error);
-        toast.error(error?.message || 'Failed to load refunds');
+        toast.error(
+          error?.response?.data?.message ||
+            error?.message ||
+            'Failed to load refunds',
+        );
         setRefunds([]);
       } finally {
         setLoading(false);
         setIsRefreshing(false);
       }
     },
-    [authUser, filters]
+    [authUser, filters],
   );
 
   useEffect(() => {
@@ -448,7 +677,7 @@ export default function RefundsPage() {
 
   const handleDateChange = (
     field: 'startDate' | 'endDate',
-    value: string
+    value: string,
   ) => {
     setFilters((prev) => ({ ...prev, [field]: value, page: 1 }));
   };
@@ -473,24 +702,17 @@ export default function RefundsPage() {
     toast.success('Refund sent to printer');
   };
 
-  /**
-   * Export refunds.
-   *
-   * The backend's sales export endpoint accepts the same date range
-   * and produces a CSV of sales. We reuse it and filter the output
-   * to just the receipts in this list.
-   */
   const handleExport = async () => {
     try {
       setExporting(true);
 
-      const result = await saleService.exportSales({
+      const result = await exportSalesRemote({
         startDate: filters.startDate,
         endDate: filters.endDate,
-        format: 'csv',
+        format: 'json',
       });
 
-      const rowsData: any[] = (result as any)?.data || [];
+      const rowsData: any[] = Array.isArray(result.data) ? result.data : [];
       if (rowsData.length === 0) {
         toast.error('No refunds to export');
         return;
@@ -542,7 +764,11 @@ export default function RefundsPage() {
       toast.success('Refunds exported successfully');
     } catch (error: any) {
       console.error('Failed to export refunds:', error);
-      toast.error(error?.message || 'Failed to export refunds');
+      toast.error(
+        error?.response?.data?.message ||
+          error?.message ||
+          'Failed to export refunds',
+      );
     } finally {
       setExporting(false);
     }
@@ -632,7 +858,7 @@ export default function RefundsPage() {
           />
         </div>
 
-        {/* Additional Stats — Average & Methods */}
+        {/* Additional Stats */}
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
           <div className="card-brand p-4">
             <p className="text-sm text-gray-500 dark:text-gray-400">
@@ -739,7 +965,6 @@ export default function RefundsPage() {
                     transition={{ delay: index * 0.05 }}
                     className="card-brand p-0 overflow-hidden hover:shadow-card-hover transition-all"
                   >
-                    {/* Refund Header */}
                     <div className="px-6 py-4 border-b border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800/50 flex flex-wrap items-center justify-between gap-3">
                       <div className="flex items-center gap-3">
                         <span className="font-mono font-bold text-brand-accent-600 dark:text-brand-accent-400 tabular-nums">
@@ -755,7 +980,7 @@ export default function RefundsPage() {
                       <div className="flex items-center gap-3">
                         <span
                           className={`px-2.5 py-1 rounded-full text-xs font-medium ${getStatusColor(
-                            refund.status
+                            refund.status,
                           )} flex items-center gap-1`}
                         >
                           <StatusIcon status={refund.status} />
@@ -767,7 +992,6 @@ export default function RefundsPage() {
                       </div>
                     </div>
 
-                    {/* Refund Body */}
                     <div className="p-6">
                       <div className="flex flex-wrap items-start justify-between gap-4">
                         <div className="space-y-2">
@@ -788,7 +1012,7 @@ export default function RefundsPage() {
                           <div className="flex flex-wrap gap-2">
                             <span
                               className={`px-2 py-1 rounded-full text-xs font-medium ${getRefundMethodColor(
-                                refund.refundMethod
+                                refund.refundMethod,
                               )} flex items-center gap-1`}
                             >
                               {humanizeMethod(refund.refundMethod)}
@@ -826,7 +1050,6 @@ export default function RefundsPage() {
               </AnimatePresence>
             </div>
 
-            {/* Pagination */}
             {totalPages > 1 && (
               <div className="flex flex-wrap justify-center items-center gap-2 mt-6">
                 <button
@@ -897,193 +1120,6 @@ export default function RefundsPage() {
 }
 
 // ============================================
-// HELPERS
-// ============================================
-
-/**
- * Compute refund stats from the current page.
- *
- * The backend has no `/api/refunds/stats` endpoint, so these are
- * page-scoped. The "Total" card reflects the backend's `response.total`
- * (all refunded sales in the date range) but the per-status counts
- * are for the current page only, which is why the subtext on each
- * card reads "current page".
- */
-function computeRefundStats(refunds: Refund[]): RefundStats {
-  const totalAmount = refunds.reduce((sum, r) => sum + (r.total || 0), 0);
-
-  const byMethod: RefundStats['byMethod'] = {
-    CASH: 0,
-    CREDIT: 0,
-    STORE_CREDIT: 0,
-    ORIGINAL_PAYMENT: 0,
-    BANK_TRANSFER: 0,
-  };
-  refunds.forEach((r) => {
-    if (byMethod[r.refundMethod] !== undefined) {
-      byMethod[r.refundMethod] += 1;
-    }
-  });
-
-  return {
-    total: refunds.length,
-    pending: refunds.filter((r) => r.status === 'PENDING').length,
-    approved: refunds.filter((r) => r.status === 'APPROVED').length,
-    rejected: refunds.filter((r) => r.status === 'REJECTED').length,
-    completed: refunds.filter((r) => r.status === 'COMPLETED').length,
-    cancelled: refunds.filter((r) => r.status === 'CANCELLED').length,
-    totalAmount,
-    averageRefund: refunds.length > 0 ? totalAmount / refunds.length : 0,
-    byMethod,
-  };
-}
-
-function generateRefundHTML(refund: Refund): string {
-  return `
-    <!DOCTYPE html>
-    <html>
-      <head>
-        <title>Refund #${refund.refundNumber}</title>
-        <style>
-          * { margin: 0; padding: 0; box-sizing: border-box; }
-          body {
-            font-family: 'Courier New', monospace;
-            padding: 20px;
-            max-width: 320px;
-            margin: 0 auto;
-            background: white;
-            color: black;
-            font-size: 12px;
-            line-height: 1.4;
-          }
-          .header { text-align: center; border-bottom: 2px dashed #333; padding-bottom: 10px; margin-bottom: 10px; }
-          .header h3 { font-size: 16px; margin-bottom: 4px; }
-          .divider { border-top: 1px dashed #ccc; margin: 8px 0; }
-          .items { margin: 10px 0; }
-          .item { display: flex; justify-content: space-between; padding: 2px 0; }
-          .item .name { flex: 1; }
-          .item .qty { margin: 0 8px; color: #666; }
-          .item .price { font-weight: bold; white-space: nowrap; }
-          .totals { border-top: 2px dashed #333; padding-top: 10px; margin-top: 10px; }
-          .totals .row { display: flex; justify-content: space-between; padding: 2px 0; }
-          .totals .grand { font-size: 16px; font-weight: bold; border-top: 1px solid #333; padding-top: 8px; margin-top: 4px; }
-          .footer { text-align: center; border-top: 2px dashed #333; padding-top: 10px; margin-top: 10px; font-size: 11px; color: #666; }
-        </style>
-      </head>
-      <body>
-        <div class="header">
-          <h3>REFUND</h3>
-          <div><strong>#${refund.refundNumber}</strong></div>
-          <div>${formatDateTime(refund.createdAt)}</div>
-          <div>Status: ${titleCase(refund.status)}</div>
-        </div>
-
-        <div>
-          <div class="row"><span>Customer</span><span>${refund.customerName || 'Guest'}</span></div>
-          <div class="row"><span>Receipt</span><span>#${refund.receiptNumber}</span></div>
-          <div class="row"><span>Method</span><span>${humanizeMethod(refund.refundMethod)}</span></div>
-          <div class="row"><span>Type</span><span>${titleCase(refund.refundType)}</span></div>
-        </div>
-
-        <div class="divider"></div>
-
-        <div class="items">
-          ${refund.items
-            .map(
-              (item) => `
-            <div class="item">
-              <span class="name">${item.productName}</span>
-              <span class="qty">x${item.quantity}</span>
-              <span class="price">$${item.total.toFixed(2)}</span>
-            </div>
-          `
-            )
-            .join('')}
-        </div>
-
-        <div class="totals">
-          <div class="row"><span>Subtotal</span><span>$${refund.subtotal.toFixed(2)}</span></div>
-          <div class="row"><span>Tax</span><span>$${refund.tax.toFixed(2)}</span></div>
-          <div class="row grand"><span>Total</span><span>$${refund.total.toFixed(2)}</span></div>
-        </div>
-
-        ${
-          refund.reason
-            ? `<div class="divider"></div><div><strong>Reason:</strong> ${refund.reason}</div>`
-            : ''
-        }
-
-        <div class="footer">
-          <div>This is a refund confirmation.</div>
-        </div>
-      </body>
-    </html>
-  `;
-}
-
-// ============================================
-// HELPER COMPONENTS
-// ============================================
-
-function StatCard({
-  title,
-  value,
-  color,
-  subtext,
-}: {
-  title: string;
-  value: number | string;
-  color: string;
-  subtext?: string;
-}) {
-  const colors: Record<string, string> = {
-    brand: 'text-brand-600 dark:text-brand-400',
-    warning: 'text-warning-600 dark:text-warning-400',
-    success: 'text-success-600 dark:text-success-400',
-    danger: 'text-danger-600 dark:text-danger-400',
-    gray: 'text-gray-600 dark:text-gray-400',
-  };
-
-  return (
-    <div className="card-brand p-4">
-      <p className="text-sm text-gray-500 dark:text-gray-400">{title}</p>
-      <p
-        className={`text-xl font-bold ${
-          colors[color] || 'text-gray-900 dark:text-white'
-        } tabular-nums`}
-      >
-        {value}
-      </p>
-      {subtext && (
-        <p className="text-xs text-gray-400 dark:text-gray-500 mt-0.5">
-          {subtext}
-        </p>
-      )}
-    </div>
-  );
-}
-
-function MethodBadge({
-  method,
-  count,
-  label,
-}: {
-  method: string;
-  count: number;
-  label?: string;
-}) {
-  const displayLabel = label || humanizeMethod(method);
-  const color = getRefundMethodColor(method);
-
-  return (
-    <div className={`px-2 py-1 rounded-lg text-center ${color}`}>
-      <p className="text-xs font-medium">{displayLabel}</p>
-      <p className="text-sm font-bold tabular-nums">{count}</p>
-    </div>
-  );
-}
-
-// ============================================
 // DETAIL MODAL
 // ============================================
 
@@ -1122,11 +1158,10 @@ function DetailModal({ refundData, onClose, onPrint }: DetailModalProps) {
         </div>
 
         <div className="p-6 space-y-6">
-          {/* Status and Total */}
           <div className="flex items-center justify-between">
             <span
               className={`px-3 py-1 rounded-full text-sm font-medium ${getStatusColor(
-                refundData.status
+                refundData.status,
               )} flex items-center gap-2`}
             >
               <StatusIcon status={refundData.status} />
@@ -1137,7 +1172,6 @@ function DetailModal({ refundData, onClose, onPrint }: DetailModalProps) {
             </span>
           </div>
 
-          {/* Customer Info */}
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4 p-4 bg-gray-50 dark:bg-gray-700/50 rounded-lg">
             <div>
               <p className="text-sm text-gray-500 dark:text-gray-400">
@@ -1199,7 +1233,6 @@ function DetailModal({ refundData, onClose, onPrint }: DetailModalProps) {
             </div>
           </div>
 
-          {/* Items */}
           <div>
             <h3 className="font-semibold text-gray-900 dark:text-white mb-4">
               Items
@@ -1232,7 +1265,6 @@ function DetailModal({ refundData, onClose, onPrint }: DetailModalProps) {
             </div>
           </div>
 
-          {/* Totals */}
           <div className="border-t border-gray-200 dark:border-gray-700 pt-4">
             <div className="space-y-2 max-w-xs ml-auto">
               <div className="flex justify-between text-sm">
@@ -1258,7 +1290,6 @@ function DetailModal({ refundData, onClose, onPrint }: DetailModalProps) {
             </div>
           </div>
 
-          {/* Actions */}
           <div className="flex flex-wrap gap-3 pt-4 border-t border-gray-200 dark:border-gray-700">
             <button
               onClick={onPrint}

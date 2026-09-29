@@ -40,7 +40,7 @@ export interface ApiError {
 // ============================================
 // USER / COMPANY / BUSINESS UNIT
 // ============================================
-export type { User, Company, BusinessUnit, BusinessUnitUser } from './user';
+export type { User, Company, BusinessUnit } from './user';
 
 // ============================================
 // CATEGORY
@@ -201,6 +201,13 @@ export interface SalesAnalyticsResponse {
   }>;
 }
 
+/**
+ * Sales settings shape declared directly on the barrel file.
+ *
+ * ⚠ `currencySymbol` was removed. Phase 1 dropped the persisted
+ *   column from `SalesSettings`; the display symbol is now derived
+ *   from `currencyCode` via `lib/currencies.ts` on the read path.
+ */
 export interface SalesSettings {
   taxRate: number;
   discountEnabled: boolean;
@@ -211,8 +218,8 @@ export interface SalesSettings {
   emailReceipts: boolean;
   receiptFooter: string;
   defaultPaymentMethod: string;
-  currencySymbol: string;
   currencyCode: string;
+  // ⚠ `currencySymbol` intentionally absent — see JSDoc above.
   invoicePrefix: string;
   receiptPrefix: string;
 }
@@ -646,15 +653,30 @@ export interface SortParams {
 // ============================================
 // DASHBOARD
 // ============================================
+//
+// ⚠ Only three names are re-exported from `./dashboard`:
+//   `DashboardStats`, `RealtimeData`, and `ActivityItem`.
+//
+//   The following six names used to be listed here and were
+//   removed because `./dashboard` does not export them:
+//
+//     SalesStats, CustomerStats, InventoryStats,
+//     SalesTrend, TopProduct, CustomerInsight
+//
+//   TypeScript reported TS2305 on each. To restore any of them,
+//   first add the corresponding export to
+//   `packages/web/types/dashboard.ts`, then re-add the line here.
+//   Do not add it here before the dashboard module actually
+//   exports the name — that is exactly what produced the TS2305s.
+//
+//   Note on `CustomerStats`: this barrel declares its own
+//   `CustomerStats` interface above (in the CUSTOMER section),
+//   which is the shape `customerService` uses. If the dashboard
+//   module ever gains a `CustomerStats` of its own, name it
+//   `DashboardCustomerStats` on export to avoid the collision.
 export type {
   DashboardStats as DashboardStatsType,
-  SalesStats as SalesStatsType,
-  CustomerStats as CustomerStatsType,
-  InventoryStats as InventoryStatsType,
   RealtimeData,
-  SalesTrend,
-  TopProduct,
-  CustomerInsight,
   ActivityItem,
 } from './dashboard';
 
@@ -820,7 +842,7 @@ export interface NotificationDelivery {
 // ============================================
 // PERMISSIONS
 // ============================================
-export type { PERMISSIONS, ROLE_PERMISSIONS } from './permissions';
+export { PERMISSIONS, WILDCARD } from './permissions';
 
 export interface Permission {
   action: string;
