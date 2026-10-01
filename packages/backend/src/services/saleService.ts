@@ -42,6 +42,19 @@ interface CreateSaleData {
    */
   idempotencyKey?: string;
 
+  /**
+   * Payer's chosen display currency (ISO 4217). Recorded on the
+   * `Payment` row's `displayCurrency` column and in metadata as an
+   * AUDIT FACT. Never mutates the ledger amount, the charge amount,
+   * or the `Payment.currency` column.
+   *
+   * The controller reads it from the `X-Display-Currency` header (or
+   * `displayCurrency` in the body) and validates it against the
+   * currency registry before forwarding. An unknown code arrives as
+   * `null`.
+   */
+  displayCurrency?: string | null;
+
   // ── Promotion / loyalty passthrough ─────────────────────────
   // These ride through to the corresponding columns on `Sale`.
   // `discountType` is inferred when omitted (LOYALTY / MANUAL).
@@ -57,9 +70,10 @@ interface CreateSaleData {
 /**
  * Payment data for cart-based checkout. Extended to carry the fields
  * the controller passes through from `cartCheckoutSchema`:
- *   - `customerId` — if the cart has no customer, use this one.
- *   - `discount`   — applied in addition to the cart's own discount.
- *   - `notes`      — if provided, replaces the default "Checkout from cart: …" note.
+ *   - `customerId`        — if the cart has no customer, use this one.
+ *   - `discount`          — applied in addition to the cart's own discount.
+ *   - `notes`             — if provided, replaces the default "Checkout from cart: …" note.
+ *   - `displayCurrency`   — payer's chosen display currency (audit fact only).
  */
 interface SalePaymentData {
   paymentMethod: string;
@@ -76,6 +90,19 @@ interface SalePaymentData {
    * key returns the original sale instead of creating a duplicate.
    */
   idempotencyKey?: string;
+
+  /**
+   * Payer's chosen display currency (ISO 4217). Recorded on the
+   * `Payment` row's `displayCurrency` column and in metadata as an
+   * AUDIT FACT. Never mutates the ledger amount, the charge amount,
+   * or the `Payment.currency` column.
+   *
+   * The controller reads it from the `X-Display-Currency` header (or
+   * `displayCurrency` in the body) and validates it against the
+   * currency registry before forwarding. An unknown code arrives as
+   * `null`.
+   */
+  displayCurrency?: string | null;
 
   // ── Promotion / loyalty passthrough ─────────────────────────
   // Same narrowing as `CreateSaleData`.
@@ -409,7 +436,7 @@ export class SaleService extends BaseService {
   }
 
   /**
-   * Create payment for sale
+   * Create payment for sale.
    *
    * ⚠ Phase 2: `Payment.currency` is a REQUIRED column with no schema
    *   default. This method writes a resolved currency explicitly.
@@ -421,6 +448,13 @@ export class SaleService extends BaseService {
    *
    *   The resolved value is also mirrored into `metadata.currency`
    *   for audit continuity, but the column is authoritative.
+   *
+   * ⚠ Phase 3a: `displayCurrency` is an AUDIT FACT. It is written to
+   *   the `Payment.displayCurrency` column and mirrored into
+   *   `metadata.displayCurrency`. It never mutates `amount` or
+   *   `currency` — those describe what the ledger and the gateway
+   *   respectively charged. `displayCurrency` describes what the
+   *   payer chose to *see*. The three are intentionally independent.
    */
   private async createSalePayment(
     tx: any,
@@ -434,6 +468,11 @@ export class SaleService extends BaseService {
       cashRegisterId?: string;
       cashRegisterSessionId?: string;
       reference?: string;
+      /**
+       * Payer's chosen display currency. Recorded as an audit fact.
+       * Never mutates the ledger or the charge.
+       */
+      displayCurrency?: string | null;
     }
   ): Promise<any> {
     // ── Phase 2: resolve and write currency explicitly ────────
@@ -451,6 +490,18 @@ export class SaleService extends BaseService {
       resolvedCurrency = currencyService.resolveForBusiness(null);
     }
 
+    // ── Phase 3a: normalize the audit fact ────────────────────
+    // The controller already validated the code against the
+    // registry, but we re-guard here so a caller that bypasses the
+    // controller (direct service invocation, script, test) still
+    // writes a clean value rather than a garbage string.
+    const displayCurrency =
+      typeof paymentData.displayCurrency === 'string' &&
+      paymentData.displayCurrency.trim().length > 0 &&
+      currencyService.tryGetCurrency(paymentData.displayCurrency)
+        ? paymentData.displayCurrency.trim().toUpperCase()
+        : null;
+
     return await tx.payment.create({
       data: {
         amount: paymentData.paidAmount,
@@ -463,9 +514,15 @@ export class SaleService extends BaseService {
         cashRegisterSessionId: paymentData.cashRegisterSessionId,
         processedAt: new Date(),
         reference: paymentData.reference || `PAY-${Date.now()}`,
+        // ── Phase 3a audit fact. ─────────────────────────
+        // Null when the payer didn't express a preference. The
+        // column exists for auditing; an empty value is correct
+        // and honest.
+        displayCurrency,
         metadata: {
           // Descriptive mirror — the column is authoritative.
           currency: resolvedCurrency,
+          displayCurrency,
         },
       },
     });
@@ -1183,6 +1240,9 @@ export class SaleService extends BaseService {
    *   - promotionDiscount  the promotion's contribution
    *   - loyaltyPointsUsed  points burned on this sale
    *   - loyaltyDiscount    the currency value of those points
+   *
+   * `displayCurrency` is forwarded to `createSalePayment`, which
+   * writes it on the `Payment` row as an audit fact.
    */
   async createSale(data: CreateSaleData, userId: string) {
     try {
@@ -1323,6 +1383,8 @@ export class SaleService extends BaseService {
             cashRegisterId,
             cashRegisterSessionId,
             reference: `PAY-${receiptNumber}`,
+            // ── Phase 3a audit fact ─────────────────────────
+            displayCurrency: data.displayCurrency ?? null,
           });
 
           if (data.customerId) {
@@ -1349,6 +1411,7 @@ export class SaleService extends BaseService {
               paymentMethod: data.paymentMethod,
               cashRegisterSessionId,
               idempotencyKey: data.idempotencyKey ?? null,
+              displayCurrency: data.displayCurrency ?? null,
 
               // ── Promotion / loyalty breakdown ─────────────────
               discountType: resolvedDiscountType,
@@ -1383,6 +1446,9 @@ export class SaleService extends BaseService {
    *
    * Promotion / loyalty attribution is persisted on the Sale row so
    * the record self-documents how its discount was derived.
+   *
+   * `displayCurrency` is forwarded to `createSalePayment`, which
+   * writes it on the `Payment` row as an audit fact.
    */
   async createSaleFromCart(
     cartId: string,
@@ -1578,6 +1644,8 @@ export class SaleService extends BaseService {
             cashRegisterId,
             cashRegisterSessionId,
             reference: `PAY-${receiptNumber}`,
+            // ── Phase 3a audit fact ─────────────────────────
+            displayCurrency: paymentData.displayCurrency ?? null,
           });
 
           if (effectiveCustomerId) {
@@ -1633,6 +1701,7 @@ export class SaleService extends BaseService {
               extraDiscount,
               loyaltyPointsUsed,
               idempotencyKey: paymentData.idempotencyKey ?? null,
+              displayCurrency: paymentData.displayCurrency ?? null,
 
               // ── Promotion / loyalty breakdown ─────────────────
               discountType: resolvedDiscountType,

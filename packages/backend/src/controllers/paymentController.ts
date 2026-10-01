@@ -15,21 +15,29 @@ import Stripe from 'stripe';
 /**
  * Payment methods accepted by the API.
  *
- * `CRYPTO` and `CHECK` are preserved as reserved enum values —
- * accepted by the schema for forward compatibility, but no handler
- * is registered for them yet. Requests using either will fail with
- * a 400 "Unsupported payment method" from the service layer. This
- * is intentional: the schema documents the future surface, the
- * service enforces the current one.
+ * `CHECK` is preserved as a reserved enum value — accepted by the
+ * schema for forward compatibility, but no handler is registered
+ * for it. A request using it fails with a 400 "Unsupported payment
+ * method" from the service layer. This is intentional: the schema
+ * documents the future surface, the service enforces the current
+ * one.
+ *
+ * `CRYPTO` was removed — no provider handler exists and the UI no
+ * longer offers it.
  *
  * `PAYSTACK` was removed — no provider handler exists and the UI
  * no longer offers it. Do not re-add without also registering a
  * factory in `paymentService.initializeHandlers()`.
  *
- * `MTN`, `AIRTEL`, `TIGO`, `VODAFONE` are mobile-money
- * sub-providers. They are reachable directly when the caller knows
- * the exact network; normally they're routed via
- * `metadata.provider` on a `MOBILE_MONEY` request.
+ * `MTN` and `AIRTEL` are mobile-money sub-providers. They are
+ * reachable directly when the caller knows the exact network;
+ * normally they're routed via `metadata.provider` on a
+ * `MOBILE_MONEY` request.
+ *
+ * `TIGO` and `VODAFONE` were removed — no handler is registered
+ * for either in `paymentService.initializeHandlers()`. Requests
+ * using them would 400 at the service layer. Removing them from
+ * the schema surfaces the rejection at the wire boundary instead.
  */
 const PAYMENT_METHODS = [
   'CASH',
@@ -39,15 +47,12 @@ const PAYMENT_METHODS = [
   'BANK_TRANSFER',
   'GIFT_CARD',
   'LOYALTY_POINTS',
-  'CRYPTO', // reserved — no handler registered
   'CHECK', // reserved — no handler registered
   'PAYPAL',
   'FLUTTERWAVE',
   'SQUARE',
   'MTN',
   'AIRTEL',
-  'TIGO',
-  'VODAFONE',
 ] as const;
 
 const PAYMENT_STATUSES = [
@@ -64,7 +69,8 @@ const PAYMENT_STATUSES = [
 /**
  * Payment providers.
  *
- * `PAYSTACK` removed — see note on `PAYMENT_METHODS` above.
+ * `PAYSTACK`, `TIGO`, `VODAFONE`, and `CRYPTO` removed — see note
+ * on `PAYMENT_METHODS` above.
  */
 const PAYMENT_PROVIDERS = [
   'STRIPE',
@@ -78,8 +84,6 @@ const PAYMENT_PROVIDERS = [
   'SQUARE',
   'MTN',
   'AIRTEL',
-  'TIGO',
-  'VODAFONE',
 ] as const;
 
 const PAYMENT_PROVIDER_TYPES = ['ONLINE', 'OFFLINE', 'HYBRID'] as const;
@@ -88,8 +92,16 @@ const PAYMENT_PROVIDER_TYPES = ['ONLINE', 'OFFLINE', 'HYBRID'] as const;
  * Known mobile-money networks. Used both by the Zod schema (to
  * validate `metadata.provider`) and by `routeMobileMoneyToNetwork`
  * (to rewrite `paymentMethod` before dispatch).
+ *
+ * Only MTN and AIRTEL have handlers registered in
+ * `paymentService.initializeHandlers()`. TIGO and VODAFONE were
+ * listed here historically but had no backend handler — a request
+ * with `metadata.provider: 'TIGO'` would have been rewritten to
+ * `paymentMethod: 'TIGO'`, then 400ed by the service. Shrinking
+ * this list makes the rejection happen at the schema boundary
+ * where the caller can see which values are accepted.
  */
-const MOBILE_MONEY_NETWORKS = ['MTN', 'AIRTEL', 'TIGO', 'VODAFONE'] as const;
+const MOBILE_MONEY_NETWORKS = ['MTN', 'AIRTEL'] as const;
 
 // ============================================
 // DEFAULT CURRENCY
@@ -246,7 +258,7 @@ const processPaymentSchema = z
           code: z.ZodIssueCode.custom,
           path: ['metadata.provider'],
           message:
-            'metadata.provider is required for MOBILE_MONEY (one of: MTN, AIRTEL, TIGO, VODAFONE)',
+            'metadata.provider is required for MOBILE_MONEY (one of: MTN, AIRTEL)',
         });
       } else if (
         !(MOBILE_MONEY_NETWORKS as readonly string[]).includes(provider)
@@ -254,7 +266,7 @@ const processPaymentSchema = z
         ctx.addIssue({
           code: z.ZodIssueCode.custom,
           path: ['metadata.provider'],
-          message: `Unsupported mobile money provider "${provider}". Use MTN, AIRTEL, TIGO, or VODAFONE.`,
+          message: `Unsupported mobile money provider "${provider}". Use MTN or AIRTEL.`,
         });
       }
     }
@@ -262,9 +274,7 @@ const processPaymentSchema = z
     // Direct sub-provider requests also need a phone number.
     if (
       data.paymentMethod === 'MTN' ||
-      data.paymentMethod === 'AIRTEL' ||
-      data.paymentMethod === 'TIGO' ||
-      data.paymentMethod === 'VODAFONE'
+      data.paymentMethod === 'AIRTEL'
     ) {
       const phone = (data.metadata as any)?.phoneNumber;
       if (!phone) {
@@ -290,10 +300,14 @@ const processPaymentSchema = z
  *   log. Populated from `req.user` server-side; declared here so
  *   the service receives it as a named field.
  *
- * ⚠ Phase 2: The refunded payment's `currency` is read from the
- *   row being refunded (see `paymentService.refundPayment`). The
- *   controller does NOT accept or forward a currency here — refunds
- *   never create new `Payment` rows, they update existing ones.
+ * ⚠ Phase D1: The refunded payment's `currency` (ledger) and
+ *   `gatewayCurrency` are read from the row being refunded. The
+ *   service converts the refund amount from ledger to gateway
+ *   currency using the SAME rate the original charge used, and
+ *   records both figures on the Payment's `metadata.refunds`
+ *   array. The controller does NOT accept or forward a currency
+ *   here — refunds never create new `Payment` rows, they update
+ *   existing ones.
  */
 const refundSchema = z.object({
   amount: z.number().finite().positive('Amount must be positive').optional(),
@@ -717,9 +731,8 @@ function warnIfParsedBody(provider: string, body: unknown): void {
 
 /**
  * When a MOBILE_MONEY request carries `metadata.provider`, rewrite
- * the payment method to the concrete network (MTN, AIRTEL, TIGO,
- * VODAFONE) so the service routes to the real handler instead of
- * the simulator.
+ * the payment method to the concrete network (MTN, AIRTEL) so the
+ * service routes to the real handler instead of the simulator.
  *
  * If the caller passed a sub-provider directly (`paymentMethod:
  * 'MTN'`), this is a no-op.
@@ -1095,41 +1108,41 @@ export const paymentController = {
    *   it, the controller supplies the platform default via
    *   `resolveDefaultCurrency()`.
    */
-    async processMpesaB2C(req: Request, res: Response, next: NextFunction) {
-      try {
-        const validatedData = mpesaB2CSchema.parse(req.body);
-        // B2C is Manager+ per the router; requireUserId just makes
-        // the authentication requirement explicit at the controller
-        // boundary as well.
-        requireUserId(req);
+  async processMpesaB2C(req: Request, res: Response, next: NextFunction) {
+    try {
+      const validatedData = mpesaB2CSchema.parse(req.body);
+      // B2C is Manager+ per the router; requireUserId just makes
+      // the authentication requirement explicit at the controller
+      // boundary as well.
+      requireUserId(req);
 
-        if (!mpesaService.isConfigured()) {
-          throw new AppError(
-            'M-Pesa is not configured. Please contact support.',
-            503,
-          );
-        }
-
-        const result = await mpesaService.processB2CPayment({
-          phoneNumber: validatedData.phoneNumber,
-          amount: validatedData.amount,
-          commandId: validatedData.commandId,
-          remarks: validatedData.remarks || 'Payment from POS',
-          occasion: validatedData.occasion,
-          // ⚠ NO `currency` field here — `processB2CPayment` does
-          //   not accept one. See the JSDoc above.
-        });
-
-        res.json({
-          success: true,
-          data: result,
-          message: 'M-Pesa B2C payment initiated successfully',
-        });
-      } catch (error) {
-        if (error instanceof ZodError) return zodError(res, error);
-        next(error);
+      if (!mpesaService.isConfigured()) {
+        throw new AppError(
+          'M-Pesa is not configured. Please contact support.',
+          503,
+        );
       }
-    },
+
+      const result = await mpesaService.processB2CPayment({
+        phoneNumber: validatedData.phoneNumber,
+        amount: validatedData.amount,
+        commandId: validatedData.commandId,
+        remarks: validatedData.remarks || 'Payment from POS',
+        occasion: validatedData.occasion,
+        // ⚠ NO `currency` field here — `processB2CPayment` does
+        //   not accept one. See the JSDoc above.
+      });
+
+      res.json({
+        success: true,
+        data: result,
+        message: 'M-Pesa B2C payment initiated successfully',
+      });
+    } catch (error) {
+      if (error instanceof ZodError) return zodError(res, error);
+      next(error);
+    }
+  },
 
   // ============================================
   // PAYPAL
@@ -1719,6 +1732,14 @@ export const paymentController = {
    *   The controller does NOT fabricate a currency default here.
    *   The service is the authority; the controller just forwards
    *   whatever the caller supplied.
+   *
+   * ⚠ Phase D1: When the caller is `checkoutService.invokeGateway`,
+   *   the service receives a pre-resolved `ChargeContext` (ledger
+   *   currency, charge currency, rate, source) and trusts it
+   *   verbatim. This controller endpoint is for direct callers
+   *   (POS, admin, integrations) that do not have a ChargeContext
+   *   — the service resolves one itself via `exchangeRateService`
+   *   using the same precedence chain.
    */
   async processPayment(req: Request, res: Response, next: NextFunction) {
     try {
@@ -1726,8 +1747,8 @@ export const paymentController = {
       const userId = requireUserId(req);
 
       // Route MOBILE_MONEY to the concrete network so the service
-      // dispatches to MTN/AIRTEL/TIGO/VODAFONE handlers instead of
-      // the simulator. A no-op for every other method.
+      // dispatches to MTN/AIRTEL handlers instead of the simulator.
+      // A no-op for every other method.
       //
       // ⚠ `routeMobileMoneyToNetwork` uses object spread, so every
       //   other field on `validatedData` (`businessUnitId`,
@@ -1753,12 +1774,19 @@ export const paymentController = {
   /**
    * Refund a payment.
    *
-   * ⚠ Phase 2 contract: The refunded payment's currency is read
-   *   from the `Payment.currency` column of the row being refunded
-   *   (see `paymentService.refundPayment`). Refunds do NOT create
-   *   new `Payment` rows, so the controller does NOT accept or
-   *   forward a currency here. The row's stored value is the
-   *   authority.
+   * ⚠ Phase D1: The refunded payment's ledger currency
+   *   (`Payment.currency`) and gateway currency
+   *   (`Payment.gatewayCurrency`) are read from the row being
+   *   refunded. When the two differ, the service converts the
+   *   refund amount from ledger to gateway currency using the
+   *   SAME rate the original charge used, so the provider is asked
+   *   for the exact amount that was settled. The controller does
+   *   NOT accept or forward a currency here — refunds never create
+   *   new `Payment` rows, they update existing ones.
+   *
+   *   The service returns both figures:
+   *     • `refundedAmount` / `refundedCurrency` — ledger
+   *     • `refundedGatewayAmount` / `refundedGatewayCurrency` — gateway
    */
   async refundPayment(req: Request, res: Response, next: NextFunction) {
     try {

@@ -10,6 +10,7 @@ import React, {
   useState,
 } from 'react';
 import { useRouter } from 'next/navigation';
+import Image from 'next/image';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   ArrowLeft,
@@ -51,6 +52,14 @@ import { useConfirm } from '../../../../../components/notifications/ConfirmProvi
 // `items` and `customer` populated. It does NOT return `user`,
 // `abandonedAt`, or `hoursAbandoned`. Those fields are declared
 // optional and computed locally where needed.
+//
+// ⚠ Phase 2: The endpoint DOES return `currency` and `currencySymbol`
+//   on every row — those are populated by
+//   `cartService.formatCartResponse` on the backend. They are
+//   declared optional here because cached responses from before
+//   Phase 2 (or rows whose business unit was deleted) may omit
+//   them. `resolveRowCurrency` below is the single place that reads
+//   `currency`, with a `DEFAULT_ROW_CURRENCY` fallback.
 
 interface AbandonedCart {
   id: string;
@@ -95,6 +104,23 @@ interface AbandonedCart {
   abandonedAt?: string;
   /** Not returned by the current backend — derived from `updatedAt`. */
   hoursAbandoned?: number;
+
+  /**
+   * ── Phase 2: ISO 4217 currency code for this row. ──────────────
+   *
+   * The backend resolves `currency` server-side from the cart's
+   * business unit via `currencyService.resolveForBusiness`. Optional
+   * because cached pre-Phase-2 responses may omit it.
+   */
+  currency?: string;
+
+  /**
+   * ── Phase 2: display symbol. Optional for the same reason as
+   *   `currency` above. Not currently read by the render path — the
+   *   formatter derives its own symbol — but kept for a future
+   *   symbol-only display.
+   */
+  currencySymbol?: string;
 }
 
 interface PaginationInfo {
@@ -128,6 +154,20 @@ const DEFAULT_PAGINATION: PaginationInfo = {
 // CONSTANTS
 // ============================================
 
+/**
+ * ── Phase 2: fallback currency for cart rows. ─────────────────────
+ *
+ * The `/cart/abandoned` endpoint returns rows that went through
+ * `cartService.formatCartResponse`, which resolves `currency` from
+ * the cart's business unit. This constant covers only the edge cases
+ * — stale cached responses and rows whose BU was deleted between the
+ * row read and the response serialization.
+ *
+ * `'UGX'` is the registry default (`DEFAULT_CURRENCY_CODE` in
+ * `lib/currencies.ts`), matching the rest of Phase 2.
+ */
+const DEFAULT_ROW_CURRENCY = 'UGX';
+
 const HOURS_OPTIONS = [
   { value: 12, label: 'Last 12 hours' },
   { value: 24, label: 'Last 24 hours' },
@@ -156,6 +196,22 @@ function hoursSince(iso: string | undefined | null): number {
   const ms = Date.now() - new Date(iso).getTime();
   if (!Number.isFinite(ms) || ms < 0) return 0;
   return Math.floor(ms / (1000 * 60 * 60));
+}
+
+/**
+ * ── Phase 2: resolve the display currency for a cart row. ──────────
+ *
+ * Reads `cart.currency` and falls back to `DEFAULT_ROW_CURRENCY` only
+ * when the field is missing. Every `formatCurrency` call on this page
+ * that operates on a single row goes through this helper.
+ */
+function resolveRowCurrency(
+  cart: AbandonedCart | null | undefined,
+): string {
+  const raw = (cart as any)?.currency;
+  return typeof raw === 'string' && raw.length > 0
+    ? raw
+    : DEFAULT_ROW_CURRENCY;
 }
 
 /**
@@ -407,6 +463,20 @@ export default function AdminAbandonedCartsPage() {
    * Recovery: the backend does not expose a `/cart/recover` route yet.
    * This handler deliberately fails loudly rather than silently doing
    * nothing, so an admin is not left thinking the cart was recovered.
+   *
+   * ⚠ `fetchAbandonedCarts` is intentionally NOT in the dependency
+   *   array. It was removed because this handler does not call it in
+   *   live code — the only reference is in a commented-out line
+   *   below. Adding it back would trip
+   *   `react-hooks/exhaustive-deps` with "unnecessary dependency".
+   *
+   *   When the backend `recoverCart` route lands:
+   *     1. Uncomment `await cartService.recoverCart(...)`.
+   *     2. Uncomment `await fetchAbandonedCarts('silent')`.
+   *     3. Add `fetchAbandonedCarts` back to the dependency array.
+   *
+   *   All three steps must happen together or the linter will flag
+   *   the mismatch again.
    */
   const handleRecoverCart = useCallback(
     async (cartId: string) => {
@@ -435,11 +505,17 @@ export default function AdminAbandonedCartsPage() {
         if (isMountedRef.current) setWorkingCartId(null);
       }
     },
-    [canManageCarts, confirm, fetchAbandonedCarts],
+    [canManageCarts, confirm],
   );
 
   /**
    * Reminder: same backend gap as `handleRecoverCart`.
+   *
+   * ⚠ Same dep-array note as `handleRecoverCart` — `fetchAbandonedCarts`
+   *   is not referenced in live code and is intentionally not in the
+   *   deps. When the `sendReminder` route lands and the
+   *   `fetchAbandonedCarts('silent')` line below is uncommented, add
+   *   `fetchAbandonedCarts` back to the deps at the same time.
    */
   const handleSendReminder = useCallback(
     async (cartId: string) => {
@@ -451,6 +527,7 @@ export default function AdminAbandonedCartsPage() {
       setWorkingCartId(cartId);
       try {
         // await cartService.sendReminder({ cartId });
+        // await fetchAbandonedCarts('silent');
         toast.info(
           'Reminders are not yet enabled on the backend. No email was sent.',
         );
@@ -496,6 +573,32 @@ export default function AdminAbandonedCartsPage() {
     const avgValue = carts.length > 0 ? pageValue / carts.length : 0;
     return { total, pageValue, avgValue };
   }, [carts, pagination.total]);
+
+  /**
+   * ── Phase 2: derive a single display currency for the page. ────
+   *
+   * Used by the stats cards, whose `pageValue` and `avgValue` are
+   * aggregates across every row on the current page.
+   *
+   * ⚠ If the rows on the current page span multiple business units
+   *   with different currencies, `pageValue` is a sum of amounts in
+   *   DIFFERENT currencies. This is a semantic limitation that
+   *   predates Phase 2. We surface it by displaying the aggregate in
+   *   the currency of the first row rather than silently labelling
+   *   the sum with a `$`.
+   *
+   * On a single-currency deployment (the common case), the derivation
+   * is exact. The correct long-term fix is a backend stats endpoint
+   * that either aggregates per-business-unit or converts to a
+   * reporting currency — separate work.
+   */
+  const statsCurrency = useMemo(() => {
+    for (const c of carts) {
+      const cur = (c as any)?.currency;
+      if (typeof cur === 'string' && cur.length > 0) return cur;
+    }
+    return DEFAULT_ROW_CURRENCY;
+  }, [carts]);
 
   // ============================================
   // HELPERS
@@ -586,7 +689,7 @@ export default function AdminAbandonedCartsPage() {
           Access Restricted
         </h2>
         <p className="text-gray-500 dark:text-gray-400 mt-2 text-center max-w-md">
-          You don't have permission to view abandoned carts.
+          You don&apos;t have permission to view abandoned carts.
         </p>
         <button
           type="button"
@@ -692,12 +795,15 @@ export default function AdminAbandonedCartsPage() {
           />
           <StatCard
             label="Potential Revenue (page)"
-            value={formatCurrency(stats.pageValue)}
+            // ── Phase 2: format the aggregate in the derived ──
+            //   currency. See the `statsCurrency` JSDoc for the
+            //   multi-BU caveat.
+            value={formatCurrency(stats.pageValue, statsCurrency)}
             accent="text-amber-600 dark:text-amber-400"
           />
           <StatCard
             label="Avg Cart Value (page)"
-            value={formatCurrency(stats.avgValue)}
+            value={formatCurrency(stats.avgValue, statsCurrency)}
             accent="text-orange-600 dark:text-orange-400"
           />
           <StatCard
@@ -909,7 +1015,11 @@ export default function AdminAbandonedCartsPage() {
                           items
                         </td>
                         <td className="px-4 py-3 text-right text-sm font-medium text-gray-900 dark:text-white tabular-nums">
-                          {formatCurrency(cart.total || 0)}
+                          {/* ── Phase 2: format in the row's own currency ── */}
+                          {formatCurrency(
+                            cart.total || 0,
+                            resolveRowCurrency(cart),
+                          )}
                         </td>
                         <td className="px-4 py-3">
                           <span
@@ -1122,7 +1232,11 @@ export default function AdminAbandonedCartsPage() {
                 </InfoTile>
                 <InfoTile label="Total">
                   <p className="font-medium text-gray-900 dark:text-white tabular-nums">
-                    {formatCurrency(selectedCart.total || 0)}
+                    {/* ── Phase 2: format in the selected cart's currency ── */}
+                    {formatCurrency(
+                      selectedCart.total || 0,
+                      resolveRowCurrency(selectedCart),
+                    )}
                   </p>
                 </InfoTile>
                 <InfoTile label="Abandoned">
@@ -1149,9 +1263,20 @@ export default function AdminAbandonedCartsPage() {
                     >
                       <div className="w-16 h-16 bg-gray-200 dark:bg-gray-600 rounded-lg overflow-hidden flex-shrink-0">
                         {item.product?.images?.[0] ? (
-                          <img
+                          // ── next/image with `unoptimized` ────────
+                          // Product image URLs are arbitrary
+                          // customer/admin uploads. The optimized
+                          // path would require every host to be
+                          // whitelisted in `next.config.js` under
+                          // `images.remotePatterns`. `unoptimized`
+                          // silences `@next/next/no-img-element`,
+                          // preserves the current load behaviour.
+                          <Image
                             src={item.product.images[0]}
                             alt={item.product.name}
+                            width={64}
+                            height={64}
+                            unoptimized
                             className="w-full h-full object-cover"
                           />
                         ) : (
@@ -1170,13 +1295,21 @@ export default function AdminAbandonedCartsPage() {
                       </div>
                       <div className="text-right shrink-0">
                         <p className="font-medium text-gray-900 dark:text-white tabular-nums">
-                          {formatCurrency(item.unitPrice)}
+                          {/* ── Phase 2: line unit price ── */}
+                          {formatCurrency(
+                            item.unitPrice,
+                            resolveRowCurrency(selectedCart),
+                          )}
                         </p>
                         <p className="text-sm text-gray-500 dark:text-gray-400 tabular-nums">
                           Qty: {item.quantity}
                         </p>
                         <p className="text-sm font-medium text-orange-600 dark:text-orange-400 tabular-nums">
-                          {formatCurrency(item.total)}
+                          {/* ── Phase 2: line total ── */}
+                          {formatCurrency(
+                            item.total,
+                            resolveRowCurrency(selectedCart),
+                          )}
                         </p>
                       </div>
                     </div>

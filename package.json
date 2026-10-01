@@ -10,22 +10,32 @@
     "dev:desktop": "turbo run dev --filter=@pos/desktop",
     "dev:mobile": "turbo run dev --filter=@pos/mobile",
     "dev:core": "turbo run dev --filter=@pos/backend --filter=@pos/web",
-
     "build": "turbo run build",
     "build:backend": "turbo run build --filter=@pos/backend",
     "build:web": "turbo run build --filter=@pos/web",
     "build:desktop": "turbo run build --filter=@pos/desktop",
     "build:mobile": "turbo run build --filter=@pos/mobile",
-
     "db:generate": "turbo run db:generate --filter=@pos/backend",
     "db:push": "turbo run db:push --filter=@pos/backend",
     "db:seed": "turbo run db:seed --filter=@pos/backend",
-
     "lint": "turbo run lint",
-    "clean": "turbo run clean"
+    "clean": "turbo run clean",
+    "typecheck": "turbo run typecheck",
+    "check": "pnpm typecheck && pnpm lint && pnpm format:check"
   },
   "devDependencies": {
-    "turbo": "^2.11.4"
+    "@eslint/js": "^10.0.1",
+    "eslint": "^8.57.1",
+    "eslint-config-prettier": "^10.1.8",
+    "eslint-plugin-import": "^2.32.0",
+    "eslint-plugin-react": "^7.37.5",
+    "eslint-plugin-react-hooks": "^7.1.1",
+    "husky": "^9.1.7",
+    "knip": "^6.38.0",
+    "lint-staged": "^17.6.0",
+    "prettier": "^3.9.9",
+    "turbo": "^2.11.4",
+    "typescript-eslint": "^8.71.0"
   },
   "pnpm": {
     "overrides": {

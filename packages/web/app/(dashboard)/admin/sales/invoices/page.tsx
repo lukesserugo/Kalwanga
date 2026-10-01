@@ -2,7 +2,7 @@
 
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import { useUser } from '@clerk/nextjs';
 import { motion, AnimatePresence } from 'framer-motion';
@@ -26,6 +26,7 @@ import {
   Send,
   X,
 } from 'lucide-react';
+import type { LucideIcon } from 'lucide-react';
 import { saleService } from '../../../../../services/saleService';
 import {
   formatCurrency,
@@ -36,19 +37,7 @@ import { useAuth } from '../../../../../hooks/useAuth';
 import { toast } from '../../../../../utils/toast-manager';
 import { api } from '../../../../../services/api';
 
-// ============================================
-// LOCAL SERVICE EXTENSIONS
-// ============================================
-//
-// The frontend `saleService` does not declare `getInvoices`,
-// `sendReceiptEmail`, or `exportSales`. The backend exposes:
-//
-//   GET  /sales/invoices                  → saleController.getInvoices
-//   POST /sales/:id/email-receipt         → saleController.sendReceiptEmail
-//   GET  /sales/export                    → saleController.exportSales
-//
-// We call them via the shared `api` client rather than mutating the
-// shared service.
+const DEFAULT_CURRENCY = 'USD';
 
 async function fetchInvoicesRemote(params: {
   page?: number;
@@ -56,7 +45,12 @@ async function fetchInvoicesRemote(params: {
   search?: string;
   startDate?: string;
   endDate?: string;
-}): Promise<{ data: any[]; total?: number; totalPages?: number }> {
+}): Promise<{
+  data: any[];
+  total?: number;
+  totalPages?: number;
+  currency?: string;
+}> {
   const response = await api.get<any>('/sales/invoices', { params });
   const body =
     response && typeof response === 'object' && 'data' in response
@@ -70,11 +64,18 @@ async function fetchInvoicesRemote(params: {
       : [];
   const pagination = body?.pagination ?? response?.pagination ?? {};
 
+  const envelopeCurrency =
+    response && typeof response === 'object' && 'currency' in response
+      ? (response as any).currency
+      : undefined;
+
   return {
     data,
-    total: typeof pagination.total === 'number' ? pagination.total : data.length,
+    total:
+      typeof pagination.total === 'number' ? pagination.total : data.length,
     totalPages:
       typeof pagination.totalPages === 'number' ? pagination.totalPages : 1,
+    currency: envelopeCurrency,
   };
 }
 
@@ -120,10 +121,6 @@ async function exportSalesRemote(params: {
   }
   return { data: [], total: 0, format: params.format };
 }
-
-// ============================================
-// INTERFACES
-// ============================================
 
 type InvoiceStatus =
   | 'DRAFT'
@@ -179,6 +176,8 @@ interface Invoice {
   cancelledAt?: string;
   businessUnitId: string;
   businessUnitName?: string;
+  /** ISO 4217 ledger currency for this invoice. Optional. */
+  currency?: string;
 }
 
 interface InvoiceFilters {
@@ -204,9 +203,14 @@ interface InvoiceStats {
   averageInvoice: number;
 }
 
-// ============================================
-// HELPERS
-// ============================================
+function pickCurrency(...candidates: Array<unknown>): string {
+  for (const c of candidates) {
+    if (typeof c === 'string' && c.trim().length > 0) {
+      return c.trim().toUpperCase();
+    }
+  }
+  return DEFAULT_CURRENCY;
+}
 
 function normalizeInvoiceStatus(
   raw: string | null | undefined,
@@ -242,11 +246,15 @@ function normalizePaymentTerms(
   }
 }
 
-function saleToInvoice(sale: any): Invoice | null {
+function saleToInvoice(
+  sale: any,
+  fallbackCurrency: string,
+): Invoice | null {
   const inv = sale.invoice;
   if (!inv) return null;
 
   const customer = sale.customer || {};
+  const payment = Array.isArray(sale.payments) ? sale.payments[0] : undefined;
 
   const items: InvoiceItem[] = (sale.items || []).map((item: any) => ({
     id: item.id,
@@ -258,6 +266,14 @@ function saleToInvoice(sale: any): Invoice | null {
     total: item.total || 0,
     discount: item.discount || 0,
   }));
+
+  const currency = pickCurrency(
+    inv.currency,
+    sale.currency,
+    payment?.currency,
+    payment?.displayCurrency,
+    fallbackCurrency,
+  );
 
   return {
     id: inv.id,
@@ -290,12 +306,9 @@ function saleToInvoice(sale: any): Invoice | null {
     cancelledAt: inv.cancelledAt,
     businessUnitId: sale.businessUnitId,
     businessUnitName: sale.businessUnit?.name,
+    currency,
   };
 }
-
-// ============================================
-// STYLE / LABEL HELPERS
-// ============================================
 
 const DEFAULT_INVOICE_STATS: InvoiceStats = {
   total: 0,
@@ -330,8 +343,8 @@ const getStatusColor = (status: string): string => {
   );
 };
 
-const getStatusIcon = (status: string): React.ElementType => {
-  const icons: Record<string, React.ElementType> = {
+const getStatusIcon = (status: string): LucideIcon => {
+  const icons: Record<string, LucideIcon> = {
     DRAFT: FileText,
     SENT: Send,
     PAID: CheckCircle,
@@ -345,7 +358,7 @@ const getStatusIcon = (status: string): React.ElementType => {
 
 const StatusIcon = ({ status }: { status: string }) => {
   const Icon = getStatusIcon(status);
-  return <Icon className="w-4 h-4 inline mr-1" />;
+  return <Icon className="w-4 h-4 inline mr-1" aria-hidden="true" />;
 };
 
 const getPaymentTermsLabel = (terms: string): string => {
@@ -364,10 +377,6 @@ const titleCase = (value: string): string => {
   const lower = value.toLowerCase();
   return lower.charAt(0).toUpperCase() + lower.slice(1);
 };
-
-// ============================================
-// STATS HELPER
-// ============================================
 
 function computeInvoiceStats(invoices: Invoice[]): InvoiceStats {
   const totalAmount = invoices.reduce((sum, i) => sum + (i.total || 0), 0);
@@ -392,11 +401,13 @@ function computeInvoiceStats(invoices: Invoice[]): InvoiceStats {
   };
 }
 
-// ============================================
-// INVOICE HTML
-// ============================================
+function generateInvoiceHTML(
+  invoice: Invoice,
+  currency: string,
+): string {
+  const fmt = (amount: number | null | undefined): string =>
+    formatCurrency(amount ?? 0, currency);
 
-function generateInvoiceHTML(invoice: Invoice): string {
   return `
     <!DOCTYPE html>
     <html>
@@ -478,8 +489,8 @@ function generateInvoiceHTML(invoice: Invoice): string {
                 <td>${item.productName}</td>
                 <td style="color: #9ca3af;">${item.sku}</td>
                 <td class="right">${item.quantity}</td>
-                <td class="right">$${item.unitPrice.toFixed(2)}</td>
-                <td class="right">$${item.total.toFixed(2)}</td>
+                <td class="right">${fmt(item.unitPrice)}</td>
+                <td class="right">${fmt(item.total)}</td>
               </tr>
             `,
               )
@@ -488,12 +499,12 @@ function generateInvoiceHTML(invoice: Invoice): string {
         </table>
 
         <div class="totals">
-          <div class="row"><span>Subtotal</span><span>$${invoice.subtotal.toFixed(2)}</span></div>
-          <div class="row"><span>Tax</span><span>$${invoice.tax.toFixed(2)}</span></div>
-          ${invoice.discount > 0 ? `<div class="row" style="color: #059669;"><span>Discount</span><span>-$${invoice.discount.toFixed(2)}</span></div>` : ''}
-          <div class="row grand"><span>Total</span><span>$${invoice.total.toFixed(2)}</span></div>
-          <div class="row"><span>Paid</span><span>$${invoice.paidAmount.toFixed(2)}</span></div>
-          <div class="row" style="font-weight: 600; color: #b45309;"><span>Balance Due</span><span>$${invoice.balanceDue.toFixed(2)}</span></div>
+          <div class="row"><span>Subtotal</span><span>${fmt(invoice.subtotal)}</span></div>
+          <div class="row"><span>Tax</span><span>${fmt(invoice.tax)}</span></div>
+          ${invoice.discount > 0 ? `<div class="row" style="color: #059669;"><span>Discount</span><span>-${fmt(invoice.discount)}</span></div>` : ''}
+          <div class="row grand"><span>Total</span><span>${fmt(invoice.total)}</span></div>
+          <div class="row"><span>Paid</span><span>${fmt(invoice.paidAmount)}</span></div>
+          <div class="row" style="font-weight: 600; color: #b45309;"><span>Balance Due</span><span>${fmt(invoice.balanceDue)}</span></div>
         </div>
 
         ${invoice.notes ? `<div style="margin-top: 30px; padding: 15px; background: #f9fafb; border-radius: 6px;"><strong style="font-size: 11px; text-transform: uppercase; color: #6b7280;">Notes</strong><p style="margin-top: 6px;">${invoice.notes}</p></div>` : ''}
@@ -505,10 +516,6 @@ function generateInvoiceHTML(invoice: Invoice): string {
     </html>
   `;
 }
-
-// ============================================
-// SUB-COMPONENTS
-// ============================================
 
 interface StatCardProps {
   title: string;
@@ -541,10 +548,6 @@ function StatCard({ title, value, color }: StatCardProps) {
   );
 }
 
-// ============================================
-// MAIN COMPONENT
-// ============================================
-
 export default function InvoicesPage() {
   const { isLoaded, isSignedIn } = useUser();
   const { user: authUser } = useAuth();
@@ -554,6 +557,7 @@ export default function InvoicesPage() {
   const [loading, setLoading] = useState(true);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [stats, setStats] = useState<InvoiceStats>(DEFAULT_INVOICE_STATS);
+  const [listCurrency, setListCurrency] = useState<string>(DEFAULT_CURRENCY);
 
   const [filters, setFilters] = useState<InvoiceFilters>({
     search: '',
@@ -592,6 +596,8 @@ export default function InvoicesPage() {
     'CASHIER',
   ].includes(userRole);
 
+  const displayCurrency = listCurrency || DEFAULT_CURRENCY;
+
   useEffect(() => {
     if (isLoaded && !isSignedIn) {
       router.push('/login?redirect=/admin/sales/invoices');
@@ -602,10 +608,6 @@ export default function InvoicesPage() {
       toast.error('You do not have permission to view invoices');
     }
   }, [isLoaded, isSignedIn, router, canViewInvoices]);
-
-  // ============================================
-  // FETCH
-  // ============================================
 
   const fetchInvoices = useCallback(
     async (silent = false) => {
@@ -631,8 +633,15 @@ export default function InvoicesPage() {
         const rawSales: any[] = Array.isArray(response.data)
           ? response.data
           : [];
+
+        const baseCurrency = pickCurrency(
+          response.currency,
+          listCurrency,
+          DEFAULT_CURRENCY,
+        );
+
         const flattened: Invoice[] = rawSales
-          .map(saleToInvoice)
+          .map((sale) => saleToInvoice(sale, baseCurrency))
           .filter((inv): inv is Invoice => inv !== null);
 
         const filtered =
@@ -647,9 +656,14 @@ export default function InvoicesPage() {
             : filtered.length,
         );
         setTotalPages(
-          typeof response.totalPages === 'number' ? response.totalPages : 1,
+          typeof response.totalPages === 'number'
+            ? response.totalPages
+            : 1,
         );
         setStats(computeInvoiceStats(filtered));
+        if (response.currency) {
+          setListCurrency(response.currency);
+        }
       } catch (error: any) {
         console.error('Error fetching invoices:', error);
         toast.error(
@@ -663,22 +677,20 @@ export default function InvoicesPage() {
         setIsRefreshing(false);
       }
     },
-    [authUser, filters],
+    [authUser, filters, listCurrency],
   );
 
   useEffect(() => {
-    fetchInvoices();
+    void fetchInvoices();
   }, [fetchInvoices]);
-
-  // ============================================
-  // FILTER HANDLERS
-  // ============================================
 
   const handleSearch = (e: React.ChangeEvent<HTMLInputElement>) => {
     setFilters((prev) => ({ ...prev, search: e.target.value, page: 1 }));
   };
 
-  const handleStatusChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
+  const handleStatusChange = (
+    e: React.ChangeEvent<HTMLSelectElement>,
+  ) => {
     setFilters((prev) => ({ ...prev, status: e.target.value, page: 1 }));
   };
 
@@ -693,10 +705,6 @@ export default function InvoicesPage() {
     setFilters((prev) => ({ ...prev, page: newPage }));
   };
 
-  // ============================================
-  // ACTION HANDLERS
-  // ============================================
-
   const handleSendInvoice = async () => {
     if (!selectedInvoice) return;
 
@@ -708,7 +716,7 @@ export default function InvoicesPage() {
       );
       toast.success('Invoice sent successfully');
       setShowSendModal(false);
-      fetchInvoices(true);
+      void fetchInvoices(true);
     } catch (error: any) {
       console.error('Failed to send invoice:', error);
       toast.error(
@@ -736,7 +744,7 @@ export default function InvoicesPage() {
       } as any);
       toast.success('Invoice marked as paid');
       setShowPaidModal(false);
-      fetchInvoices(true);
+      void fetchInvoices(true);
     } catch (error: any) {
       console.error('Failed to mark invoice as paid:', error);
       toast.error(
@@ -765,7 +773,7 @@ export default function InvoicesPage() {
       toast.success('Invoice voided successfully');
       setShowVoidModal(false);
       setVoidReason('');
-      fetchInvoices(true);
+      void fetchInvoices(true);
     } catch (error: any) {
       console.error('Failed to void invoice:', error);
       toast.error(
@@ -794,7 +802,7 @@ export default function InvoicesPage() {
       toast.success('Invoice cancelled successfully');
       setShowCancelModal(false);
       setCancelReason('');
-      fetchInvoices(true);
+      void fetchInvoices(true);
     } catch (error: any) {
       console.error('Failed to cancel invoice:', error);
       toast.error(
@@ -830,6 +838,7 @@ export default function InvoicesPage() {
         'Due Date',
         'Customer',
         'Email',
+        'Currency',
         'Subtotal',
         'Tax',
         'Discount',
@@ -849,6 +858,7 @@ export default function InvoicesPage() {
           : '',
         invoice.customerName,
         invoice.customerEmail,
+        pickCurrency(invoice.currency, displayCurrency),
         invoice.subtotal.toFixed(2),
         invoice.tax.toFixed(2),
         invoice.discount.toFixed(2),
@@ -887,21 +897,18 @@ export default function InvoicesPage() {
     }
   };
 
-  const handlePrintInvoice = (invoice: Invoice) => {
+  const handlePrintInvoice = useCallback((invoice: Invoice) => {
     const printWindow = window.open('', '_blank');
     if (!printWindow) {
       toast.error('Please allow popups to print invoices');
       return;
     }
-    printWindow.document.write(generateInvoiceHTML(invoice));
+    const currency = pickCurrency(invoice.currency, DEFAULT_CURRENCY);
+    printWindow.document.write(generateInvoiceHTML(invoice, currency));
     printWindow.document.close();
     printWindow.print();
     toast.success('Invoice sent to printer');
-  };
-
-  // ============================================
-  // RENDER GUARDS
-  // ============================================
+  }, []);
 
   if (loading) {
     return <LoadingSkeleton />;
@@ -914,7 +921,6 @@ export default function InvoicesPage() {
   return (
     <div className="min-h-screen bg-gray-50 dark:bg-gray-900 p-6">
       <div className="max-w-7xl mx-auto">
-        {/* Header */}
         <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 mb-6">
           <div>
             <div className="flex items-center gap-3">
@@ -923,7 +929,10 @@ export default function InvoicesPage() {
                 className="p-2 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-colors focus-ring"
                 aria-label="Back to Sales"
               >
-                <ArrowLeft className="w-5 h-5 text-gray-500" />
+                <ArrowLeft
+                  className="w-5 h-5 text-gray-500"
+                  aria-hidden="true"
+                />
               </button>
               <div>
                 <h1 className="text-3xl font-bold text-gray-900 dark:text-white">
@@ -931,62 +940,71 @@ export default function InvoicesPage() {
                 </h1>
                 <p className="text-gray-600 dark:text-gray-400 mt-1">
                   Manage customer invoices and billing
-                  {totalInvoices > 0 && ` · ${totalInvoices} total invoices`}
+                  {totalInvoices > 0 &&
+                    ` · ${totalInvoices} total invoices`}
                 </p>
               </div>
             </div>
           </div>
           <div className="flex flex-wrap gap-3">
             <button
-              onClick={() => fetchInvoices(true)}
+              onClick={() => void fetchInvoices(true)}
               className="flex items-center gap-2 px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors focus-ring"
               disabled={isRefreshing}
             >
               {isRefreshing ? (
-                <Loader2 className="w-4 h-4 animate-spin" />
+                <Loader2
+                  className="w-4 h-4 animate-spin"
+                  aria-hidden="true"
+                />
               ) : (
-                <RefreshCw className="w-4 h-4" />
+                <RefreshCw className="w-4 h-4" aria-hidden="true" />
               )}
               Refresh
             </button>
             <button
-              onClick={handleExport}
+              onClick={() => void handleExport()}
               disabled={exporting || invoices.length === 0}
               className="flex items-center gap-2 px-4 py-2 bg-brand-500 text-white rounded-lg hover:bg-brand-600 transition-colors disabled:opacity-50 focus-ring"
             >
               {exporting ? (
-                <Loader2 className="w-4 h-4 animate-spin" />
+                <Loader2
+                  className="w-4 h-4 animate-spin"
+                  aria-hidden="true"
+                />
               ) : (
-                <Download className="w-4 h-4" />
+                <Download className="w-4 h-4" aria-hidden="true" />
               )}
               Export
             </button>
           </div>
         </div>
 
-        {/* Stats Cards */}
         <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-7 gap-4 mb-6">
           <StatCard title="Total" value={stats.total} color="brand" />
           <StatCard title="Draft" value={stats.draft} color="gray" />
           <StatCard title="Sent" value={stats.sent} color="brand" />
           <StatCard title="Paid" value={stats.paid} color="success" />
           <StatCard title="Overdue" value={stats.overdue} color="danger" />
-          <StatCard title="Cancelled" value={stats.cancelled} color="warning" />
+          <StatCard
+            title="Cancelled"
+            value={stats.cancelled}
+            color="warning"
+          />
           <StatCard
             title="Total Amount"
-            value={formatCurrency(stats.totalAmount)}
+            value={formatCurrency(stats.totalAmount, displayCurrency)}
             color="brand"
           />
         </div>
 
-        {/* Additional Stats */}
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
           <div className="card-brand p-4">
             <p className="text-sm text-gray-500 dark:text-gray-400">
               Total Paid
             </p>
             <p className="text-2xl font-bold text-success-600 dark:text-success-400 tabular-nums">
-              {formatCurrency(stats.totalPaid)}
+              {formatCurrency(stats.totalPaid, displayCurrency)}
             </p>
           </div>
           <div className="card-brand p-4">
@@ -994,7 +1012,7 @@ export default function InvoicesPage() {
               Total Balance Due
             </p>
             <p className="text-2xl font-bold text-warning-600 dark:text-warning-400 tabular-nums">
-              {formatCurrency(stats.totalBalance)}
+              {formatCurrency(stats.totalBalance, displayCurrency)}
             </p>
           </div>
           <div className="card-brand p-4">
@@ -1002,16 +1020,18 @@ export default function InvoicesPage() {
               Average Invoice
             </p>
             <p className="text-2xl font-bold text-brand-accent-600 dark:text-brand-accent-400 tabular-nums">
-              {formatCurrency(stats.averageInvoice)}
+              {formatCurrency(stats.averageInvoice, displayCurrency)}
             </p>
           </div>
         </div>
 
-        {/* Filters */}
         <div className="card-brand p-4 mb-6">
           <div className="grid grid-cols-1 md:grid-cols-5 gap-4">
             <div className="relative">
-              <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-5 h-5" />
+              <Search
+                className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-5 h-5"
+                aria-hidden="true"
+              />
               <input
                 type="text"
                 placeholder="Search by invoice #, receipt, customer..."
@@ -1036,17 +1056,19 @@ export default function InvoicesPage() {
             <input
               type="date"
               value={filters.startDate}
-              onChange={(e) => handleDateChange('startDate', e.target.value)}
-              className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-brand-500 focus:outline-none bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+              onChange={(e) =>
+                handleDateChange('startDate', e.target.value)
+              }
+              className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-brand-500 focus:outline-none bg-white dark:bg-gray-700 text-gray-900 dark:text-white tabular-nums"
             />
             <input
               type="date"
               value={filters.endDate}
               onChange={(e) => handleDateChange('endDate', e.target.value)}
-              className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-brand-500 focus:outline-none bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+              className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-brand-500 focus:outline-none bg-white dark:bg-gray-700 text-gray-900 dark:text-white tabular-nums"
             />
             <button
-              onClick={() => fetchInvoices()}
+              onClick={() => void fetchInvoices()}
               className="px-4 py-2 bg-brand-500 text-white rounded-lg hover:bg-brand-600 transition-colors focus-ring"
             >
               Apply Filters
@@ -1054,7 +1076,6 @@ export default function InvoicesPage() {
           </div>
         </div>
 
-        {/* Invoices List */}
         {invoices.length === 0 ? (
           <div className="card-brand p-12 text-center">
             <div className="text-6xl mb-4">📄</div>
@@ -1071,116 +1092,146 @@ export default function InvoicesPage() {
           <>
             <div className="space-y-4">
               <AnimatePresence>
-                {invoices.map((invoice, index) => (
-                  <motion.div
-                    key={invoice.id}
-                    initial={{ opacity: 0, y: 20 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    transition={{ delay: index * 0.05 }}
-                    className="card-brand p-0 overflow-hidden hover:shadow-card-hover transition-all"
-                  >
-                    <div className="px-6 py-4 border-b border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800/50 flex flex-wrap items-center justify-between gap-3">
-                      <div className="flex items-center gap-3">
-                        <span className="font-mono font-bold text-brand-600 dark:text-brand-400 tabular-nums">
-                          #{invoice.invoiceNumber}
-                        </span>
-                        <span className="text-sm text-gray-500 dark:text-gray-400">
-                          {formatDate(invoice.createdAt)}
-                        </span>
-                        {invoice.dueDate && (
-                          <span className="text-sm text-gray-500 dark:text-gray-400">
-                            Due: {formatDate(invoice.dueDate)}
+                {invoices.map((invoice, index) => {
+                  const rowCurrency = pickCurrency(
+                    invoice.currency,
+                    displayCurrency,
+                  );
+                  return (
+                    <motion.div
+                      key={invoice.id}
+                      initial={{ opacity: 0, y: 20 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      transition={{ delay: index * 0.05 }}
+                      className="card-brand p-0 overflow-hidden hover:shadow-card-hover transition-all"
+                    >
+                      <div className="px-6 py-4 border-b border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800/50 flex flex-wrap items-center justify-between gap-3">
+                        <div className="flex items-center gap-3 flex-wrap">
+                          <span className="font-mono font-bold text-brand-600 dark:text-brand-400 tabular-nums">
+                            #{invoice.invoiceNumber}
                           </span>
-                        )}
+                          <span className="text-sm text-gray-500 dark:text-gray-400">
+                            {formatDate(invoice.createdAt)}
+                          </span>
+                          {invoice.dueDate && (
+                            <span className="text-sm text-gray-500 dark:text-gray-400">
+                              Due: {formatDate(invoice.dueDate)}
+                            </span>
+                          )}
+                        </div>
+                        <div className="flex items-center gap-3">
+                          <span
+                            className={`px-2.5 py-1 rounded-full text-xs font-medium ${getStatusColor(
+                              invoice.status,
+                            )} flex items-center gap-1`}
+                          >
+                            <StatusIcon status={invoice.status} />
+                            {titleCase(invoice.status)}
+                          </span>
+                          <span className="font-bold text-gray-900 dark:text-white tabular-nums">
+                            {formatCurrency(invoice.total, rowCurrency)}
+                          </span>
+                        </div>
                       </div>
-                      <div className="flex items-center gap-3">
-                        <span
-                          className={`px-2.5 py-1 rounded-full text-xs font-medium ${getStatusColor(
-                            invoice.status,
-                          )} flex items-center gap-1`}
-                        >
-                          <StatusIcon status={invoice.status} />
-                          {titleCase(invoice.status)}
-                        </span>
-                        <span className="font-bold text-gray-900 dark:text-white tabular-nums">
-                          {formatCurrency(invoice.total)}
-                        </span>
-                      </div>
-                    </div>
 
-                    <div className="p-6">
-                      <div className="flex flex-wrap items-start justify-between gap-4">
-                        <div className="space-y-2">
-                          <div className="flex items-center gap-4 text-sm text-gray-500 dark:text-gray-400">
-                            <span className="flex items-center gap-1">
-                              <Users className="w-4 h-4" />
-                              {invoice.customerName || 'Guest'}
-                            </span>
-                            <span className="flex items-center gap-1">
-                              <FileText className="w-4 h-4" />
-                              Receipt: #{invoice.receiptNumber}
-                            </span>
-                            <span className="flex items-center gap-1 tabular-nums">
-                              <Package className="w-4 h-4" />
-                              {invoice.items.length} items
-                            </span>
+                      <div className="p-6">
+                        <div className="flex flex-wrap items-start justify-between gap-4">
+                          <div className="space-y-2">
+                            <div className="flex items-center gap-4 text-sm text-gray-500 dark:text-gray-400 flex-wrap">
+                              <span className="flex items-center gap-1">
+                                <Users
+                                  className="w-4 h-4"
+                                  aria-hidden="true"
+                                />
+                                {invoice.customerName || 'Guest'}
+                              </span>
+                              <span className="flex items-center gap-1">
+                                <FileText
+                                  className="w-4 h-4"
+                                  aria-hidden="true"
+                                />
+                                Receipt: #{invoice.receiptNumber}
+                              </span>
+                              <span className="flex items-center gap-1 tabular-nums">
+                                <Package
+                                  className="w-4 h-4"
+                                  aria-hidden="true"
+                                />
+                                {invoice.items.length} items
+                              </span>
+                            </div>
+                            <div className="flex flex-wrap gap-2">
+                              <span className="px-2 py-1 bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-400 rounded-full text-xs font-medium">
+                                {getPaymentTermsLabel(invoice.paymentTerms)}
+                              </span>
+                              <span className="px-2 py-1 bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-400 rounded-full text-xs tabular-nums">
+                                Balance:{' '}
+                                {formatCurrency(
+                                  invoice.balanceDue,
+                                  rowCurrency,
+                                )}
+                              </span>
+                            </div>
                           </div>
-                          <div className="flex flex-wrap gap-2">
-                            <span className="px-2 py-1 bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-400 rounded-full text-xs font-medium">
-                              {getPaymentTermsLabel(invoice.paymentTerms)}
-                            </span>
-                            <span className="px-2 py-1 bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-400 rounded-full text-xs tabular-nums">
-                              Balance: {formatCurrency(invoice.balanceDue)}
-                            </span>
-                          </div>
-                        </div>
-                        <div className="flex gap-2 flex-wrap">
-                          <button
-                            onClick={() => {
-                              setSelectedInvoice(invoice);
-                              setShowDetailModal(true);
-                            }}
-                            className="px-3 py-1.5 text-brand-600 dark:text-brand-400 hover:bg-brand-50 dark:hover:bg-brand-900/20 rounded-lg text-sm font-medium transition-colors flex items-center gap-1 focus-ring"
-                          >
-                            <Eye className="w-4 h-4" />
-                            Details
-                          </button>
-                          <button
-                            onClick={() => handlePrintInvoice(invoice)}
-                            className="px-3 py-1.5 text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg text-sm font-medium transition-colors flex items-center gap-1 focus-ring"
-                          >
-                            <Printer className="w-4 h-4" />
-                            Print
-                          </button>
-                          {canManageInvoices && invoice.status === 'DRAFT' && (
+                          <div className="flex gap-2 flex-wrap">
                             <button
                               onClick={() => {
                                 setSelectedInvoice(invoice);
-                                setShowSendModal(true);
+                                setShowDetailModal(true);
                               }}
-                              className="px-3 py-1.5 bg-brand-500 text-white rounded-lg hover:bg-brand-600 text-sm font-medium transition-colors flex items-center gap-1 focus-ring"
+                              className="px-3 py-1.5 text-brand-600 dark:text-brand-400 hover:bg-brand-50 dark:hover:bg-brand-900/20 rounded-lg text-sm font-medium transition-colors flex items-center gap-1 focus-ring"
                             >
-                              <Send className="w-4 h-4" />
-                              Send
+                              <Eye className="w-4 h-4" aria-hidden="true" />
+                              Details
                             </button>
-                          )}
-                          {canManageInvoices && invoice.status === 'SENT' && (
                             <button
-                              onClick={() => {
-                                setSelectedInvoice(invoice);
-                                setShowPaidModal(true);
-                              }}
-                              className="px-3 py-1.5 bg-success-600 text-white rounded-lg hover:bg-success-700 text-sm font-medium transition-colors flex items-center gap-1 focus-ring"
+                              onClick={() => handlePrintInvoice(invoice)}
+                              className="px-3 py-1.5 text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg text-sm font-medium transition-colors flex items-center gap-1 focus-ring"
                             >
-                              <CheckCircle className="w-4 h-4" />
-                              Mark Paid
+                              <Printer
+                                className="w-4 h-4"
+                                aria-hidden="true"
+                              />
+                              Print
                             </button>
-                          )}
+                            {canManageInvoices &&
+                              invoice.status === 'DRAFT' && (
+                                <button
+                                  onClick={() => {
+                                    setSelectedInvoice(invoice);
+                                    setShowSendModal(true);
+                                  }}
+                                  className="px-3 py-1.5 bg-brand-500 text-white rounded-lg hover:bg-brand-600 text-sm font-medium transition-colors flex items-center gap-1 focus-ring"
+                                >
+                                  <Send
+                                    className="w-4 h-4"
+                                    aria-hidden="true"
+                                  />
+                                  Send
+                                </button>
+                              )}
+                            {canManageInvoices &&
+                              invoice.status === 'SENT' && (
+                                <button
+                                  onClick={() => {
+                                    setSelectedInvoice(invoice);
+                                    setShowPaidModal(true);
+                                  }}
+                                  className="px-3 py-1.5 bg-success-600 text-white rounded-lg hover:bg-success-700 text-sm font-medium transition-colors flex items-center gap-1 focus-ring"
+                                >
+                                  <CheckCircle
+                                    className="w-4 h-4"
+                                    aria-hidden="true"
+                                  />
+                                  Mark Paid
+                                </button>
+                              )}
+                          </div>
                         </div>
                       </div>
-                    </div>
-                  </motion.div>
-                ))}
+                    </motion.div>
+                  );
+                })}
               </AnimatePresence>
             </div>
 
@@ -1193,45 +1244,56 @@ export default function InvoicesPage() {
                   disabled={filters.page === 1}
                   className="px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg text-sm hover:bg-gray-50 dark:hover:bg-gray-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors text-gray-700 dark:text-gray-300 focus-ring"
                 >
-                  <ChevronLeft className="w-4 h-4 inline" />
+                  <ChevronLeft
+                    className="w-4 h-4 inline"
+                    aria-hidden="true"
+                  />
                   Previous
                 </button>
                 <div className="flex items-center gap-1">
-                  {Array.from({ length: Math.min(totalPages, 5) }, (_, i) => {
-                    let pageNum: number;
-                    if (totalPages <= 5) {
-                      pageNum = i + 1;
-                    } else if (filters.page <= 3) {
-                      pageNum = i + 1;
-                    } else if (filters.page >= totalPages - 2) {
-                      pageNum = totalPages - 4 + i;
-                    } else {
-                      pageNum = filters.page - 2 + i;
-                    }
-                    return (
-                      <button
-                        key={pageNum}
-                        onClick={() => handlePageChange(pageNum)}
-                        className={`w-9 h-9 rounded-lg text-sm transition-colors tabular-nums focus-ring ${
-                          filters.page === pageNum
-                            ? 'bg-brand-500 text-white'
-                            : 'border border-gray-300 dark:border-gray-600 hover:bg-gray-50 dark:hover:bg-gray-700 text-gray-700 dark:text-gray-300'
-                        }`}
-                      >
-                        {pageNum}
-                      </button>
-                    );
-                  })}
+                  {Array.from(
+                    { length: Math.min(totalPages, 5) },
+                    (_, i) => {
+                      let pageNum: number;
+                      if (totalPages <= 5) {
+                        pageNum = i + 1;
+                      } else if (filters.page <= 3) {
+                        pageNum = i + 1;
+                      } else if (filters.page >= totalPages - 2) {
+                        pageNum = totalPages - 4 + i;
+                      } else {
+                        pageNum = filters.page - 2 + i;
+                      }
+                      return (
+                        <button
+                          key={pageNum}
+                          onClick={() => handlePageChange(pageNum)}
+                          className={`w-9 h-9 rounded-lg text-sm transition-colors tabular-nums focus-ring ${
+                            filters.page === pageNum
+                              ? 'bg-brand-500 text-white'
+                              : 'border border-gray-300 dark:border-gray-600 hover:bg-gray-50 dark:hover:bg-gray-700 text-gray-700 dark:text-gray-300'
+                          }`}
+                        >
+                          {pageNum}
+                        </button>
+                      );
+                    },
+                  )}
                 </div>
                 <button
                   onClick={() =>
-                    handlePageChange(Math.min(totalPages, filters.page + 1))
+                    handlePageChange(
+                      Math.min(totalPages, filters.page + 1),
+                    )
                   }
                   disabled={filters.page === totalPages}
                   className="px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg text-sm hover:bg-gray-50 dark:hover:bg-gray-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors text-gray-700 dark:text-gray-300 focus-ring"
                 >
                   Next
-                  <ChevronRight className="w-4 h-4 inline" />
+                  <ChevronRight
+                    className="w-4 h-4 inline"
+                    aria-hidden="true"
+                  />
                 </button>
               </div>
             )}
@@ -1239,11 +1301,14 @@ export default function InvoicesPage() {
         )}
       </div>
 
-      {/* Detail Modal */}
       <AnimatePresence>
         {showDetailModal && selectedInvoice && (
           <DetailModal
             invoiceData={selectedInvoice}
+            currency={pickCurrency(
+              selectedInvoice.currency,
+              displayCurrency,
+            )}
             onClose={() => setShowDetailModal(false)}
             onSend={() => {
               setShowDetailModal(false);
@@ -1269,25 +1334,31 @@ export default function InvoicesPage() {
         )}
       </AnimatePresence>
 
-      {/* Send Modal */}
       <AnimatePresence>
         {showSendModal && selectedInvoice && (
           <SendModal
             invoiceData={selectedInvoice}
+            currency={pickCurrency(
+              selectedInvoice.currency,
+              displayCurrency,
+            )}
             onClose={() => setShowSendModal(false)}
-            onConfirm={handleSendInvoice}
+            onConfirm={() => void handleSendInvoice()}
             processing={processing}
           />
         )}
       </AnimatePresence>
 
-      {/* Paid Modal */}
       <AnimatePresence>
         {showPaidModal && selectedInvoice && (
           <PaidModal
             invoiceData={selectedInvoice}
+            currency={pickCurrency(
+              selectedInvoice.currency,
+              displayCurrency,
+            )}
             onClose={() => setShowPaidModal(false)}
-            onConfirm={handleMarkAsPaid}
+            onConfirm={() => void handleMarkAsPaid()}
             paymentMethod={paymentMethod}
             setPaymentMethod={setPaymentMethod}
             processing={processing}
@@ -1295,13 +1366,12 @@ export default function InvoicesPage() {
         )}
       </AnimatePresence>
 
-      {/* Void Modal */}
       <AnimatePresence>
         {showVoidModal && selectedInvoice && (
           <VoidModal
             invoiceData={selectedInvoice}
             onClose={() => setShowVoidModal(false)}
-            onConfirm={handleVoidInvoice}
+            onConfirm={() => void handleVoidInvoice()}
             reason={voidReason}
             setReason={setVoidReason}
             processing={processing}
@@ -1309,13 +1379,12 @@ export default function InvoicesPage() {
         )}
       </AnimatePresence>
 
-      {/* Cancel Modal */}
       <AnimatePresence>
         {showCancelModal && selectedInvoice && (
           <CancelModal
             invoiceData={selectedInvoice}
             onClose={() => setShowCancelModal(false)}
-            onConfirm={handleCancelInvoice}
+            onConfirm={() => void handleCancelInvoice()}
             reason={cancelReason}
             setReason={setCancelReason}
             processing={processing}
@@ -1326,12 +1395,9 @@ export default function InvoicesPage() {
   );
 }
 
-// ============================================
-// DETAIL MODAL
-// ============================================
-
 interface DetailModalProps {
   invoiceData: Invoice;
+  currency: string;
   onClose: () => void;
   onSend: () => void;
   onPaid: () => void;
@@ -1343,6 +1409,7 @@ interface DetailModalProps {
 
 function DetailModal({
   invoiceData,
+  currency,
   onClose,
   onSend,
   onPaid,
@@ -1374,7 +1441,7 @@ function DetailModal({
             className="p-2 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-colors focus-ring"
             aria-label="Close"
           >
-            <XCircle className="w-6 h-6 text-gray-500" />
+            <XCircle className="w-6 h-6 text-gray-500" aria-hidden="true" />
           </button>
         </div>
 
@@ -1389,7 +1456,7 @@ function DetailModal({
               {titleCase(invoiceData.status)}
             </span>
             <span className="text-2xl font-bold text-gray-900 dark:text-white tabular-nums">
-              {formatCurrency(invoiceData.total)}
+              {formatCurrency(invoiceData.total, currency)}
             </span>
           </div>
 
@@ -1409,7 +1476,7 @@ function DetailModal({
               <p className="font-medium text-gray-900 dark:text-white">
                 {invoiceData.customerName || 'Guest'}
               </p>
-              <p className="text-sm text-gray-500 dark:text-gray-400">
+              <p className="text-sm text-gray-500 dark:text-gray-400 truncate">
                 {invoiceData.customerEmail}
               </p>
               {invoiceData.customerPhone && (
@@ -1450,7 +1517,7 @@ function DetailModal({
                 Balance Due
               </p>
               <p className="font-medium text-warning-600 dark:text-warning-400 tabular-nums">
-                {formatCurrency(invoiceData.balanceDue)}
+                {formatCurrency(invoiceData.balanceDue, currency)}
               </p>
             </div>
           </div>
@@ -1473,12 +1540,12 @@ function DetailModal({
                       <span>SKU: {item.sku}</span>
                       <span className="tabular-nums">× {item.quantity}</span>
                       <span className="tabular-nums">
-                        @ {formatCurrency(item.unitPrice)}
+                        @ {formatCurrency(item.unitPrice, currency)}
                       </span>
                     </div>
                   </div>
                   <span className="font-bold text-gray-900 dark:text-white tabular-nums flex-shrink-0">
-                    {formatCurrency(item.total)}
+                    {formatCurrency(item.total, currency)}
                   </span>
                 </div>
               ))}
@@ -1492,33 +1559,35 @@ function DetailModal({
                   Subtotal
                 </span>
                 <span className="text-gray-900 dark:text-white tabular-nums">
-                  {formatCurrency(invoiceData.subtotal)}
+                  {formatCurrency(invoiceData.subtotal, currency)}
                 </span>
               </div>
               <div className="flex justify-between text-sm">
                 <span className="text-gray-500 dark:text-gray-400">Tax</span>
                 <span className="text-gray-900 dark:text-white tabular-nums">
-                  {formatCurrency(invoiceData.tax)}
+                  {formatCurrency(invoiceData.tax, currency)}
                 </span>
               </div>
               {invoiceData.discount > 0 && (
                 <div className="flex justify-between text-sm text-success-600 dark:text-success-400">
                   <span>Discount</span>
                   <span className="tabular-nums">
-                    -{formatCurrency(invoiceData.discount)}
+                    -{formatCurrency(invoiceData.discount, currency)}
                   </span>
                 </div>
               )}
               <div className="flex justify-between font-bold text-lg pt-2 border-t border-gray-200 dark:border-gray-700">
                 <span className="text-gray-900 dark:text-white">Total</span>
                 <span className="text-brand-600 dark:text-brand-400 tabular-nums">
-                  {formatCurrency(invoiceData.total)}
+                  {formatCurrency(invoiceData.total, currency)}
                 </span>
               </div>
               <div className="flex justify-between text-sm">
-                <span className="text-gray-500 dark:text-gray-400">Paid</span>
+                <span className="text-gray-500 dark:text-gray-400">
+                  Paid
+                </span>
                 <span className="text-success-600 dark:text-success-400 tabular-nums">
-                  {formatCurrency(invoiceData.paidAmount)}
+                  {formatCurrency(invoiceData.paidAmount, currency)}
                 </span>
               </div>
               <div className="flex justify-between font-semibold text-sm pt-1 border-t border-gray-200 dark:border-gray-700">
@@ -1526,7 +1595,7 @@ function DetailModal({
                   Balance Due
                 </span>
                 <span className="text-warning-600 dark:text-warning-400 tabular-nums">
-                  {formatCurrency(invoiceData.balanceDue)}
+                  {formatCurrency(invoiceData.balanceDue, currency)}
                 </span>
               </div>
             </div>
@@ -1548,7 +1617,7 @@ function DetailModal({
               onClick={onPrint}
               className="px-4 py-2 bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-300 rounded-lg hover:bg-gray-300 dark:hover:bg-gray-600 flex items-center gap-2 focus-ring"
             >
-              <Printer className="w-4 h-4" />
+              <Printer className="w-4 h-4" aria-hidden="true" />
               Print
             </button>
             {canManage && invoiceData.status === 'DRAFT' && (
@@ -1556,7 +1625,7 @@ function DetailModal({
                 onClick={onSend}
                 className="px-4 py-2 bg-brand-500 text-white rounded-lg hover:bg-brand-600 flex items-center gap-2 focus-ring"
               >
-                <Send className="w-4 h-4" />
+                <Send className="w-4 h-4" aria-hidden="true" />
                 Send Invoice
               </button>
             )}
@@ -1565,7 +1634,7 @@ function DetailModal({
                 onClick={onPaid}
                 className="px-4 py-2 bg-success-600 text-white rounded-lg hover:bg-success-700 flex items-center gap-2 focus-ring"
               >
-                <CheckCircle className="w-4 h-4" />
+                <CheckCircle className="w-4 h-4" aria-hidden="true" />
                 Mark as Paid
               </button>
             )}
@@ -1578,14 +1647,14 @@ function DetailModal({
                     onClick={onVoid}
                     className="px-4 py-2 bg-danger-600 text-white rounded-lg hover:bg-danger-700 flex items-center gap-2 focus-ring"
                   >
-                    <XCircle className="w-4 h-4" />
+                    <XCircle className="w-4 h-4" aria-hidden="true" />
                     Void
                   </button>
                   <button
                     onClick={onCancel}
                     className="px-4 py-2 bg-warning-600 text-white rounded-lg hover:bg-warning-700 flex items-center gap-2 focus-ring"
                   >
-                    <X className="w-4 h-4" />
+                    <X className="w-4 h-4" aria-hidden="true" />
                     Cancel
                   </button>
                 </>
@@ -1603,12 +1672,9 @@ function DetailModal({
   );
 }
 
-// ============================================
-// SEND MODAL
-// ============================================
-
 interface SendModalProps {
   invoiceData: Invoice;
+  currency: string;
   onClose: () => void;
   onConfirm: () => void;
   processing: boolean;
@@ -1616,6 +1682,7 @@ interface SendModalProps {
 
 function SendModal({
   invoiceData,
+  currency,
   onClose,
   onConfirm,
   processing,
@@ -1637,7 +1704,7 @@ function SendModal({
           {invoiceData.customerEmail}?
           <br />
           <span className="text-sm">
-            Total amount: {formatCurrency(invoiceData.total)}
+            Total amount: {formatCurrency(invoiceData.total, currency)}
           </span>
         </p>
         <div className="flex justify-end gap-3">
@@ -1654,9 +1721,9 @@ function SendModal({
             className="px-4 py-2 bg-brand-500 text-white rounded-lg hover:bg-brand-600 flex items-center gap-2 disabled:opacity-50 focus-ring"
           >
             {processing ? (
-              <Loader2 className="w-4 h-4 animate-spin" />
+              <Loader2 className="w-4 h-4 animate-spin" aria-hidden="true" />
             ) : (
-              <Send className="w-4 h-4" />
+              <Send className="w-4 h-4" aria-hidden="true" />
             )}
             {processing ? 'Sending...' : 'Send Invoice'}
           </button>
@@ -1666,12 +1733,9 @@ function SendModal({
   );
 }
 
-// ============================================
-// PAID MODAL
-// ============================================
-
 interface PaidModalProps {
   invoiceData: Invoice;
+  currency: string;
   onClose: () => void;
   onConfirm: () => void;
   paymentMethod: string;
@@ -1681,6 +1745,7 @@ interface PaidModalProps {
 
 function PaidModal({
   invoiceData,
+  currency,
   onClose,
   onConfirm,
   paymentMethod,
@@ -1713,7 +1778,7 @@ function PaidModal({
           Mark invoice #{invoiceData.invoiceNumber} as paid?
           <br />
           <span className="text-sm">
-            Amount: {formatCurrency(invoiceData.total)}
+            Amount: {formatCurrency(invoiceData.total, currency)}
           </span>
         </p>
         <div className="mb-4">
@@ -1746,9 +1811,9 @@ function PaidModal({
             className="px-4 py-2 bg-success-600 text-white rounded-lg hover:bg-success-700 flex items-center gap-2 disabled:opacity-50 focus-ring"
           >
             {processing ? (
-              <Loader2 className="w-4 h-4 animate-spin" />
+              <Loader2 className="w-4 h-4 animate-spin" aria-hidden="true" />
             ) : (
-              <CheckCircle className="w-4 h-4" />
+              <CheckCircle className="w-4 h-4" aria-hidden="true" />
             )}
             {processing ? 'Processing...' : 'Confirm Paid'}
           </button>
@@ -1757,10 +1822,6 @@ function PaidModal({
     </div>
   );
 }
-
-// ============================================
-// VOID MODAL
-// ============================================
 
 interface VoidModalProps {
   invoiceData: Invoice;
@@ -1822,9 +1883,9 @@ function VoidModal({
             className="px-4 py-2 bg-danger-600 text-white rounded-lg hover:bg-danger-700 flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed focus-ring"
           >
             {processing ? (
-              <Loader2 className="w-4 h-4 animate-spin" />
+              <Loader2 className="w-4 h-4 animate-spin" aria-hidden="true" />
             ) : (
-              <XCircle className="w-4 h-4" />
+              <XCircle className="w-4 h-4" aria-hidden="true" />
             )}
             {processing ? 'Voiding...' : 'Confirm Void'}
           </button>
@@ -1833,10 +1894,6 @@ function VoidModal({
     </div>
   );
 }
-
-// ============================================
-// CANCEL MODAL
-// ============================================
 
 interface CancelModalProps {
   invoiceData: Invoice;
@@ -1899,9 +1956,9 @@ function CancelModal({
             className="px-4 py-2 bg-warning-600 text-white rounded-lg hover:bg-warning-700 flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed focus-ring"
           >
             {processing ? (
-              <Loader2 className="w-4 h-4 animate-spin" />
+              <Loader2 className="w-4 h-4 animate-spin" aria-hidden="true" />
             ) : (
-              <X className="w-4 h-4" />
+              <X className="w-4 h-4" aria-hidden="true" />
             )}
             {processing ? 'Cancelling...' : 'Confirm Cancel'}
           </button>
@@ -1910,10 +1967,6 @@ function CancelModal({
     </div>
   );
 }
-
-// ============================================
-// LOADING SKELETON
-// ============================================
 
 function LoadingSkeleton() {
   return (

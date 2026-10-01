@@ -14,7 +14,16 @@ import {
 } from '../utils/money.js';
 import { applyInventoryDelta } from '../utils/inventory.js';
 import { currencyService } from './currencyService.js';
-import type { SupportedProvider } from '../lib/currencies.js';
+import { chargeCurrencyService } from './chargeCurrencyService.js';
+import type { SupportedProvider } from './currencyService.js';
+
+// ── Provider-side configuration probes ──────────────────────────
+import {
+  isMtnConfigured,
+  isAirtelConfigured,
+  missingMtnKeys,
+  missingAirtelKeys,
+} from './mobileMoneyService.js';
 
 // ============================================
 // CANONICAL PAYMENT METHODS
@@ -130,35 +139,49 @@ const SYNCHRONOUS_SUCCESS_STATUSES = new Set<string>([
 // ============================================
 // CURRENCY RESOLUTION
 // ============================================
-//
-// The cart carries no currency. The business unit does. If the
-// business unit has none (older rows before the migration),
-// `currencyService.resolveForBusiness` walks:
-//
-//   1. businessUnit.currency  (from DB)
-//   2. process.env.DEFAULT_CURRENCY
-//   3. DEFAULT_CURRENCY_CODE  (registry default — currently 'UGX')
-//
-// Mobile-money providers (MTN, Airtel, M-Pesa) IGNORE the value
-// this returns and use their own country config — a UG MTN
-// environment only accepts UGX regardless of what the cart or
-// business unit says. They enforce that themselves via
-// `currencyService.resolveForCountry`.
-//
-// ⚠ Phase 2 note: The result of this function is written
-//   EXPLICITLY to `Payment.currency` on every create call in this
-//   file. Phase 1 removed the schema default from that column, so
-//   there is no longer a fallback if a call site forgets to pass
-//   it. `resolveBusinessUnitCurrency` is the single source for
-//   every Payment row created here.
-//
-// The function name and signature are preserved from the previous
-// local implementation so callers inside this file don't change.
 
 function resolveBusinessUnitCurrency(
   businessUnitCurrency: string | null | undefined,
 ): string {
   return currencyService.resolveForBusiness(businessUnitCurrency);
+}
+
+/**
+ * Map a normalized payment method to the provider name that
+ * `chargeCurrencyService` and the gateway adapters use.
+ *
+ * ⚠ Mobile money is split — the resolver needs the concrete
+ *   provider (MTN, AIRTEL, MPESA), not the umbrella
+ *   `MOBILE_MONEY`. The caller supplies it via
+ *   `data.mobileMoneyProvider`.
+ *
+ * ⚠ Offline methods (CASH, BANK_TRANSFER, CHECK) and ledger-native
+ *   methods (GIFT_CARD, LOYALTY_POINTS) return a sentinel and are
+ *   never passed to the remote gateway dispatch. The resolver is
+ *   not called for them because their charge currency is the
+ *   ledger currency by construction.
+ */
+function providerForPaymentMethod(
+  method: string,
+  mobileMoneyProvider?: MobileMoneyProvider | null,
+): string | null {
+  const upper = method.trim().toUpperCase();
+
+  if (upper === 'CREDIT_CARD' || upper === 'DEBIT_CARD' || upper === 'CARD') {
+    return 'STRIPE';
+  }
+  if (upper === 'PAYPAL') return 'PAYPAL';
+  if (upper === 'FLUTTERWAVE') return 'FLUTTERWAVE';
+  if (upper === 'PAYSTACK') return 'PAYSTACK';
+  if (upper === 'SQUARE') return 'SQUARE';
+
+  if (MOBILE_PAYMENT_METHODS.has(upper)) {
+    if (upper === 'MPESA') return 'MPESA';
+    return (mobileMoneyProvider ?? 'MTN');
+  }
+
+  // Offline and ledger-native methods — no remote charge currency.
+  return null;
 }
 
 // ============================================
@@ -198,6 +221,32 @@ interface CheckoutData {
   discountType?: DiscountType | null;
   promotionCode?: string | null;
   promotionDiscount?: number;
+
+  /**
+   * The payer's chosen display currency, read from the
+   * `X-Display-Currency` header by `checkoutController` and passed
+   * down.
+   *
+   * Recorded on the `Payment` row as an audit fact. NEVER used to
+   * mutate any amount — every amount on the Sale is denominated in
+   * the business unit's own currency.
+   *
+   * `null` and `undefined` are treated identically: "no display
+   * override".
+   */
+  displayCurrency?: string | null;
+
+  /**
+   * Phase D1: the payer's affirmative acceptance of the converted
+   * charge amount, shown on the pre-payment screen.
+   *
+   * ⚠ REQUIRED whenever the resolved charge currency differs from
+   *   the ledger currency. `processOnlineCheckout` rejects the
+   *   checkout when this is false and a conversion is required.
+   *   Never default this to `true` — the whole point is that the
+   *   payer saw the converted amount and agreed.
+   */
+  chargeContextAcknowledged?: boolean;
 }
 
 interface OnlineCheckoutData extends CheckoutData {
@@ -289,23 +338,7 @@ interface CheckoutSummaryResponse {
   loyaltyPointsRedeemable: number;
   maxLoyaltyDiscount: number;
   customerId?: string;
-  /**
-   * Resolved from the cart's business unit via
-   * `resolveBusinessUnitCurrency`. Additive — existing consumers
-   * that ignore this field continue to work.
-   */
   currency?: string;
-  /**
-   * Display symbol for `currency`, from the registry.
-   *
-   * ⚠ Phase 2: This is COMPUTED at read time via
-   *   `currencyService.tryGetCurrency(currency)?.symbol`. Phase 1
-   *   removed the persisted `currencySymbol` column from
-   *   `CartSettings` / `CheckoutSettings` / `SalesSettings`, so
-   *   there is no stored symbol to drift out of sync with the
-   *   code. If the registry has no symbol, this falls back to the
-   *   ISO code itself.
-   */
   currencySymbol?: string;
 }
 
@@ -326,20 +359,6 @@ interface CheckoutHistoryResult {
   offset: number;
 }
 
-/**
- * Shape returned by `getCheckoutSettings` and accepted by
- * `updateCheckoutSettings`.
- *
- * ⚠ Phase 1 removed the `currencySymbol` column from
- *   `CartSettings`, `CheckoutSettings`, and `SalesSettings`. It is
- *   therefore NOT part of this interface anymore, NOT persisted in
- *   `BusinessUnit.settings`, and NOT accepted on update. The symbol
- *   is derived on read from `currencyCode` via the registry.
- *
- *   The write-side guards in `getCheckoutSettings` and
- *   `updateCheckoutSettings` below strip any stale
- *   `currencySymbol` key that a pre-Phase-1 row might still carry.
- */
 interface CheckoutSettings {
   allowPartialPayment: boolean;
   requireCustomer: boolean;
@@ -364,10 +383,6 @@ interface CheckoutSettings {
   taxRate: number;
   notifyOnAbandonedCart: boolean;
   abandonedCartHours: number;
-  /**
-   * ISO 4217 currency code. The only persisted currency field on
-   * checkout settings — symbol is derived from this at read time.
-   */
   currencyCode: string;
   showStockBadge: boolean;
   showVariantImages: boolean;
@@ -379,6 +394,35 @@ interface PaymentMethod {
   code: string;
   enabled: boolean;
   description?: string;
+}
+
+/**
+ * Pre-payment charge preview DTO. Returned by
+ * `previewCheckoutCharge` and rendered on the confirm screen.
+ *
+ * ⚠ `available: false` is a first-class outcome. The frontend
+ *   renders the `reason` rather than a 500 — a missing FX rate
+ *   must not abort the payer's flow with a server error.
+ */
+interface CheckoutChargePreview {
+  available: boolean;
+  reason?: string;
+  ledger?: {
+    currency: string;
+    subtotal: number;
+    tax: number;
+    discount: number;
+    total: number;
+  };
+  charge?: {
+    currency: string;
+    amount: number;
+    fee: number;
+    total: number;
+  };
+  rate?: { value: number; source: string };
+  disclosure?: string;
+  requiresPayerConfirmation?: boolean;
 }
 
 // ============================================
@@ -426,10 +470,6 @@ const SALE_FULL_INCLUDE = {
       address: true,
       phone: true,
       email: true,
-      // Phase 1 schema: `BusinessUnit.currency` still exists and
-      // is the authoritative column for a business unit's own
-      // currency. Included here so callers that render a receipt
-      // have the code without an extra lookup.
       currency: true,
       companyId: true,
     },
@@ -458,10 +498,6 @@ function resolveGatewayError(error: any): AppError {
     ECONNABORTED: 504,
   };
 
-  // Hardened fallback: guard against a falsy `node.code` yielding
-  // HTTP status 0. The `?? 502` only protects against `undefined`
-  // / `null`, not against `0` or `''`, so we use a small ladder
-  // that funnels everything non-positive to 502.
   const explicitStatus: unknown =
     node?.response?.status ??
     node?.status ??
@@ -556,6 +592,11 @@ export class CheckoutService extends BaseService {
       loyaltyDiscount:
         extra.loyaltyDiscount ?? sale.loyaltyDiscount ?? 0,
       currency: extra.currency ?? sale.currency ?? null,
+      // ── Charge-currency audit (only present when converted) ──
+      chargeCurrency: extra.chargeCurrency ?? null,
+      chargeAmount: extra.chargeAmount ?? null,
+      chargeRate: extra.chargeRate ?? null,
+      chargeRateSource: extra.chargeRateSource ?? null,
     };
   }
 
@@ -683,14 +724,6 @@ export class CheckoutService extends BaseService {
 
         const businessUnitId = data.businessUnitId || cart.businessUnitId;
 
-        // ── Resolve currency + companyId from the business unit ──
-        // The cart has no currency; the BU does.
-        //
-        // ⚠ Phase 2: Phase 1 removed the schema default from
-        //   `Payment.currency`. This value MUST be resolved here
-        //   and written EXPLICITLY on the Payment row below. It is
-        //   also mirrored into `metadata.currency` for audit
-        //   continuity, but the column is authoritative.
         const buRecord = await tx.businessUnit.findUnique({
           where: { id: businessUnitId },
           select: { currency: true, companyId: true },
@@ -864,13 +897,16 @@ export class CheckoutService extends BaseService {
         }
 
         const enumValue = normalizePaymentMethod(data.paymentMethod);
-        // ── Phase 2: `currency` is explicit and required ─────
-        // Phase 1 removed `@default("USD")` from `Payment.currency`.
-        // The resolved value is written here; there is no fallback.
+
+        // ── Ledger + display on the Payment row ──────────────
+        // Offline methods are ledger-native: charge currency is
+        // the ledger currency. `amount` is always the ledger
+        // amount. `displayCurrency` is recorded for audit.
         const payment = await tx.payment.create({
           data: {
             amount: finalTotal,
             currency: resolvedCurrency,
+            displayCurrency: data.displayCurrency ?? null,
             paymentMethod: enumValue as any,
             status: 'PAID',
             saleId: sale.id,
@@ -881,10 +917,8 @@ export class CheckoutService extends BaseService {
             processedAt: new Date(),
             reference: `PAY-${receiptNumber}`,
             metadata: {
-              // Descriptive mirror only — the column above is the
-              // authoritative source. If they diverge, the column
-              // wins.
               currency: resolvedCurrency,
+              displayCurrency: data.displayCurrency ?? null,
               paymentMethod: enumValue,
               source: 'pos',
             },
@@ -898,11 +932,6 @@ export class CheckoutService extends BaseService {
           });
         }
 
-        // Loyalty basis: `sale.total` (the agreed cart total).
-        // Previously this was `finalTotal` (post-loyalty-discount),
-        // which meant a customer who redeemed points earned fewer
-        // points back than one who didn't — inconsistent with the
-        // webhook completion path, which uses `sale.total`.
         const pointsEarned = Math.floor(sale.total / 10);
         const customerId = data.customerId || cart.customerId;
         if (customerId) {
@@ -979,6 +1008,7 @@ export class CheckoutService extends BaseService {
               loyaltyDiscount: round2(loyaltyDiscount),
               paymentMethod: enumValue,
               currency: resolvedCurrency,
+              displayCurrency: data.displayCurrency ?? null,
               itemCount: cart.items.length,
               loyaltyPointsEarned: pointsEarned,
               idempotencyKey: data.idempotencyKey ?? null,
@@ -1085,6 +1115,11 @@ export class CheckoutService extends BaseService {
 
       // ----------------------------------------------------
       // 1. Phase 1 — create PENDING Sale + Payment
+      //
+      // ⚠ The cart is NOT consumed here. It stays ACTIVE with
+      //   its items until `markSalePaidFromWebhook` confirms the
+      //   payment. That way a failed gateway call leaves the cart
+      //   intact for a retry on the same cart id.
       // ----------------------------------------------------
       const phase1 = await this.prisma.$transaction(
         async (tx: any) => {
@@ -1134,9 +1169,6 @@ export class CheckoutService extends BaseService {
 
           const businessUnitId = data.businessUnitId || cart.businessUnitId;
 
-          // ── Resolve the currency from the business unit ─────
-          // Phase 2: resolved value is written explicitly on the
-          // Payment row (Phase 1 removed the schema default).
           const businessUnitRecord = await tx.businessUnit.findUnique({
             where: { id: businessUnitId },
             select: { currency: true },
@@ -1239,6 +1271,11 @@ export class CheckoutService extends BaseService {
             data: {
               receiptNumber,
               idempotencyKey: data.idempotencyKey ?? null,
+              // ── Cart linkage ──────────────────────────────
+              // The webhook completion path reads this to know
+              // which cart to consume once the payment is
+              // confirmed.
+              cartId: data.cartId,
               subtotal: totals.subtotal,
               tax: totals.tax,
               discount: round2(totals.discount + loyaltyDiscount),
@@ -1293,11 +1330,12 @@ export class CheckoutService extends BaseService {
           }
 
           const enumValue = normalizePaymentMethod(data.paymentMethod);
-          // ── Phase 2: explicit `currency` on the PENDING row ──
+
           const payment = await tx.payment.create({
             data: {
               amount: finalTotal,
               currency: businessUnitCurrency,
+              displayCurrency: data.displayCurrency ?? null,
               paymentMethod: enumValue as any,
               status: 'PENDING',
               saleId: sale.id,
@@ -1313,26 +1351,14 @@ export class CheckoutService extends BaseService {
                   data.giftCardCode ?? data.gatewayId ?? null,
                 mobileMoneyProvider:
                   data.mobileMoneyProvider ?? null,
-                // Descriptive mirror — the column is authoritative.
                 currency: businessUnitCurrency,
+                displayCurrency: data.displayCurrency ?? null,
               },
             },
           });
 
-          await tx.cartItem.deleteMany({
-            where: { cartId: data.cartId },
-          });
-          await tx.cart.update({
-            where: { id: data.cartId },
-            data: {
-              subtotal: 0,
-              tax: 0,
-              discount: 0,
-              total: 0,
-              status: 'CHECKED_OUT',
-              customer: { disconnect: true },
-            },
-          });
+          // ⚠ NO CART CONSUMPTION HERE. See the comment at the
+          //   top of this transaction.
 
           await tx.auditLog.create({
             data: {
@@ -1349,6 +1375,7 @@ export class CheckoutService extends BaseService {
                 mobileMoneyProvider:
                   data.mobileMoneyProvider ?? null,
                 currency: businessUnitCurrency,
+                displayCurrency: data.displayCurrency ?? null,
                 status: 'PENDING',
               },
               severity: 'INFO',
@@ -1386,14 +1413,118 @@ export class CheckoutService extends BaseService {
       );
 
       // ----------------------------------------------------
+      // 1b. Resolve the CHARGE context before the gateway.
+      // ----------------------------------------------------
+      const provider = providerForPaymentMethod(
+        phase1.enumValue,
+        data.mobileMoneyProvider ?? null,
+      );
+
+      let chargeContext: Awaited<
+        ReturnType<typeof chargeCurrencyService.resolve>
+      > | null = null;
+
+      if (provider) {
+        try {
+          chargeContext = await chargeCurrencyService.resolve({
+            ledgerAmount: phase1.finalTotal,
+            ledgerCurrency: phase1.cart.currency,
+            provider,
+            displayCurrency: data.displayCurrency ?? null,
+          });
+        } catch (chargeErr: any) {
+          logger.error(
+            `[checkout] Charge-currency resolution failed for sale ${phase1.sale.id} (${provider}):`,
+            chargeErr,
+          );
+
+          await this.markSaleFailedFromWebhook(
+            phase1.sale.id,
+            phase1.payment.id,
+            { reason: 'CHARGE_CURRENCY_UNAVAILABLE' },
+            'PREPAYMENT',
+            chargeErr instanceof Error
+              ? chargeErr.message
+              : 'No charge currency available.',
+          );
+
+          throw chargeErr instanceof AppError
+            ? chargeErr
+            : new AppError(
+                'No charge currency available for the selected payment method.',
+                503,
+              );
+        }
+
+        if (chargeContext.converted && !data.chargeContextAcknowledged) {
+          logger.warn(
+            `[checkout] Sale ${phase1.sale.id} requires converted-charge acknowledgement ` +
+              `(${chargeContext.ledgerCurrency} → ${chargeContext.chargeCurrency}) but none was given.`,
+          );
+
+          await this.markSaleFailedFromWebhook(
+            phase1.sale.id,
+            phase1.payment.id,
+            { reason: 'CHARGE_CONTEXT_NOT_ACKNOWLEDGED' },
+            'PREPAYMENT',
+            'Payer did not acknowledge the converted charge amount.',
+          );
+
+          throw new AppError(
+            'This checkout requires payment in a different currency than the ' +
+              'business unit\u2019s ledger currency. Please review the converted ' +
+              'amount and confirm.',
+            409,
+          );
+        }
+
+        await this.prisma.payment.update({
+          where: { id: phase1.payment.id },
+          data: {
+            gatewayCurrency: chargeContext.converted
+              ? chargeContext.chargeCurrency
+              : null,
+            gatewayAmount: chargeContext.converted
+              ? chargeContext.chargeAmount
+              : null,
+            exchangeRate: chargeContext.converted
+              ? chargeContext.rate
+              : null,
+            exchangeRateSource: chargeContext.converted
+              ? chargeContext.rateSource
+              : null,
+            metadata: {
+              ...((phase1.payment.metadata as any) ?? {}),
+              chargeContext: {
+                ledgerCurrency: chargeContext.ledgerCurrency,
+                ledgerAmount: chargeContext.ledgerAmount,
+                chargeCurrency: chargeContext.chargeCurrency,
+                chargeAmount: chargeContext.chargeAmount,
+                payerTotal: chargeContext.payerTotal,
+                rate: chargeContext.rate,
+                rateSource: chargeContext.rateSource,
+                feeAmount: chargeContext.feeAmount,
+                disclosure: chargeContext.disclosure,
+                acknowledged: chargeContext.converted,
+              },
+            },
+          },
+        });
+      }
+
+      // ----------------------------------------------------
       // 2. Phase 2 — call the gateway
       // ----------------------------------------------------
       let gatewayResult: GatewayResult;
       try {
         gatewayResult = await this.invokeGateway({
           paymentMethod: phase1.enumValue,
-          amount: phase1.finalTotal,
-          currency: phase1.cart.currency,
+          ledgerAmount: phase1.finalTotal,
+          ledgerCurrency: phase1.cart.currency,
+          chargeAmount:
+            chargeContext?.payerTotal ?? phase1.finalTotal,
+          chargeCurrency:
+            chargeContext?.chargeCurrency ?? phase1.cart.currency,
           sale: phase1.sale,
           payment: phase1.payment,
           customer: null,
@@ -1407,6 +1538,7 @@ export class CheckoutService extends BaseService {
           paymentMethodId: data.paymentMethodId,
           giftCardCode: data.giftCardCode ?? data.gatewayId,
           mobileMoneyProvider: data.mobileMoneyProvider,
+          displayCurrency: data.displayCurrency ?? null,
         });
       } catch (gatewayError: any) {
         logger.error(
@@ -1447,6 +1579,8 @@ export class CheckoutService extends BaseService {
               forbidNegative: false,
             });
           }
+          // ⚠ The cart is intentionally left untouched here. It
+          //   was never consumed, so nothing needs restoring.
         });
 
         throw resolveGatewayError(gatewayError);
@@ -1509,6 +1643,18 @@ export class CheckoutService extends BaseService {
         loyaltyPointsUsed: phase1.loyaltyPointsUsed,
         loyaltyDiscount: round2(phase1.loyaltyDiscount),
         currency: phase1.cart.currency,
+        chargeCurrency: chargeContext?.converted
+          ? chargeContext.chargeCurrency
+          : null,
+        chargeAmount: chargeContext?.converted
+          ? chargeContext.chargeAmount
+          : null,
+        chargeRate: chargeContext?.converted
+          ? chargeContext.rate
+          : null,
+        chargeRateSource: chargeContext?.converted
+          ? chargeContext.rateSource
+          : null,
       });
 
       return {
@@ -1533,13 +1679,136 @@ export class CheckoutService extends BaseService {
   }
 
   // ============================================
+  // PRE-PAYMENT CHARGE PREVIEW
+  // ============================================
+
+  /**
+   * Pre-payment charge preview. Called by the controller when the
+   * payer selects a payment method. Returns the exact amount that
+   * will be charged, in the gateway's currency, plus the rate, its
+   * source, and the disclosure text.
+   *
+   * ⚠ Never throws on a missing FX rate. Returns `available: false`
+   *   with a reason so the frontend renders an explanation rather
+   *   than a 500. The actual checkout WILL throw if the rate is
+   *   still unavailable — but the payer sees why on the preview
+   *   screen, not after committing.
+   */
+  async previewCheckoutCharge(params: {
+    cartId: string;
+    paymentMethod: string;
+    mobileMoneyProvider?: MobileMoneyProvider | null;
+    displayCurrency?: string | null;
+  }): Promise<CheckoutChargePreview> {
+    try {
+      const cart = await this.prisma.cart.findUnique({
+        where: { id: params.cartId },
+        include: {
+          businessUnit: { select: { currency: true } },
+        },
+      });
+
+      if (!cart) throw new AppError('Cart not found', 404);
+
+      const ledgerCurrency = resolveBusinessUnitCurrency(
+        (cart as any).businessUnit?.currency ?? null,
+      );
+
+      const provider = providerForPaymentMethod(
+        params.paymentMethod,
+        params.mobileMoneyProvider ?? null,
+      );
+
+      // Offline and ledger-native methods never convert. Return the
+      // ledger-only preview so the UI can render the same shape.
+      if (!provider) {
+        return {
+          available: true,
+          ledger: {
+            currency: ledgerCurrency,
+            subtotal: cart.subtotal,
+            tax: cart.tax || 0,
+            discount: cart.discount || 0,
+            total: cart.total,
+          },
+          charge: {
+            currency: ledgerCurrency,
+            amount: cart.total,
+            fee: 0,
+            total: cart.total,
+          },
+          rate: { value: 1, source: 'identity' },
+          requiresPayerConfirmation: false,
+        };
+      }
+
+      let chargeContext;
+      try {
+        chargeContext = await chargeCurrencyService.resolve({
+          ledgerAmount: cart.total,
+          ledgerCurrency,
+          provider,
+          displayCurrency: params.displayCurrency ?? null,
+        });
+      } catch (err) {
+        return {
+          available: false,
+          reason:
+            err instanceof Error
+              ? err.message
+              : 'No charge currency available for the selected payment method.',
+          ledger: {
+            currency: ledgerCurrency,
+            subtotal: cart.subtotal,
+            tax: cart.tax || 0,
+            discount: cart.discount || 0,
+            total: cart.total,
+          },
+        };
+      }
+
+      return {
+        available: true,
+        ledger: {
+          currency: chargeContext.ledgerCurrency,
+          subtotal: cart.subtotal,
+          tax: cart.tax || 0,
+          discount: cart.discount || 0,
+          total: chargeContext.ledgerAmount,
+        },
+        charge: {
+          currency: chargeContext.chargeCurrency,
+          amount: chargeContext.chargeAmount,
+          fee: chargeContext.feeAmount,
+          total: chargeContext.payerTotal,
+        },
+        rate: {
+          value: chargeContext.rate,
+          source: chargeContext.rateSource,
+        },
+        disclosure: chargeContext.disclosure,
+        requiresPayerConfirmation: chargeContext.converted,
+      };
+    } catch (error) {
+      this.handleError(error, 'CheckoutService.previewCheckoutCharge');
+      throw error;
+    }
+  }
+
+  // ============================================
   // GATEWAY DISPATCH
   // ============================================
 
   private async invokeGateway(input: {
     paymentMethod: string;
-    amount: number;
-    currency: string;
+    /** Ledger amount — what the books record. */
+    ledgerAmount: number;
+    /** Ledger currency — the BU's currency. */
+    ledgerCurrency: string;
+    /** Charge amount — what the gateway will actually bill. */
+    chargeAmount: number;
+    /** Charge currency — must be accepted by the gateway. */
+    chargeCurrency: string;
     sale: any;
     payment: any;
     customer: any;
@@ -1553,11 +1822,14 @@ export class CheckoutService extends BaseService {
     paymentMethodId?: string;
     giftCardCode?: string;
     mobileMoneyProvider?: MobileMoneyProvider;
+    displayCurrency?: string | null;
   }): Promise<GatewayResult> {
     const {
       paymentMethod,
-      amount,
-      currency,
+      ledgerAmount,
+      ledgerCurrency,
+      chargeAmount,
+      chargeCurrency,
       sale,
       payment,
       customer,
@@ -1571,6 +1843,7 @@ export class CheckoutService extends BaseService {
       paymentMethodId,
       giftCardCode,
       mobileMoneyProvider,
+      displayCurrency,
     } = input;
 
     const frontendUrl =
@@ -1583,6 +1856,32 @@ export class CheckoutService extends BaseService {
       `${frontendUrl}/checkout/cancel?saleId=${sale.id}`;
 
     const upper = paymentMethod.trim().toUpperCase();
+
+    // ── Defensive: charge currency MUST be accepted by the ──
+    //    remote gateway. The resolver guarantees this; reaching
+    //    here with a rejection means the resolver and the adapter
+    //    disagree — a bug, not a payer error.
+    const remoteProviders = new Set([
+      'CREDIT_CARD',
+      'DEBIT_CARD',
+      'CARD',
+      'PAYPAL',
+      'FLUTTERWAVE',
+      'PAYSTACK',
+      'SQUARE',
+    ]);
+    if (remoteProviders.has(upper)) {
+      const providerName =
+        upper === 'CREDIT_CARD' ||
+        upper === 'DEBIT_CARD' ||
+        upper === 'CARD'
+          ? 'STRIPE'
+          : upper;
+      currencyService.assertProviderAccepts(
+        providerName as SupportedProvider,
+        chargeCurrency,
+      );
+    }
 
     // ── Offline methods ─────────────────────────────────────
     if (['CASH', 'BANK_TRANSFER', 'CHECK'].includes(upper)) {
@@ -1602,25 +1901,19 @@ export class CheckoutService extends BaseService {
 
     // ── Card (Stripe) ───────────────────────────────────────
     if (['CREDIT_CARD', 'DEBIT_CARD', 'CARD'].includes(upper)) {
-      // Guard: Stripe may not support this currency.
-      currencyService.assertProviderAccepts('STRIPE', currency);
-
-      // Thread the idempotency key into Stripe as the
-      // `Idempotency-Key` request option. `payment.id` is stable
-      // across retries of `processOnlineCheckout` (the phase-1
-      // transaction is itself idempotent), so a client retry
-      // returns the original PaymentIntent instead of creating
-      // a second one and double-charging the customer.
       const stripeIdempotencyKey = `stripe_intent_${payment.id}`;
 
       const intent = await this.paymentService.createPaymentIntent({
-        amount,
-        currency,
+        amount: chargeAmount,
+        currency: chargeCurrency,
         description: `Sale ${sale.receiptNumber}`,
         metadata: {
           saleId: sale.id,
           paymentId: payment.id,
           userId: sale.userId,
+          ledgerCurrency,
+          ledgerAmount: String(ledgerAmount),
+          ...(displayCurrency ? { displayCurrency } : {}),
         },
         customerId: customer?.id,
         idempotencyKey: stripeIdempotencyKey,
@@ -1655,16 +1948,13 @@ export class CheckoutService extends BaseService {
       }
 
       const provider: MobileMoneyProvider =
-        upper === 'MPESA' ? 'MPESA' : (mobileMoneyProvider ?? 'MPESA');
+        upper === 'MPESA' ? 'MPESA' : (mobileMoneyProvider ?? 'MTN');
 
       // ── M-Pesa ───────────────────────────────────────────
       if (provider === 'MPESA') {
-        // Guard: M-Pesa only transacts in KES. `assertProviderAccepts`
-        // reads the registry, so a deployment without KES enabled
-        // in its currency config gets a clean 400 instead of a
-        // gateway timeout.
-        currencyService.assertProviderAccepts('MPESA', 'KES');
-
+        // M-Pesa's currency is enforced by `mpesaService` itself
+        // via the deployment's `MPESA_COUNTRY` env var — it only
+        // ever transacts in KES on the Kenya deployment.
         const { mpesaService } = await import('./mpesaService.js');
         if (!mpesaService.isConfigured()) {
           throw new AppError(
@@ -1674,7 +1964,7 @@ export class CheckoutService extends BaseService {
         }
         const stk = await mpesaService.initiateSTKPush({
           phoneNumber: customerPhone,
-          amount,
+          amount: chargeAmount,
           accountReference: sale.receiptNumber,
           transactionDesc: `Payment for ${sale.receiptNumber}`,
         });
@@ -1698,68 +1988,53 @@ export class CheckoutService extends BaseService {
 
       // ── MTN MoMo / Airtel Money ──────────────────────────
       if (provider === 'MTN' || provider === 'AIRTEL') {
-        const requiredEnv: Record<'MTN' | 'AIRTEL', string[]> = {
-          MTN: [
-            'MTN_API_USER_ID',
-            'MTN_API_KEY',
-            'MTN_API_SECRET',
-            'MTN_SUBSCRIPTION_KEY',
-            'MTN_ENVIRONMENT',
-            'MTN_BASE_URL',
-            'MTN_CALLBACK_URL',
-          ],
-          AIRTEL: [
-            'AIRTEL_CLIENT_ID',
-            'AIRTEL_CLIENT_SECRET',
-            'AIRTEL_API_KEY',
-            'AIRTEL_API_SECRET',
-            'AIRTEL_BASE_URL',
-            'AIRTEL_CALLBACK_URL',
-          ],
-        };
-
-        const missing = requiredEnv[provider].filter(
-          (name) => !process.env[name] || process.env[name]!.trim() === '',
-        );
-
-        if (missing.length > 0) {
-          throw new AppError(
-            `${provider} is not configured. Missing env: ${missing.join(', ')}.`,
-            503,
-          );
-        }
-
         const { mobileMoneyService } = await import(
           './mobileMoneyService.js'
         );
 
-        if (
-          typeof (mobileMoneyService as any).isProviderConfigured ===
-            'function' &&
-          !(mobileMoneyService as any).isProviderConfigured(provider)
-        ) {
-          throw new AppError(
-            `${provider} is not configured. Please contact support.`,
-            503,
-          );
+        if (provider === 'MTN') {
+          if (!isMtnConfigured()) {
+            const missing = missingMtnKeys();
+            throw new AppError(
+              missing.length > 0
+                ? `MTN is not configured. Missing: ${missing.join(', ')}.`
+                : 'MTN is not configured. Please contact support.',
+              503,
+            );
+          }
+        } else {
+          if (!isAirtelConfigured()) {
+            const missing = missingAirtelKeys();
+            throw new AppError(
+              missing.length > 0
+                ? `Airtel is not configured. Missing: ${missing.join(', ')}.`
+                : 'Airtel is not configured. Please contact support.',
+              503,
+            );
+          }
         }
 
-        const result = await mobileMoneyService.initiatePayment(provider, {
-          phoneNumber: customerPhone,
-          amount,
-          // Deliberately `undefined`. MTN and Airtel derive their
-          // currency from their own country config (UG → UGX,
-          // GH → GHS, …). Passing a business-unit currency here is
-          // what produced the `41500 USD` bug.
-          currency: undefined,
-          reference: sale.receiptNumber,
-          description: `Payment for ${sale.receiptNumber}`,
-          metadata: {
-            saleId: sale.id,
-            paymentId: payment.id,
-            userId: sale.userId,
+        // ⚠ `chargeCurrency` was set by the resolver to the
+        //   provider's country currency. Passing it here means
+        //   mobileMoneyService will match it against
+        //   MTN_COUNTRY / AIRTEL_COUNTRY and NOT reject. A
+        //   mismatch at this point is a resolver bug, which the
+        //   mobile-money service surfaces loudly.
+        const result = await mobileMoneyService.initiatePayment(
+          provider,
+          {
+            phoneNumber: customerPhone,
+            amount: chargeAmount,
+            currency: chargeCurrency,
+            reference: sale.receiptNumber,
+            description: `Payment for ${sale.receiptNumber}`,
+            metadata: {
+              saleId: sale.id,
+              paymentId: payment.id,
+              userId: sale.userId,
+            },
           },
-        });
+        );
 
         return {
           gateway: provider,
@@ -1785,16 +2060,14 @@ export class CheckoutService extends BaseService {
 
     // ── PayPal ──────────────────────────────────────────────
     if (upper === 'PAYPAL') {
-      currencyService.assertProviderAccepts('PAYPAL', currency);
-
       const { PayPalService } = await import('./paypalService.js');
       const paypal = new PayPalService();
       if (!paypal.validateConfig()) {
         throw new AppError('PayPal is not configured', 503);
       }
       const order: any = await paypal.processPayment({
-        amount,
-        currency,
+        amount: chargeAmount,
+        currency: chargeCurrency,
         description: `Sale ${sale.receiptNumber}`,
         saleId: sale.id,
         orderId: undefined,
@@ -1803,7 +2076,13 @@ export class CheckoutService extends BaseService {
         customerName,
         returnUrl: successUrl,
         cancelUrl: failureUrl,
-        metadata: { paymentId: payment.id, saleId: sale.id },
+        metadata: {
+          paymentId: payment.id,
+          saleId: sale.id,
+          ledgerCurrency,
+          ledgerAmount: String(ledgerAmount),
+          ...(displayCurrency ? { displayCurrency } : {}),
+        },
       });
 
       const approvalUrl =
@@ -1828,8 +2107,6 @@ export class CheckoutService extends BaseService {
 
     // ── Flutterwave ─────────────────────────────────────────
     if (upper === 'FLUTTERWAVE') {
-      currencyService.assertProviderAccepts('FLUTTERWAVE', currency);
-
       const { FlutterwaveService } = await import(
         './flutterwaveService.js'
       );
@@ -1838,8 +2115,8 @@ export class CheckoutService extends BaseService {
         throw new AppError('Flutterwave is not configured', 503);
       }
       const result: any = await fw.processPayment({
-        amount,
-        currency,
+        amount: chargeAmount,
+        currency: chargeCurrency,
         paymentMethod: 'card',
         description: `Sale ${sale.receiptNumber}`,
         saleId: sale.id,
@@ -1849,7 +2126,13 @@ export class CheckoutService extends BaseService {
         customerName,
         phoneNumber: customerPhone,
         redirectUrl: successUrl,
-        metadata: { paymentId: payment.id, saleId: sale.id },
+        metadata: {
+          paymentId: payment.id,
+          saleId: sale.id,
+          ledgerCurrency,
+          ledgerAmount: String(ledgerAmount),
+          ...(displayCurrency ? { displayCurrency } : {}),
+        },
       });
 
       const redirectUrl =
@@ -1887,7 +2170,6 @@ export class CheckoutService extends BaseService {
           400,
         );
       }
-      currencyService.assertProviderAccepts('SQUARE', currency);
 
       const { SquareService } = await import('./squareService.js');
       const square = new SquareService();
@@ -1895,15 +2177,18 @@ export class CheckoutService extends BaseService {
         throw new AppError('Square is not configured', 503);
       }
       const result: any = await square.processCardPayment({
-        amount,
+        amount: chargeAmount,
         cardNonce,
-        currency,
+        currency: chargeCurrency,
         customerId: customer?.id,
         description: `Sale ${sale.receiptNumber}`,
         metadata: {
           saleId: sale.id,
           paymentId: payment.id,
           userId: sale.userId,
+          ledgerCurrency,
+          ledgerAmount: String(ledgerAmount),
+          ...(displayCurrency ? { displayCurrency } : {}),
         },
       });
 
@@ -1917,6 +2202,13 @@ export class CheckoutService extends BaseService {
     }
 
     // ── Gift Card ───────────────────────────────────────────
+    //
+    // ⚠ Gift cards are LEDGER-NATIVE. They redeem in the ledger
+    //   currency, not the charge currency. A gift card issued for
+    //   UGX 50,000 can only be redeemed against a UGX 50,000 line
+    //   — converting it to USD would misstate its stored balance.
+    //   So this branch uses `ledgerAmount`/`ledgerCurrency`, NOT
+    //   `chargeAmount`/`chargeCurrency`.
     if (upper === 'GIFT_CARD' || upper === 'GIFT') {
       if (!giftCardCode) {
         throw new AppError(
@@ -1925,38 +2217,17 @@ export class CheckoutService extends BaseService {
         );
       }
 
-      // ── Idempotency for the gift-card redemption ──────────
-      //
-      // `paymentService.processPayment` writes to
-      // `Payment.idempotencyKey`, which is `@unique`. The Sale
-      // itself is protected by the caller-supplied
-      // `data.idempotencyKey` (the short-circuit at the top of
-      // `processOnlineCheckout` returns early on a retry with the
-      // same key), but that only guards the Sale row. If a caller
-      // ever passes a *different* sale key while reusing the same
-      // phase-1 Payment row — or a future refactor moves the
-      // short-circuit — a retry without a Payment-level key would
-      // create a second Payment row.
-      //
-      // Preference:
-      //   1. `idempotencyKey` — the Sale-level key, forwarded by
-      //      the caller. `processPayment` prefixes it with
-      //      `pay_` before writing, so it can't collide with the
-      //      Sale row's value.
-      //   2. `giftcard_${payment.id}` — deterministic per phase-1
-      //      Payment row, stable across retries. Used when the
-      //      caller didn't supply a key.
       const giftCardIdempotencyKey =
         idempotencyKey && idempotencyKey.trim() !== ''
           ? `giftcard_sale_${idempotencyKey}`
           : `giftcard_${payment.id}`;
 
       const result: any = await this.paymentService.processPayment({
-        amount,
+        amount: ledgerAmount,
         paymentMethod: 'GIFT_CARD',
         saleId: sale.id,
         userId: sale.userId,
-        currency,
+        currency: ledgerCurrency,
         gatewayId: giftCardCode,
         metadata: {
           saleId: sale.id,
@@ -1965,6 +2236,7 @@ export class CheckoutService extends BaseService {
         },
         description: `Sale ${sale.receiptNumber}`,
         idempotencyKey: giftCardIdempotencyKey,
+        displayCurrency: displayCurrency ?? null,
       });
 
       return {
@@ -2000,9 +2272,6 @@ export class CheckoutService extends BaseService {
             include: {
               items: true,
               payments: true,
-              // Needed for the Receipt.companyId write below. The
-              // `Sale` model has no direct `companyId`; it comes
-              // from the business unit.
               businessUnit: {
                 select: { companyId: true },
               },
@@ -2085,8 +2354,6 @@ export class CheckoutService extends BaseService {
           });
 
           if (isFullyPaid) {
-            // Loyalty basis: `sale.total` (the agreed cart total),
-            // consistent with `processCheckout`.
             const pointsEarned = Math.floor(sale.total / 10);
             if (sale.customerId && pointsEarned > 0) {
               await tx.customer.update({
@@ -2167,6 +2434,56 @@ export class CheckoutService extends BaseService {
             }
           }
 
+          // ── Consume the cart only after payment is confirmed ──
+          //
+          // Phase-1 used to clear the cart before the gateway was
+          // called. When the gateway failed, the cart was left
+          // CHECKED_OUT and empty, so every retry on the same cart
+          // id hit "Cart is empty". Moving the consumption here
+          // means a failed gateway attempt leaves the cart intact
+          // for a retry.
+          //
+          // ⚠ Only consume when the sale is fully paid. Partial
+          //   payments (split tender) leave the cart open so the
+          //   remaining tender can be recorded against the same
+          //   cart.
+          //
+          // ⚠ `sale.cartId` is nullable. Sales created before the
+          //   `add_sale_cart_id` migration, and sales created
+          //   without a cart linkage (POS flows), skip this block
+          //   safely.
+          if (isFullyPaid && (sale as any).cartId) {
+            const linkedCartId = (sale as any).cartId as string;
+            try {
+              await tx.cartItem.deleteMany({
+                where: { cartId: linkedCartId },
+              });
+              await tx.cart.update({
+                where: { id: linkedCartId },
+                data: {
+                  subtotal: 0,
+                  tax: 0,
+                  discount: 0,
+                  total: 0,
+                  status: 'CHECKED_OUT',
+                  customer: { disconnect: true },
+                },
+              });
+              logger.info(
+                `[webhook:${gatewayName}] Consumed cart ${linkedCartId} for sale ${sale.receiptNumber}`,
+              );
+            } catch (cartErr) {
+              // A cart that was already consumed by a previous
+              // webhook delivery, or a cart row that was hard-
+              // deleted, must not fail the whole webhook. Log and
+              // continue — the sale is already marked PAID.
+              logger.warn(
+                `[webhook:${gatewayName}] Cart consumption failed for sale ${sale.receiptNumber} (cartId=${linkedCartId}):`,
+                cartErr,
+              );
+            }
+          }
+
           await tx.auditLog.create({
             data: {
               action: 'UPDATE',
@@ -2181,6 +2498,10 @@ export class CheckoutService extends BaseService {
                 paymentId: targetPayment.id,
                 totalPaid,
                 fullyPaid: isFullyPaid,
+                cartConsumed:
+                  isFullyPaid && !!(sale as any).cartId
+                    ? (sale as any).cartId
+                    : null,
                 gatewayPayload,
               },
               severity: 'INFO',
@@ -2357,7 +2678,6 @@ export class CheckoutService extends BaseService {
             },
           },
           customer: true,
-          // Pulled in so we can resolve the currency for display.
           businessUnit: {
             select: { currency: true },
           },
@@ -2379,9 +2699,6 @@ export class CheckoutService extends BaseService {
       const resolvedCurrency = resolveBusinessUnitCurrency(
         (cart as any).businessUnit?.currency ?? null,
       );
-      // ⚠ Phase 2: The display symbol is DERIVED at read time. Phase
-      //   1 removed the persisted `currencySymbol` column from every
-      //   settings table, so the registry is the only source.
       const currencyMeta =
         currencyService.tryGetCurrency(resolvedCurrency);
 
@@ -3038,10 +3355,6 @@ export class CheckoutService extends BaseService {
           throw new AppError('Checkout is cancelled', 400);
         }
 
-        // ── Phase 2: resolve and write currency explicitly ────
-        // Phase 1 removed the schema default from `Payment.currency`.
-        // Resolve from the sale's business unit and write it on the
-        // row; there is no fallback if this is omitted.
         const buRecord = await tx.businessUnit.findUnique({
           where: { id: checkout.businessUnitId },
           select: { currency: true },
@@ -3063,7 +3376,6 @@ export class CheckoutService extends BaseService {
             processedAt: new Date(),
             reference: `PAY-${checkout.receiptNumber}`,
             metadata: {
-              // Descriptive mirror — the column is authoritative.
               currency: resolvedCurrency,
               paymentMethod: normalizePaymentMethod(
                 paymentData.paymentMethod,
@@ -3618,25 +3930,71 @@ export class CheckoutService extends BaseService {
   // METADATA
   // ============================================
 
-  async getPaymentMethods(): Promise<PaymentMethod[]> {
+  async getPaymentMethods(
+    businessUnitId?: string,
+  ): Promise<PaymentMethod[]> {
     try {
-      return [
+      // Resolve the BU currency so we can filter methods by what the
+      // registry says each gateway accepts. Without a BU, every
+      // method is returned as-is (backwards compatible).
+      let currency: string | null = null;
+      if (businessUnitId) {
+        const bu = await this.prisma.businessUnit.findUnique({
+          where: { id: businessUnitId },
+          select: { currency: true },
+        });
+        currency = resolveBusinessUnitCurrency(bu?.currency ?? null);
+      }
+
+      const accepts = (provider: string): boolean => {
+        if (!currency) return true;
+        // Offline and ledger-native methods are always enabled —
+        // they transact in the ledger currency by definition.
+        if (
+          provider === 'CASH' ||
+          provider === 'BANK_TRANSFER' ||
+          provider === 'CHECK' ||
+          provider === 'GIFT_CARD' ||
+          provider === 'LOYALTY_POINTS'
+        ) {
+          return true;
+        }
+        return currencyService.providerAccepts(
+          provider as SupportedProvider,
+          currency,
+        );
+      };
+
+      const mobileMoneyFor = (): string[] => {
+        if (!currency) return [];
+        return (
+          currencyService.tryGetCurrency(currency)?.mobileMoneyProviders?.slice() ?? []
+        );
+      };
+
+      const mmProviders = mobileMoneyFor();
+
+      const all: PaymentMethod[] = [
         { id: 'CASH', name: 'Cash', code: 'CASH', enabled: true, description: 'Pay with cash' },
-        { id: 'CARD', name: 'Card', code: 'CARD', enabled: true, description: 'Pay with credit or debit card' },
-        { id: 'CREDIT_CARD', name: 'Credit Card', code: 'CREDIT_CARD', enabled: true, description: 'Pay with credit card' },
-        { id: 'DEBIT_CARD', name: 'Debit Card', code: 'DEBIT_CARD', enabled: true, description: 'Pay with debit card' },
-        { id: 'MOBILE_MONEY', name: 'Mobile Money', code: 'MOBILE_MONEY', enabled: true, description: 'Pay with mobile money' },
-        { id: 'MPESA', name: 'M-Pesa', code: 'MPESA', enabled: true, description: 'Pay with M-Pesa' },
+        { id: 'CARD', name: 'Card', code: 'CARD', enabled: accepts('STRIPE'), description: 'Pay with credit or debit card' },
+        { id: 'CREDIT_CARD', name: 'Credit Card', code: 'CREDIT_CARD', enabled: accepts('STRIPE'), description: 'Pay with credit card' },
+        { id: 'DEBIT_CARD', name: 'Debit Card', code: 'DEBIT_CARD', enabled: accepts('STRIPE'), description: 'Pay with debit card' },
+        { id: 'MOBILE_MONEY', name: 'Mobile Money', code: 'MOBILE_MONEY', enabled: mmProviders.length > 0, description: 'Pay with mobile money' },
+        { id: 'MPESA', name: 'M-Pesa', code: 'MPESA', enabled: mmProviders.includes('MPESA'), description: 'Pay with M-Pesa' },
+        { id: 'MTN', name: 'MTN MoMo', code: 'MTN', enabled: mmProviders.includes('MTN'), description: 'Pay with MTN Mobile Money' },
+        { id: 'AIRTEL', name: 'Airtel Money', code: 'AIRTEL', enabled: mmProviders.includes('AIRTEL'), description: 'Pay with Airtel Money' },
         { id: 'BANK_TRANSFER', name: 'Bank Transfer', code: 'BANK_TRANSFER', enabled: true, description: 'Pay via bank transfer' },
         { id: 'GIFT_CARD', name: 'Gift Card', code: 'GIFT_CARD', enabled: true, description: 'Pay with gift card' },
         { id: 'LOYALTY_POINTS', name: 'Loyalty Points', code: 'LOYALTY_POINTS', enabled: true, description: 'Pay with loyalty points' },
-        { id: 'WALLET', name: 'Wallet', code: 'WALLET', enabled: true, description: 'Pay from wallet balance' },
-        { id: 'PAYPAL', name: 'PayPal', code: 'PAYPAL', enabled: true, description: 'Pay via PayPal' },
-        { id: 'FLUTTERWAVE', name: 'Flutterwave', code: 'FLUTTERWAVE', enabled: true, description: 'Pay via Flutterwave' },
-        { id: 'PAYSTACK', name: 'Paystack', code: 'PAYSTACK', enabled: true, description: 'Pay via Paystack' },
-        { id: 'SQUARE', name: 'Square', code: 'SQUARE', enabled: true, description: 'Pay via Square' },
+        { id: 'WALLET', name: 'Wallet', code: 'WALLET', enabled: mmProviders.length > 0, description: 'Pay with wallet balance' },
+        { id: 'PAYPAL', name: 'PayPal', code: 'PAYPAL', enabled: accepts('PAYPAL'), description: 'Pay via PayPal' },
+        { id: 'FLUTTERWAVE', name: 'Flutterwave', code: 'FLUTTERWAVE', enabled: accepts('FLUTTERWAVE'), description: 'Pay via Flutterwave' },
+        { id: 'PAYSTACK', name: 'Paystack', code: 'PAYSTACK', enabled: accepts('PAYSTACK'), description: 'Pay via Paystack' },
+        { id: 'SQUARE', name: 'Square', code: 'SQUARE', enabled: accepts('SQUARE'), description: 'Pay via Square' },
         { id: 'CHECK', name: 'Check', code: 'CHECK', enabled: true, description: 'Pay by check' },
       ];
+
+      return all;
     } catch (error) {
       this.handleError(error, 'CheckoutService.getPaymentMethods');
       throw error;
@@ -3645,10 +4003,6 @@ export class CheckoutService extends BaseService {
 
   async getCheckoutSettings(userId: string): Promise<CheckoutSettings> {
     try {
-      // Pull the user's active business unit via the join table.
-      // The `include` below traverses `BusinessUnitUser.businessUnit`
-      // — reading `.settings` / `.currency` / `.id` off the join
-      // row was the previous behaviour and was always undefined.
       const user = await this.prisma.user.findUnique({
         where: { id: userId },
         include: {
@@ -3673,9 +4027,6 @@ export class CheckoutService extends BaseService {
         | { id: string; currency: string | null; settings: unknown }
         | undefined;
 
-      // Derive the currency defaults from the registry rather than
-      // hard-coding 'USD' / '$'. On a UGX deployment the old
-      // default would render a `$` next to a UGX amount.
       const resolvedCurrency = resolveBusinessUnitCurrency(
         businessUnit?.currency ?? null,
       );
@@ -3705,19 +4056,11 @@ export class CheckoutService extends BaseService {
         notifyOnAbandonedCart: true,
         abandonedCartHours: 2,
         currencyCode: resolvedCurrency,
-        // ⚠ Phase 2: no `currencySymbol` field. Phase 1 removed the
-        //   persisted column from every settings table; the symbol
-        //   is derived from `currencyCode` by the client via
-        //   `currencyService.tryGetCurrency(currencyCode)?.symbol`.
         showStockBadge: true,
         showVariantImages: true,
       };
 
       if (businessUnit?.settings && typeof businessUnit.settings === 'object') {
-        // ⚠ Phase 2: strip any stale `currencySymbol` key from a
-        //   pre-Phase-1 settings blob before merging. Without this,
-        //   an old row would reintroduce a field the interface no
-        //   longer declares and the schema no longer stores.
         const stored = {
           ...(businessUnit.settings as Record<string, unknown>),
         };
@@ -3769,24 +4112,11 @@ export class CheckoutService extends BaseService {
         throw new AppError('User does not have a business unit', 400);
       }
 
-      // Read-modify-write the settings JSON. Replacing it wholesale
-      // (the previous behaviour) meant a caller setting
-      // `{ currencyCode: 'UGX' }` would wipe `receiptFooter`,
-      // `taxRate`, and every other key.
       const existing =
         businessUnit.settings && typeof businessUnit.settings === 'object'
           ? (businessUnit.settings as Record<string, unknown>)
           : {};
 
-      // ⚠ Phase 2: strip `currencySymbol` from BOTH sides before
-      //   merging.
-      //   • From `existing` — a pre-Phase-1 row may still carry it.
-      //   • From `settings` — a client that hasn't been updated yet
-      //     (Phase 4 / Phase 5 work) may still send it.
-      //
-      //   Persisting it would reintroduce a column the schema no
-      //   longer stores, and the interface no longer declares. Only
-      //   `currencyCode` is written.
       const existingClean = { ...existing };
       delete (existingClean as any).currencySymbol;
 
@@ -3803,8 +4133,6 @@ export class CheckoutService extends BaseService {
       });
 
       const currentSettings = await this.getCheckoutSettings(userId);
-      // Re-merge the clean incoming patch so the returned shape
-      // reflects the write — but without `currencySymbol`.
       return {
         ...currentSettings,
         ...(incomingClean as Partial<CheckoutSettings>),
@@ -3845,6 +4173,7 @@ export class CheckoutService extends BaseService {
           'Receipt Number',
           'Date',
           'Customer',
+          'Currency',
           'Total',
           'Tax',
           'Discount',
@@ -3853,31 +4182,45 @@ export class CheckoutService extends BaseService {
           'Promotion Discount',
           'Loyalty Points Used',
           'Loyalty Discount',
+          'Charge Currency',
+          'Charge Amount',
+          'Charge Rate',
           'Payment Method',
           'Status',
           'Items Count',
           'Business Unit',
         ];
 
-        const rows = checkouts.map((checkout: any) => [
-          checkout.receiptNumber,
-          checkout.saleDate?.toISOString() || '',
-          checkout.customer?.firstName
-            ? `${checkout.customer.firstName} ${checkout.customer.lastName}`
-            : '',
-          checkout.total.toFixed(2),
-          (checkout.tax || 0).toFixed(2),
-          (checkout.discount || 0).toFixed(2),
-          checkout.discountType || '',
-          checkout.promotionCode || '',
-          (checkout.promotionDiscount || 0).toFixed(2),
-          String(checkout.loyaltyPointsUsed ?? 0),
-          (checkout.loyaltyDiscount || 0).toFixed(2),
-          checkout.payments[0]?.paymentMethod || '',
-          checkout.status,
-          checkout.items.length,
-          checkout.businessUnit?.name || '',
-        ]);
+        const rows = checkouts.map((checkout: any) => {
+          const firstPayment = checkout.payments?.[0];
+          return [
+            checkout.receiptNumber,
+            checkout.saleDate?.toISOString() || '',
+            checkout.customer?.firstName
+              ? `${checkout.customer.firstName} ${checkout.customer.lastName}`
+              : '',
+            checkout.businessUnit?.currency ?? '',
+            checkout.total.toFixed(2),
+            (checkout.tax || 0).toFixed(2),
+            (checkout.discount || 0).toFixed(2),
+            checkout.discountType || '',
+            checkout.promotionCode || '',
+            (checkout.promotionDiscount || 0).toFixed(2),
+            String(checkout.loyaltyPointsUsed ?? 0),
+            (checkout.loyaltyDiscount || 0).toFixed(2),
+            firstPayment?.gatewayCurrency ?? '',
+            firstPayment?.gatewayAmount != null
+              ? firstPayment.gatewayAmount.toFixed(2)
+              : '',
+            firstPayment?.exchangeRate != null
+              ? String(firstPayment.exchangeRate)
+              : '',
+            firstPayment?.paymentMethod || '',
+            checkout.status,
+            checkout.items.length,
+            checkout.businessUnit?.name || '',
+          ];
+        });
 
         let csv = headers.join(',') + '\n';
         rows.forEach((row: string[]) => {
@@ -3944,16 +4287,23 @@ export class CheckoutService extends BaseService {
 
       if (format === 'csv') {
         let csv =
-          'Receipt Number,Date,Customer,Total,Status,Payment Method\n';
+          'Receipt Number,Date,Customer,Currency,Total,Charge Currency,Charge Amount,Status,Payment Method\n';
         for (const checkout of checkouts) {
           const customerName = checkout.customer
             ? `${checkout.customer.firstName} ${checkout.customer.lastName}`
             : 'Guest';
-          const paymentMethod =
-            checkout.payments[0]?.paymentMethod || 'N/A';
+          const firstPayment = checkout.payments?.[0];
+          const paymentMethod = firstPayment?.paymentMethod || 'N/A';
+          const chargeCurrency = firstPayment?.gatewayCurrency || '';
+          const chargeAmount =
+            firstPayment?.gatewayAmount != null
+              ? String(firstPayment.gatewayAmount)
+              : '';
           csv += `${checkout.receiptNumber},${
             checkout.saleDate?.toISOString() || ''
-          },${customerName},${checkout.total},${checkout.status},${paymentMethod}\n`;
+          },${customerName},${checkout.businessUnit?.currency ?? ''},${
+            checkout.total
+          },${chargeCurrency},${chargeAmount},${checkout.status},${paymentMethod}\n`;
         }
         return csv;
       }

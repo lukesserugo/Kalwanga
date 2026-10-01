@@ -25,8 +25,6 @@ const registerSchema = z.object({
   firstName: z.string().min(1, 'First name is required'),
   lastName: z.string().min(1, 'Last name is required'),
   phoneNumber: z.string().optional(),
-  businessUnitId: z.string().optional(),
-  role: z.string().optional(),
   clerkId: z.string().optional(),
 });
 
@@ -269,7 +267,6 @@ export const authController = {
 
       const result = await authService.register({
         ...data,
-        callerRole: caller.role,
       });
 
       return res.status(201).json({

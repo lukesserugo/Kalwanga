@@ -2,7 +2,7 @@
 
 'use client';
 
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import {
   ArrowLeft,
@@ -21,6 +21,40 @@ import {
   type PaymentMethod,
 } from '../../../../../services/checkoutService';
 import { toast } from '../../../../../utils/toast-manager';
+
+// ============================================
+// CURRENCY RESOLUTION
+// ============================================
+//
+// `formatCurrency` requires a currency code by design. Some fields
+// on this page are currency-denominated (`maxDiscount`,
+// `freeShippingThreshold`, `shippingCost`). The label shown next to
+// each input is derived from the business unit's currency, which
+// the backend resolves and returns via `settings.currencyCode`.
+//
+// Until the backend response lands — and if the backend ever omits
+// the field — the label falls back to the deployment default from
+// `NEXT_PUBLIC_DEFAULT_CURRENCY`. If that is also unset, the label
+// is empty (a bare number is honest about the missing code; a
+// fabricated `$` is not).
+
+/**
+ * Resolve the currency label for a currency-denominated input.
+ *
+ * Priority:
+ *   1. `settings.currencyCode` (authoritative — from the backend).
+ *   2. `NEXT_PUBLIC_DEFAULT_CURRENCY` (deployment default).
+ *   3. `''` — no suffix at all.
+ */
+function resolveCurrencyLabel(
+  settings: CheckoutSettings | null | undefined,
+): string {
+  return (
+    settings?.currencyCode ||
+    process.env.NEXT_PUBLIC_DEFAULT_CURRENCY ||
+    ''
+  );
+}
 
 // ============================================
 // DEFAULTS
@@ -114,6 +148,17 @@ export default function CheckoutSettingsPage() {
     hasPermission(PermissionResource.ORDER);
   const canManageCheckout = hasPermission(PermissionResource.SALE);
 
+  /**
+   * Currency label for the currency-denominated inputs. Derived
+   * from the resolved settings (backend-authoritative) with a
+   * deployment-env fallback. Stable across renders unless the
+   * settings object itself changes.
+   */
+  const currencyLabel = useMemo(
+    () => resolveCurrencyLabel(settings),
+    [settings],
+  );
+
   // ============================================
   // DATA
   // ============================================
@@ -162,7 +207,14 @@ export default function CheckoutSettingsPage() {
 
     setSaving(true);
     try {
-      const payload: CheckoutSettingsUpdate = { ...settings };
+      // Strip any deprecated field a stale cached settings object
+      // might still carry. The backend validates with a strict
+      // schema; a stale `currencySymbol` would 400 the whole save.
+      const { currencySymbol: _dropped, ...rest } =
+        settings as CheckoutSettings & { currencySymbol?: string };
+      void _dropped;
+
+      const payload: CheckoutSettingsUpdate = { ...rest };
       const response = await checkoutService.updateCheckoutSettings(payload);
       if (!isMountedRef.current) return;
 
@@ -236,40 +288,56 @@ export default function CheckoutSettingsPage() {
     );
   };
 
+  /**
+   * Render a numeric input with an optional suffix.
+   *
+   * ⚠ Pass `suffix="currency"` to have the suffix resolved from the
+   *   settings / deployment default. Any other string is used
+   *   verbatim. When the resolved currency label is empty, no
+   *   suffix is rendered — the operator sees a bare number, which
+   *   is honest about the missing code.
+   */
   const renderNumber = (
     label: string,
     key: keyof CheckoutSettings,
-    suffix?: string,
+    suffix?: string | 'currency',
     min?: number,
-  ) => (
-    <div className="py-3 border-b border-gray-200 dark:border-gray-700 last:border-0">
-      <label className="block text-sm font-medium mb-1 text-gray-900 dark:text-white">
-        {label}
-      </label>
-      <div className="flex items-center gap-2">
-        <input
-          type="number"
-          min={min}
-          value={(settings?.[key] as number) ?? 0}
-          onChange={(e) => {
-            const parsed = parseFloat(e.target.value);
-            const num = Number.isFinite(parsed) ? parsed : 0;
-            updateSetting(
-              key,
-              (min !== undefined && num < min ? min : num) as any,
-            );
-          }}
-          disabled={!canManageCheckout}
-          className="w-32 px-3 py-2 rounded-lg text-sm bg-gray-100 dark:bg-gray-700 text-gray-900 dark:text-white border border-gray-300 dark:border-gray-600 focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:opacity-60 tabular-nums"
-        />
-        {suffix && (
-          <span className="text-sm text-gray-500 dark:text-gray-400">
-            {suffix}
-          </span>
-        )}
+  ) => {
+    const resolvedSuffix =
+      suffix === 'currency'
+        ? currencyLabel || undefined
+        : suffix;
+
+    return (
+      <div className="py-3 border-b border-gray-200 dark:border-gray-700 last:border-0">
+        <label className="block text-sm font-medium mb-1 text-gray-900 dark:text-white">
+          {label}
+        </label>
+        <div className="flex items-center gap-2">
+          <input
+            type="number"
+            min={min}
+            value={(settings?.[key] as number) ?? 0}
+            onChange={(e) => {
+              const parsed = parseFloat(e.target.value);
+              const num = Number.isFinite(parsed) ? parsed : 0;
+              updateSetting(
+                key,
+                (min !== undefined && num < min ? min : num) as any,
+              );
+            }}
+            disabled={!canManageCheckout}
+            className="w-32 px-3 py-2 rounded-lg text-sm bg-gray-100 dark:bg-gray-700 text-gray-900 dark:text-white border border-gray-300 dark:border-gray-600 focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:opacity-60 tabular-nums"
+          />
+          {resolvedSuffix && (
+            <span className="text-sm text-gray-500 dark:text-gray-400">
+              {resolvedSuffix}
+            </span>
+          )}
+        </div>
       </div>
-    </div>
-  );
+    );
+  };
 
   const renderText = (
     label: string,
@@ -492,7 +560,12 @@ export default function CheckoutSettingsPage() {
                 label: m.label,
               })),
             )}
-            {renderNumber('Maximum Discount Amount', 'maxDiscount', 'USD', 0)}
+            {renderNumber(
+              'Maximum Discount Amount',
+              'maxDiscount',
+              'currency',
+              0,
+            )}
             {renderNumber('Tax Rate', 'taxRate', '%', 0)}
             {renderToggle(
               'Enable Discounts',
@@ -524,14 +597,19 @@ export default function CheckoutSettingsPage() {
               'minutes',
               0,
             )}
-            {renderNumber('Low Stock Threshold', 'lowStockThreshold', 'units', 0)}
+            {renderNumber(
+              'Low Stock Threshold',
+              'lowStockThreshold',
+              'units',
+              0,
+            )}
             {renderNumber(
               'Free Shipping Threshold',
               'freeShippingThreshold',
-              'USD',
+              'currency',
               0,
             )}
-            {renderNumber('Shipping Cost', 'shippingCost', 'USD', 0)}
+            {renderNumber('Shipping Cost', 'shippingCost', 'currency', 0)}
             {renderToggle(
               'Show Stock Badge',
               'showStockBadge',
@@ -555,7 +633,7 @@ export default function CheckoutSettingsPage() {
               'loyaltyPointsEnabled',
               'Allow customers to earn and redeem loyalty points',
             )}
-            {renderNumber('Points per Dollar', 'pointsPerDollar', 'points', 0)}
+            {renderNumber('Points per unit spent', 'pointsPerDollar', 'points', 0)}
           </div>
         )}
 

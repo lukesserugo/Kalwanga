@@ -7,6 +7,42 @@ import { CheckCircle, X } from 'lucide-react';
 import Link from 'next/link';
 import { formatCurrency } from '../../utils/formatters';
 
+// ============================================
+// CURRENCY RESOLUTION
+// ============================================
+//
+// `formatCurrency` requires a currency code as its second argument
+// by design — the platform invariant is that every amount is
+// rendered in a code that came from the backend at request time.
+//
+// The Sale / Order that fires this toast carries its own `currency`
+// column, resolved server-side from the business unit's ledger
+// currency. The caller should pass it via the `currency` prop.
+//
+// When the prop is absent, we fall back to the deployment default
+// (`NEXT_PUBLIC_DEFAULT_CURRENCY`) — never a hardcoded `'USD'`.
+// If that env var is also unset, we render a bare number so the
+// caller sees the missing configuration rather than a fabricated
+// symbol.
+
+/**
+ * Resolve the currency code for the toast.
+ *
+ * Priority:
+ *   1. The `currency` prop (the row's own code, when the caller
+ *      has one).
+ *   2. `NEXT_PUBLIC_DEFAULT_CURRENCY` — the deployment default.
+ *   3. `''` — an empty string, which `formatCurrency` renders as
+ *      a bare number.
+ */
+function resolveToastCurrency(propCurrency?: string | null): string {
+  return (
+    propCurrency ||
+    process.env.NEXT_PUBLIC_DEFAULT_CURRENCY ||
+    ''
+  );
+}
+
 interface CheckoutSuccessToastProps {
   isOpen: boolean;
   onClose: () => void;
@@ -14,13 +50,12 @@ interface CheckoutSuccessToastProps {
   orderId: string;
   total: number;
   /**
-   * Optional display currency.
+   * Ledger currency code for `total`. Read from the Sale / Order
+   * row that produced this toast.
    *
-   * ⚠ When omitted, `formatCurrency` is called without a currency
-   *   and falls back to its own default. Do NOT default this to
-   *   `'USD'` here — the backend resolves the currency from the
-   *   business unit, and the toast should reflect whatever the
-   *   order was actually placed in.
+   * ⚠ When omitted, the deployment's `NEXT_PUBLIC_DEFAULT_CURRENCY`
+   *   is used. Never a hardcoded symbol. When that env is also
+   *   unset, the total renders as a bare number.
    */
   currency?: string;
 }
@@ -33,9 +68,10 @@ export function CheckoutSuccessToast({
   total,
   currency,
 }: CheckoutSuccessToastProps) {
-  const formattedTotal = currency
-    ? formatCurrency(total, currency)
-    : formatCurrency(total);
+  const formattedTotal = formatCurrency(
+    total,
+    resolveToastCurrency(currency),
+  );
 
   return (
     <AnimatePresence>

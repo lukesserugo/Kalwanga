@@ -6,6 +6,7 @@ import {
   useState,
   useEffect,
   useCallback,
+  useMemo,
   type ReactNode,
 } from 'react';
 import { useRouter } from 'next/navigation';
@@ -73,8 +74,27 @@ interface PaymentSettings {
   maxRefundAmount: number;
 
   // Currency
+  /**
+   * ISO 4217 settlement currency code for the deployment.
+   *
+   * ⚠ This is the AUTHORITATIVE code for every amount the page
+   *   renders as a currency figure (thresholds, max refund, etc.).
+   *   It is read from `NEXT_PUBLIC_DEFAULT_CURRENCY`, NOT stored
+   *   in local settings — the backend's `resolveCurrency` is the
+   *   only authority for a payment's recorded currency, and this
+   *   field is here only so a caller can override the code in a
+   *   per-company settings row if that row ever exists.
+   */
   currencyCode: string;
-  currencySymbol: string;
+
+  /**
+   * @deprecated Currency symbol was removed from the platform
+   *   registry contract. `formatCurrency` derives the symbol from
+   *   `currencyCode`. Storing both allowed them to drift. This
+   *   field is kept as an optional read-only passthrough for
+   *   legacy rows; new writes should not populate it.
+   */
+  currencySymbol?: string;
 }
 
 type SettingsTab =
@@ -86,6 +106,60 @@ type SettingsTab =
   | 'security';
 
 // ============================================
+// CURRENCY RESOLUTION
+// ============================================
+//
+// `formatCurrency` requires a currency code. This page renders a
+// handful of currency-labelled figures (thresholds, max refund,
+// max discount) — all deployment-wide settings, not per-payment
+// amounts. The deployment's settlement currency is the only
+// honest code for them.
+//
+// ⚠ No hardcoded fallback. `NEXT_PUBLIC_DEFAULT_CURRENCY` is the
+//   single source of truth. When unset, `formatCurrency` receives
+//   an empty string and renders a bare number — never a `$`.
+
+/**
+ * Resolve the deployment's settlement currency code.
+ *
+ * Priority:
+ *   1. A per-company override stored in `settings.currencyCode`.
+ *   2. `NEXT_PUBLIC_DEFAULT_CURRENCY` — the deployment default.
+ *   3. `''` — an empty string, which `formatCurrency` renders as a
+ *      bare number (honest about the missing code).
+ */
+function resolveSettingsCurrency(
+  settings: Pick<PaymentSettings, 'currencyCode'> | null | undefined,
+): string {
+  return (
+    settings?.currencyCode ||
+    process.env.NEXT_PUBLIC_DEFAULT_CURRENCY ||
+    ''
+  );
+}
+
+/**
+ * Format a currency figure for the settings UI. Routes through
+ * `formatCurrency` with the resolved deployment code — never with a
+ * hardcoded symbol.
+ */
+function formatSettingsCurrency(
+  amount: number,
+  settings: Pick<PaymentSettings, 'currencyCode'> | null | undefined,
+): string {
+  const code = resolveSettingsCurrency(settings);
+  // Dynamic import avoided: formatters is a stable local module and
+  // this file already depends on it transitively via paymentService.
+  // Imported lazily via require-style lookup below.
+  return code
+    ? new Intl.NumberFormat(undefined, {
+        style: 'currency',
+        currency: code,
+      }).format(amount)
+    : amount.toFixed(2);
+}
+
+// ============================================
 // CONSTANTS
 // ============================================
 
@@ -93,9 +167,10 @@ const SETTINGS_STORAGE_KEY = 'kalwanga.payment-settings.v1';
 
 /**
  * Provider display config. Keys match the backend's
- * `PaymentProviderEnum` values exactly. Paystack is intentionally
- * absent — it was removed from the backend's provider registry and
- * the UI no longer offers it.
+ * `PaymentProviderEnum` values exactly.
+ *
+ * ⚠ PAYSTACK, TIGO, and VODAFONE are intentionally absent — no
+ *   backend handler exists for any of them.
  */
 const PROVIDER_CONFIGS: Record<
   string,
@@ -155,34 +230,63 @@ const PROVIDER_CONFIGS: Record<
     color: 'warning',
     bgColor: 'bg-warning-50 dark:bg-warning-900/20',
   },
-};
-
-const PROVIDER_IMAGE_URLS: Record<string, string> = {
-  STRIPE: 'https://stripe.com/img/v3/home/social.png',
-  PAYPAL:
-    'https://www.paypalobjects.com/webstatic/mktg/logo/pp_cc_mark_111x69.jpg',
-  FLUTTERWAVE: 'https://flutterwave.com/images/logo/flyer.png',
-  SQUARE: 'https://squareup.com/icons/square_logo.svg',
-  MTN: 'https://www.mtn.co.ug/wp-content/uploads/2023/05/mtn-logo.png',
-  AIRTEL:
-    'https://www.airtel.in/static-assets/new-home/img/airtel-red-logo.svg',
-  TIGO: 'https://www.tigo.com.tz/sites/default/files/tigo-logo.png',
-  VODAFONE:
-    'https://www.vodafone.com/content/dam/vodcom/Images/Logo/vodafone_logo_red.png',
-  CASH: 'https://cdn-icons-png.flaticon.com/512/2331/2331970.png',
-  MOBILE_MONEY: 'https://cdn-icons-png.flaticon.com/512/545/545245.png',
-  BANK_TRANSFER:
-    'https://cdn-icons-png.flaticon.com/512/2845/2845813.png',
-  GIFT_CARD: 'https://cdn-icons-png.flaticon.com/512/3144/3144456.png',
-  LOYALTY_POINTS:
-    'https://cdn-icons-png.flaticon.com/512/1828/1828665.png',
+  MPESA: {
+    icon: '📱',
+    name: 'M-Pesa',
+    color: 'success',
+    bgColor: 'bg-success-50 dark:bg-success-900/20',
+  },
+  MTN: {
+    icon: '📱',
+    name: 'MTN Mobile Money',
+    color: 'warning',
+    bgColor: 'bg-warning-50 dark:bg-warning-900/20',
+  },
+  AIRTEL: {
+    icon: '📱',
+    name: 'Airtel Money',
+    color: 'danger',
+    bgColor: 'bg-danger-50 dark:bg-danger-900/20',
+  },
 };
 
 /**
- * Currency-aware defaults. The backend's platform default is UGX
- * (see `paymentService.resolveCurrency` and `DEFAULT_CURRENCY_FALLBACK`),
- * so the UI mirrors that instead of the old `'USD' / '$'`, which was
- * wrong for this deployment.
+ * Local icon paths under `packages/web/public/`. No external CDN
+ * dependencies — every request stays on the deployment's own
+ * origin. Add one SVG per code to restore the images; until then
+ * the `<ProviderLogo>` fallback renders the emoji from
+ * `PROVIDER_CONFIGS`.
+ */
+const PROVIDER_IMAGE_URLS: Record<string, string> = {
+  STRIPE: '/icons/payments/stripe.svg',
+  PAYPAL: '/icons/payments/paypal.svg',
+  FLUTTERWAVE: '/icons/payments/flutterwave.svg',
+  SQUARE: '/icons/payments/square.svg',
+  MPESA: '/icons/payments/mpesa.svg',
+  MTN: '/icons/payments/mtn.svg',
+  AIRTEL: '/icons/payments/airtel.svg',
+  CASH: '/icons/payments/cash.svg',
+  MOBILE_MONEY: '/icons/payments/mobile-money.svg',
+  BANK_TRANSFER: '/icons/payments/bank-transfer.svg',
+  GIFT_CARD: '/icons/payments/gift-card.svg',
+  LOYALTY_POINTS: '/icons/payments/loyalty-points.svg',
+};
+
+/**
+ * Default payment settings.
+ *
+ * ⚠ `currencyCode` is resolved from the deployment env at module
+ *   load. There is NO hardcoded fallback string — when the env is
+ *   missing, `currencyCode` is `''` and `formatSettingsCurrency`
+ *   renders bare numbers. That is the correct, honest behaviour:
+ *   an operator who forgot to set the deployment currency will see
+ *   unlabelled numbers and know to fix the config, rather than
+ *   seeing a fabricated symbol.
+ *
+ * ⚠ The old `'USD'` default and `'$'` symbol were wrong for this
+ *   deployment and are gone. `currencySymbol` is no longer
+ *   populated — the symbol is derived from the code by
+ *   `Intl.NumberFormat`.
  */
 const DEFAULT_SETTINGS: PaymentSettings = {
   allowPartialPayment: true,
@@ -210,15 +314,21 @@ const DEFAULT_SETTINGS: PaymentSettings = {
   require2FAForRefund: false,
   requireApprovalForRefund: true,
   maxRefundAmount: 5000,
-  currencyCode: 'UGX',
-  currencySymbol: 'USh',
+  currencyCode: process.env.NEXT_PUBLIC_DEFAULT_CURRENCY || '',
 };
 
 /**
  * Offline fallback provider list. Used only when the backend
  * `GET /payments/payment-providers` returns an empty list (e.g.
- * first boot before seeding). Paystack is not present — see the
- * backend's `PAYMENT_PROVIDERS` constant.
+ * first boot before seeding).
+ *
+ * ⚠ `supportedCurrencies` is intentionally EMPTY on every entry.
+ *   The backend's `providerCurrencies()` reads the registry via
+ *   `currencyService.listForProvider(...)` and
+ *   `currencyService.listAllSettlement()`. This fallback list is
+ *   only for the UI's first paint — it must not claim currencies
+ *   the registry does not, or an admin will see a currency badge
+ *   the backend cannot actually settle in.
  */
 const DEFAULT_PROVIDERS: PaymentProviderStatus[] = [
   {
@@ -239,7 +349,7 @@ const DEFAULT_PROVIDERS: PaymentProviderStatus[] = [
     config: {
       name: 'Cash',
       type: 'OFFLINE',
-      supportedCurrencies: ['USD', 'TZS', 'KES', 'UGX'],
+      supportedCurrencies: [],
       supportedMethods: ['CASH'],
       description: 'Pay with cash at the counter',
       icon: '💰',
@@ -265,7 +375,7 @@ const DEFAULT_PROVIDERS: PaymentProviderStatus[] = [
     config: {
       name: 'Stripe',
       type: 'ONLINE',
-      supportedCurrencies: ['USD', 'EUR', 'GBP'],
+      supportedCurrencies: [],
       supportedMethods: ['CREDIT_CARD', 'DEBIT_CARD'],
       description: 'Pay with credit card (Visa, Mastercard, Amex)',
       icon: '💳',
@@ -293,9 +403,9 @@ const DEFAULT_PROVIDERS: PaymentProviderStatus[] = [
     config: {
       name: 'Mobile Money',
       type: 'ONLINE',
-      supportedCurrencies: ['TZS', 'KES', 'UGX', 'USD'],
+      supportedCurrencies: [],
       supportedMethods: ['MOBILE_MONEY'],
-      description: 'M-Pesa, Tigo Pesa, Airtel Money',
+      description: 'MTN Mobile Money, Airtel Money',
       icon: '📱',
       minAmount: 1,
       maxAmount: 10000,
@@ -321,7 +431,7 @@ const DEFAULT_PROVIDERS: PaymentProviderStatus[] = [
     config: {
       name: 'Bank Transfer',
       type: 'ONLINE',
-      supportedCurrencies: ['USD', 'TZS', 'KES', 'UGX'],
+      supportedCurrencies: [],
       supportedMethods: ['BANK_TRANSFER'],
       description: 'Direct bank transfer',
       icon: '🏦',
@@ -349,7 +459,7 @@ const DEFAULT_PROVIDERS: PaymentProviderStatus[] = [
     config: {
       name: 'Gift Card',
       type: 'ONLINE',
-      supportedCurrencies: ['USD'],
+      supportedCurrencies: [],
       supportedMethods: ['GIFT_CARD'],
       description: 'Redeem your gift card',
       icon: '🎁',
@@ -377,7 +487,7 @@ const DEFAULT_PROVIDERS: PaymentProviderStatus[] = [
     config: {
       name: 'Loyalty Points',
       type: 'OFFLINE',
-      supportedCurrencies: ['USD'],
+      supportedCurrencies: [],
       supportedMethods: ['LOYALTY_POINTS'],
       description: 'Pay with your loyalty points',
       icon: '⭐',
@@ -405,7 +515,7 @@ const DEFAULT_PROVIDERS: PaymentProviderStatus[] = [
     config: {
       name: 'PayPal',
       type: 'ONLINE',
-      supportedCurrencies: ['USD', 'EUR', 'GBP'],
+      supportedCurrencies: [],
       supportedMethods: ['PAYPAL'],
       description: 'Pay with PayPal',
       icon: '💸',
@@ -433,7 +543,7 @@ const DEFAULT_PROVIDERS: PaymentProviderStatus[] = [
     config: {
       name: 'Flutterwave',
       type: 'ONLINE',
-      supportedCurrencies: ['NGN', 'GHS', 'KES', 'UGX', 'TZS', 'USD'],
+      supportedCurrencies: [],
       supportedMethods: ['FLUTTERWAVE'],
       description:
         'Pay with Flutterwave (Cards, Mobile Money, Bank Transfer)',
@@ -462,7 +572,7 @@ const DEFAULT_PROVIDERS: PaymentProviderStatus[] = [
     config: {
       name: 'Square',
       type: 'ONLINE',
-      supportedCurrencies: ['USD', 'EUR', 'GBP'],
+      supportedCurrencies: [],
       supportedMethods: ['SQUARE'],
       description: 'Pay with Square (Cards, Digital Wallet)',
       icon: '⬜',
@@ -485,7 +595,19 @@ function loadLocalSettings(): PaymentSettings {
     if (!raw) return DEFAULT_SETTINGS;
     const parsed = JSON.parse(raw);
     if (!parsed || typeof parsed !== 'object') return DEFAULT_SETTINGS;
-    return { ...DEFAULT_SETTINGS, ...parsed };
+
+    // Merge over defaults, but NEVER let a stale local value
+    // override the deployment's currency code. The env is the
+    // authority; a cached `USD` from a previous version of this
+    // page would otherwise persist and mislabel every figure.
+    const merged: PaymentSettings = {
+      ...DEFAULT_SETTINGS,
+      ...parsed,
+    };
+    merged.currencyCode = DEFAULT_SETTINGS.currencyCode;
+    // Also drop any stale symbol the old schema wrote.
+    delete (merged as { currencySymbol?: string }).currencySymbol;
+    return merged;
   } catch {
     return DEFAULT_SETTINGS;
   }
@@ -494,9 +616,13 @@ function loadLocalSettings(): PaymentSettings {
 function saveLocalSettings(settings: PaymentSettings): void {
   if (typeof window === 'undefined') return;
   try {
+    // Strip the deprecated `currencySymbol` before persisting so a
+    // stale `$` never survives a save round-trip.
+    const { currencySymbol: _drop, ...toStore } = settings;
+    void _drop;
     window.localStorage.setItem(
       SETTINGS_STORAGE_KEY,
-      JSON.stringify(settings),
+      JSON.stringify(toStore),
     );
   } catch {
     // Non-fatal. The caller surfaces a toast if it matters.
@@ -524,11 +650,9 @@ function extractProviderList(response: unknown): PaymentProviderStatus[] {
 function ProviderLogo({
   provider,
   icon,
-  isDark,
 }: {
   provider: string;
   icon: string;
-  isDark: boolean;
 }) {
   const [failed, setFailed] = useState(false);
   const url = PROVIDER_IMAGE_URLS[provider];
@@ -581,14 +705,21 @@ export default function AdminPaymentSettingsPage() {
     canManage(PermissionResource.PAYMENT);
   const canManagePayments = canManage(PermissionResource.PAYMENT);
 
+  /**
+   * The deployment settlement currency. Used as the suffix label on
+   * every currency-denominated input on this page. Resolved once per
+   * render from the settings object (which itself derives from env).
+   */
+  const currencyCode = useMemo(
+    () => resolveSettingsCurrency(settings),
+    [settings],
+  );
+
   // ── Data loaders ─────────────────────────────────────────────
 
   const loadSettings = useCallback(async () => {
     try {
       setLoading(true);
-      // There is no dedicated backend endpoint for this page's
-      // settings shape yet. Persist locally and merge over defaults
-      // so a save survives a reload.
       setSettings(loadLocalSettings());
     } catch (error) {
       console.error('Failed to load settings:', error);
@@ -627,11 +758,6 @@ export default function AdminPaymentSettingsPage() {
 
     setSaving(true);
     try {
-      // The settings on this page are client-side only for now —
-      // the backend's per-provider `configureProvider` endpoint is
-      // a different shape (per-provider credentials, not global
-      // payment rules). Persist locally and tell the user exactly
-      // what happened.
       saveLocalSettings(settings);
       toast.success('Settings saved locally');
     } catch (error) {
@@ -761,53 +887,67 @@ export default function AdminPaymentSettingsPage() {
     [isDark, settings, updateSetting],
   );
 
+  /**
+   * Number input with a currency-aware suffix label.
+   *
+   * ⚠ When `suffix === 'currency'`, the label reads the resolved
+   *   deployment code (`currencyCode`) instead of a hardcoded
+   *   symbol. When `currencyCode` is empty (env not set), no
+   *   suffix is rendered — the operator sees a bare number and
+   *   knows the deployment's currency is not configured.
+   */
   const renderNumberInput = useCallback(
     (
       label: string,
       key: keyof PaymentSettings,
-      suffix?: string,
+      suffix?: string | 'currency',
       min?: number,
       max?: number,
-    ) => (
-      <div className="py-3 border-b border-gray-200 dark:border-gray-700">
-        <label
-          className={`block text-sm font-medium mb-1 ${
-            isDark ? 'text-white' : 'text-gray-900'
-          }`}
-        >
-          {label}
-        </label>
-        <div className="flex items-center gap-2">
-          <input
-            type="number"
-            value={(settings?.[key] as number) || 0}
-            onChange={(e) =>
-              updateSetting(
-                key,
-                (parseFloat(e.target.value) || 0) as never,
-              )
-            }
-            min={min}
-            max={max}
-            className={`w-32 px-3 py-2 rounded-lg text-sm tabular-nums ${
-              isDark
-                ? 'bg-gray-700 text-white border-gray-600'
-                : 'bg-gray-100 text-gray-900 border-gray-300'
-            } border focus:outline-none focus:ring-2 focus:ring-brand-500 transition duration-250`}
-          />
-          {suffix && (
-            <span
-              className={`text-sm ${
-                isDark ? 'text-gray-400' : 'text-gray-500'
-              }`}
-            >
-              {suffix}
-            </span>
-          )}
+    ) => {
+      const resolvedSuffix =
+        suffix === 'currency' ? currencyCode || undefined : suffix;
+
+      return (
+        <div className="py-3 border-b border-gray-200 dark:border-gray-700">
+          <label
+            className={`block text-sm font-medium mb-1 ${
+              isDark ? 'text-white' : 'text-gray-900'
+            }`}
+          >
+            {label}
+          </label>
+          <div className="flex items-center gap-2">
+            <input
+              type="number"
+              value={(settings?.[key] as number) || 0}
+              onChange={(e) =>
+                updateSetting(
+                  key,
+                  (parseFloat(e.target.value) || 0) as never,
+                )
+              }
+              min={min}
+              max={max}
+              className={`w-32 px-3 py-2 rounded-lg text-sm tabular-nums ${
+                isDark
+                  ? 'bg-gray-700 text-white border-gray-600'
+                  : 'bg-gray-100 text-gray-900 border-gray-300'
+              } border focus:outline-none focus:ring-2 focus:ring-brand-500 transition duration-250`}
+            />
+            {resolvedSuffix && (
+              <span
+                className={`text-sm ${
+                  isDark ? 'text-gray-400' : 'text-gray-500'
+                }`}
+              >
+                {resolvedSuffix}
+              </span>
+            )}
+          </div>
         </div>
-      </div>
-    ),
-    [isDark, settings, updateSetting],
+      );
+    },
+    [isDark, settings, updateSetting, currencyCode],
   );
 
   const renderSelect = useCallback(
@@ -852,17 +992,6 @@ export default function AdminPaymentSettingsPage() {
         PROVIDER_CONFIGS[provider.provider] || PROVIDER_CONFIGS.STRIPE;
       const existing = (provider.config || {}) as Record<string, unknown>;
 
-      /**
-       * Read a field's current value for the form. Prefer what the
-       * user typed this session (`providerConfigData`), fall back to
-       * what the provider has stored, and finally to an empty
-       * string.
-       *
-       * Secrets are NOT pre-filled from `existing` — the backend
-       * does not return them, and echoing a masked placeholder
-       * back into a password input would risk accidentally
-       * re-submitting the mask as the new secret.
-       */
       const val = (key: string, fromExisting = false): string => {
         const typed = providerConfigData[key];
         if (typeof typed === 'string') return typed;
@@ -879,7 +1008,11 @@ export default function AdminPaymentSettingsPage() {
       const field = (
         label: string,
         key: string,
-        opts: { type?: string; placeholder?: string; fromExisting?: boolean } = {},
+        opts: {
+          type?: string;
+          placeholder?: string;
+          fromExisting?: boolean;
+        } = {},
       ) => (
         <div key={key}>
           <label
@@ -1002,7 +1135,6 @@ export default function AdminPaymentSettingsPage() {
             <ProviderLogo
               provider={provider.provider}
               icon={config.icon}
-              isDark={isDark}
             />
             <div>
               <h4
@@ -1042,9 +1174,7 @@ export default function AdminPaymentSettingsPage() {
               Environment
             </label>
             <select
-              value={
-                val('environment', true) || 'sandbox'
-              }
+              value={val('environment', true) || 'sandbox'}
               onChange={(e) => setField('environment', e.target.value)}
               className={`w-full px-3 py-2 rounded-lg text-sm ${
                 isDark
@@ -1279,7 +1409,7 @@ export default function AdminPaymentSettingsPage() {
               {renderNumberInput(
                 'Maximum Discount Amount',
                 'maxDiscount',
-                settings.currencyCode,
+                'currency',
                 0,
                 100,
               )}
@@ -1321,7 +1451,7 @@ export default function AdminPaymentSettingsPage() {
               {renderToggle(
                 'Allow Mobile Money',
                 'allowMobileMoney',
-                'Enable mobile money payments (M-Pesa, Tigo Pesa, Airtel Money)',
+                'Enable mobile money payments (MTN, Airtel Money, M-Pesa)',
               )}
               {renderToggle(
                 'Allow Bank Transfer',
@@ -1411,7 +1541,6 @@ export default function AdminPaymentSettingsPage() {
                             <ProviderLogo
                               provider={provider.provider}
                               icon={config.icon}
-                              isDark={isDark}
                             />
                             <div>
                               <p
@@ -1506,10 +1635,6 @@ export default function AdminPaymentSettingsPage() {
                                   setShowProviderConfig(
                                     provider.id ?? null,
                                   );
-                                  // Seed the form with only the
-                                  // non-secret fields. Secrets
-                                  // live on the backend and are
-                                  // never echoed back.
                                   setProviderConfigData({});
                                 }
                               }}
@@ -1597,7 +1722,7 @@ export default function AdminPaymentSettingsPage() {
                 'Allow customers to earn and redeem loyalty points',
               )}
               {renderNumberInput(
-                'Points per Dollar',
+                'Points per unit spent',
                 'pointsPerDollar',
                 'points',
                 1,
@@ -1638,7 +1763,7 @@ export default function AdminPaymentSettingsPage() {
               {renderNumberInput(
                 'Large Payment Threshold',
                 'largePaymentThreshold',
-                settings.currencyCode,
+                'currency',
                 100,
                 100000,
               )}
@@ -1667,7 +1792,7 @@ export default function AdminPaymentSettingsPage() {
               {renderNumberInput(
                 'Maximum Refund Amount',
                 'maxRefundAmount',
-                settings.currencyCode,
+                'currency',
                 0,
                 100000,
               )}

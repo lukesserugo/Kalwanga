@@ -40,6 +40,38 @@ import {
 import { toast } from '../../../../../utils/toast-manager';
 
 // ============================================
+// CURRENCY RESOLUTION
+// ============================================
+//
+// `formatCurrency` requires a currency code by design — every
+// amount must be rendered in a code that came from the backend.
+//
+// The `/checkout/stats/summary` endpoint returns aggregates
+// without a currency code, and it sums across all Sales regardless
+// of their individual `currency` column. Until the backend either
+// (a) narrows the summary to a single currency or (b) returns
+// per-currency buckets, this page can only honestly label its
+// figures in the deployment's settlement currency.
+//
+// ⚠ No hardcoded fallback in this file. `NEXT_PUBLIC_DEFAULT_CURRENCY`
+//   is the single source of truth. When unset, `formatCurrency`
+//   receives an empty string and renders a bare number rather than
+//   a fabricated symbol.
+
+const SETTLEMENT_CURRENCY =
+  process.env.NEXT_PUBLIC_DEFAULT_CURRENCY || '';
+
+/**
+ * Format an aggregate monetary amount. Every currency figure on
+ * this page comes from the stats endpoint, so they share a single
+ * display code — `SETTLEMENT_CURRENCY`. Per-row formatting (which
+ * would need each row's own code) is not used on this page.
+ */
+function fmt(amount: number): string {
+  return formatCurrency(amount, SETTLEMENT_CURRENCY);
+}
+
+// ============================================
 // TYPES
 // ============================================
 
@@ -447,7 +479,7 @@ export default function AdminCheckoutStatsPage() {
         {[
           {
             title: 'Total Revenue',
-            value: formatCurrency(stats.summary.totalRevenue),
+            value: fmt(stats.summary.totalRevenue),
             icon: DollarSign,
             color: 'bg-green-100 dark:bg-green-900/20',
             iconColor: 'text-green-600 dark:text-green-400',
@@ -461,7 +493,7 @@ export default function AdminCheckoutStatsPage() {
           },
           {
             title: 'Average Order Value',
-            value: formatCurrency(stats.summary.averageOrderValue),
+            value: fmt(stats.summary.averageOrderValue),
             icon: TrendingUp,
             color: 'bg-purple-100 dark:bg-purple-900/20',
             iconColor: 'text-purple-600 dark:text-purple-400',
@@ -575,7 +607,7 @@ export default function AdminCheckoutStatsPage() {
                         {method.method.toLowerCase().replace(/_/g, ' ')}
                       </span>
                       <span className="text-sm font-medium text-gray-900 dark:text-white tabular-nums">
-                        {formatCurrency(method.total)}
+                        {fmt(method.total)}
                       </span>
                     </div>
                     <div className="w-full bg-gray-200 dark:bg-gray-700 rounded-full h-2">
@@ -629,7 +661,7 @@ export default function AdminCheckoutStatsPage() {
                     </p>
                   </div>
                   <p className="font-semibold text-gray-900 dark:text-white tabular-nums">
-                    {formatCurrency(product.revenue)}
+                    {fmt(product.revenue)}
                   </p>
                 </div>
               ))}
@@ -666,7 +698,7 @@ export default function AdminCheckoutStatsPage() {
                 </div>
                 <div className="text-right">
                   <p className="font-semibold text-gray-900 dark:text-white tabular-nums">
-                    {formatCurrency(customer.totalSpent)}
+                    {fmt(customer.totalSpent)}
                   </p>
                   <p className="text-xs text-gray-500 dark:text-gray-400 tabular-nums">
                     {customer.orderCount} orders
@@ -692,6 +724,11 @@ export default function AdminCheckoutStatsPage() {
                 ? 'custom range'
                 : `last ${dateRange}`}
             </span>
+            {SETTLEMENT_CURRENCY && (
+              <span className="flex items-center gap-1">
+                All amounts in {SETTLEMENT_CURRENCY}
+              </span>
+            )}
             {canManageStats && (
               <button
                 type="button"

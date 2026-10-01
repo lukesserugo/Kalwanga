@@ -34,26 +34,13 @@ import { useAuth } from '../../../../../hooks/useAuth';
 import { toast } from '../../../../../utils/toast-manager';
 import { api } from '../../../../../services/api';
 
-// ============================================
-// LOCAL SERVICE EXTENSIONS
-// ============================================
-//
-// The frontend `saleService` does not declare `exportSales` or a
-// direct refund-list endpoint. The backend exposes:
-//
-//   GET /sales/refunds    → saleController.getRefunds
-//   GET /sales/export     → saleController.exportSales
-//
-// Both come back as `{ success, data: [...] }`. We call them via the
-// shared `api` client rather than mutating the shared service.
-
 async function fetchRefundsRemote(params: {
   page?: number;
   limit?: number;
   search?: string;
   startDate?: string;
   endDate?: string;
-}): Promise<{ data: any[]; total?: number; totalPages?: number }> {
+}): Promise<{ data: any[]; total?: number; totalPages?: number; currency?: string }> {
   const response = await api.get<any>('/sales/refunds', { params });
   const body =
     response && typeof response === 'object' && 'data' in response
@@ -66,12 +53,18 @@ async function fetchRefundsRemote(params: {
       ? body.data
       : [];
   const pagination = body?.pagination ?? response?.pagination ?? {};
+  const currency =
+    (response && typeof response === 'object' && (response as any).currency) ||
+    (body && typeof body === 'object' && (body as any).currency) ||
+    undefined;
 
   return {
     data,
-    total: typeof pagination.total === 'number' ? pagination.total : data.length,
+    total:
+      typeof pagination.total === 'number' ? pagination.total : data.length,
     totalPages:
       typeof pagination.totalPages === 'number' ? pagination.totalPages : 1,
+    currency,
   };
 }
 
@@ -79,29 +72,31 @@ async function exportSalesRemote(params: {
   startDate?: string;
   endDate?: string;
   format?: 'json' | 'csv' | 'excel' | 'pdf';
-}): Promise<{ data: any[]; total?: number; format?: string }> {
+}): Promise<{ data: any[]; total?: number; format?: string; currency?: string }> {
   const response = await api.get<any>('/sales/export', { params });
   const body =
     response && typeof response === 'object' && 'data' in response
       ? (response as any).data
       : response;
 
+  const currency =
+    (response && typeof response === 'object' && (response as any).currency) ||
+    (body && typeof body === 'object' && (body as any).currency) ||
+    undefined;
+
   if (body && typeof body === 'object' && Array.isArray(body.data)) {
     return {
       data: body.data,
       total: typeof body.total === 'number' ? body.total : body.data.length,
       format: typeof body.format === 'string' ? body.format : params.format,
+      currency,
     };
   }
   if (Array.isArray(body)) {
-    return { data: body, total: body.length, format: params.format };
+    return { data: body, total: body.length, format: params.format, currency };
   }
-  return { data: [], total: 0, format: params.format };
+  return { data: [], total: 0, format: params.format, currency };
 }
-
-// ============================================
-// INTERFACES
-// ============================================
 
 type RefundStatus =
   | 'PENDING'
@@ -150,6 +145,11 @@ interface Refund {
   createdAt: string;
   processedAt?: string;
   processedBy?: string;
+  /**
+   * ISO 4217 ledger currency for every amount on this refund.
+   * Resolved server-side from the owning business unit.
+   */
+  currency?: string;
 }
 
 interface RefundFilters {
@@ -179,11 +179,9 @@ interface RefundStats {
   };
 }
 
-// ============================================
-// HELPERS
-// ============================================
-
-function normalizeRefundStatus(raw: string | null | undefined): RefundStatus {
+function normalizeRefundStatus(
+  raw: string | null | undefined,
+): RefundStatus {
   const value = (raw || 'PENDING').toUpperCase();
   switch (value) {
     case 'PENDING':
@@ -197,7 +195,9 @@ function normalizeRefundStatus(raw: string | null | undefined): RefundStatus {
   }
 }
 
-function normalizeRefundMethod(raw: string | null | undefined): RefundMethod {
+function normalizeRefundMethod(
+  raw: string | null | undefined,
+): RefundMethod {
   const value = (raw || 'ORIGINAL_PAYMENT').toUpperCase();
   switch (value) {
     case 'CASH':
@@ -219,9 +219,33 @@ function normalizeRefundType(
 }
 
 /**
- * Map a backend `Sale` (with `refunds[]`) plus one of its refund rows
- * into the frontend `Refund` shape this page renders.
+ * Extract the ledger currency for a sale from any of the places it
+ * may appear:
+ *   1. `sale.currency`               (Phase 2 top-level)
+ *   2. `sale.payments[0].currency`   (per-payment fallback)
+ *   3. `sale.businessUnit.currency`  (BU record)
+ *
+ * Returns `undefined` when none is present. Callers must then fall
+ * back to a safe default (e.g. the response envelope's `currency`,
+ * or the registry default).
  */
+function resolveSaleCurrency(sale: any): string | undefined {
+  if (!sale || typeof sale !== 'object') return undefined;
+  if (typeof sale.currency === 'string' && sale.currency) return sale.currency;
+  const firstPayment = Array.isArray(sale.payments) ? sale.payments[0] : null;
+  if (firstPayment && typeof firstPayment.currency === 'string' && firstPayment.currency) {
+    return firstPayment.currency;
+  }
+  if (
+    sale.businessUnit &&
+    typeof sale.businessUnit.currency === 'string' &&
+    sale.businessUnit.currency
+  ) {
+    return sale.businessUnit.currency;
+  }
+  return undefined;
+}
+
 function saleRefundToRefund(sale: any, refund: any): Refund {
   const customer = sale.customer || {};
 
@@ -240,7 +264,8 @@ function saleRefundToRefund(sale: any, refund: any): Refund {
 
   return {
     id: refund.id,
-    refundNumber: refund.refundNumber || `REF-${refund.id?.slice(-6) || 'N/A'}`,
+    refundNumber:
+      refund.refundNumber || `REF-${refund.id?.slice(-6) || 'N/A'}`,
     saleId: sale.id,
     receiptNumber: sale.receiptNumber || 'N/A',
     customerName: sale.customerName
@@ -262,12 +287,9 @@ function saleRefundToRefund(sale: any, refund: any): Refund {
     createdAt: refund.createdAt || sale.saleDate || sale.createdAt,
     processedAt: refund.processedAt,
     processedBy: refund.processedBy,
+    currency: resolveSaleCurrency(sale),
   };
 }
-
-// ============================================
-// STYLE HELPERS
-// ============================================
 
 const DEFAULT_REFUND_STATS: RefundStats = {
   total: 0,
@@ -319,7 +341,7 @@ const getStatusIcon = (status: string): React.ElementType => {
 
 const StatusIcon = ({ status }: { status: string }) => {
   const Icon = getStatusIcon(status);
-  return <Icon className="w-4 h-4 inline mr-1" />;
+  return <Icon className="w-4 h-4 inline mr-1" aria-hidden="true" />;
 };
 
 const getRefundMethodColor = (method: string): string => {
@@ -349,9 +371,13 @@ const titleCase = (value: string): string => {
   return lower.charAt(0).toUpperCase() + lower.slice(1);
 };
 
-// ============================================
-// STATS HELPER
-// ============================================
+const REFUND_METHOD_KEYS: readonly RefundMethod[] = [
+  'CASH',
+  'CREDIT',
+  'STORE_CREDIT',
+  'ORIGINAL_PAYMENT',
+  'BANK_TRANSFER',
+] as const;
 
 function computeRefundStats(refunds: Refund[]): RefundStats {
   const totalAmount = refunds.reduce((sum, r) => sum + (r.total || 0), 0);
@@ -364,7 +390,7 @@ function computeRefundStats(refunds: Refund[]): RefundStats {
     BANK_TRANSFER: 0,
   };
   refunds.forEach((r) => {
-    if (byMethod[r.refundMethod] !== undefined) {
+    if (REFUND_METHOD_KEYS.includes(r.refundMethod)) {
       byMethod[r.refundMethod] += 1;
     }
   });
@@ -382,11 +408,25 @@ function computeRefundStats(refunds: Refund[]): RefundStats {
   };
 }
 
-// ============================================
-// REFUND HTML
-// ============================================
+/**
+ * Generate printable refund HTML.
+ *
+ * ⚠ `currency` is REQUIRED. Every amount on the receipt is formatted
+ *   with the ledger currency. A hardcoded `$` would mislabel a UGX
+ *   or KES deployment.
+ */
+function generateRefundHTML(refund: Refund, currency: string): string {
+  const fmt = (amount: number): string => {
+    try {
+      return new Intl.NumberFormat('en-US', {
+        style: 'currency',
+        currency,
+      }).format(amount);
+    } catch {
+      return `${currency} ${amount.toFixed(2)}`;
+    }
+  };
 
-function generateRefundHTML(refund: Refund): string {
   return `
     <!DOCTYPE html>
     <html>
@@ -442,7 +482,7 @@ function generateRefundHTML(refund: Refund): string {
             <div class="item">
               <span class="name">${item.productName}</span>
               <span class="qty">x${item.quantity}</span>
-              <span class="price">$${item.total.toFixed(2)}</span>
+              <span class="price">${fmt(item.total)}</span>
             </div>
           `,
             )
@@ -450,9 +490,9 @@ function generateRefundHTML(refund: Refund): string {
         </div>
 
         <div class="totals">
-          <div class="row"><span>Subtotal</span><span>$${refund.subtotal.toFixed(2)}</span></div>
-          <div class="row"><span>Tax</span><span>$${refund.tax.toFixed(2)}</span></div>
-          <div class="row grand"><span>Total</span><span>$${refund.total.toFixed(2)}</span></div>
+          <div class="row"><span>Subtotal</span><span>${fmt(refund.subtotal)}</span></div>
+          <div class="row"><span>Tax</span><span>${fmt(refund.tax)}</span></div>
+          <div class="row grand"><span>Total</span><span>${fmt(refund.total)}</span></div>
         </div>
 
         ${
@@ -468,10 +508,6 @@ function generateRefundHTML(refund: Refund): string {
     </html>
   `;
 }
-
-// ============================================
-// SUB-COMPONENTS
-// ============================================
 
 function StatCard({
   title,
@@ -531,10 +567,6 @@ function MethodBadge({
   );
 }
 
-// ============================================
-// MAIN COMPONENT
-// ============================================
-
 export default function RefundsPage() {
   const { isLoaded, isSignedIn } = useUser();
   const { user: authUser } = useAuth();
@@ -544,6 +576,13 @@ export default function RefundsPage() {
   const [loading, setLoading] = useState(true);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [stats, setStats] = useState<RefundStats>(DEFAULT_REFUND_STATS);
+  /**
+   * Ledger currency for every amount on this page. Resolved from
+   * the response envelope, or from the first refund that carries
+   * one. `undefined` until the first fetch resolves — every
+   * `formatCurrency` call is guarded against it.
+   */
+  const [currency, setCurrency] = useState<string | undefined>(undefined);
 
   const [filters, setFilters] = useState<RefundFilters>({
     search: '',
@@ -582,10 +621,6 @@ export default function RefundsPage() {
     }
   }, [isLoaded, isSignedIn, router, canViewRefunds]);
 
-  // ============================================
-  // FETCH
-  // ============================================
-
   const fetchRefunds = useCallback(
     async (silent = false) => {
       if (!authUser) return;
@@ -606,9 +641,6 @@ export default function RefundsPage() {
             : undefined,
         };
 
-        // `/sales/refunds` returns sales whose status is REFUNDED,
-        // each carrying its own `refunds[]` array. Flatten one row
-        // per refund.
         const response = await fetchRefundsRemote(params);
         const rawSales: any[] = Array.isArray(response.data)
           ? response.data
@@ -624,12 +656,19 @@ export default function RefundsPage() {
           });
         });
 
-        // Client-side status filter — backend refund list has no
-        // status filter of its own.
         const filtered =
           filters.status === 'all'
             ? flattened
             : flattened.filter((r) => r.status === filters.status);
+
+        // Resolve the page currency: envelope first, then the first
+        // refund that carries one.
+        const resolvedCurrency =
+          response.currency ||
+          filtered.find((r) => typeof r.currency === 'string' && r.currency)
+            ?.currency ||
+          undefined;
+        setCurrency(resolvedCurrency);
 
         setRefunds(filtered);
         setTotalRefunds(
@@ -660,18 +699,16 @@ export default function RefundsPage() {
   );
 
   useEffect(() => {
-    fetchRefunds();
+    void fetchRefunds();
   }, [fetchRefunds]);
-
-  // ============================================
-  // FILTER HANDLERS
-  // ============================================
 
   const handleSearch = (e: React.ChangeEvent<HTMLInputElement>) => {
     setFilters((prev) => ({ ...prev, search: e.target.value, page: 1 }));
   };
 
-  const handleStatusChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
+  const handleStatusChange = (
+    e: React.ChangeEvent<HTMLSelectElement>,
+  ) => {
     setFilters((prev) => ({ ...prev, status: e.target.value, page: 1 }));
   };
 
@@ -686,17 +723,30 @@ export default function RefundsPage() {
     setFilters((prev) => ({ ...prev, page: newPage }));
   };
 
-  // ============================================
-  // ACTION HANDLERS
-  // ============================================
+  /**
+   * Format an amount using the page's resolved ledger currency.
+   * Falls back to a plain number when the currency is not yet known
+   * (first paint before the fetch resolves).
+   */
+  const fmt = useCallback(
+    (amount: number): string => {
+      if (!currency) return new Intl.NumberFormat('en-US').format(amount);
+      return formatCurrency(amount, currency);
+    },
+    [currency],
+  );
 
   const handlePrintRefund = (refund: Refund) => {
+    if (!currency) {
+      toast.error('Currency not yet resolved — try again in a moment');
+      return;
+    }
     const printWindow = window.open('', '_blank');
     if (!printWindow) {
       toast.error('Please allow popups to print refunds');
       return;
     }
-    printWindow.document.write(generateRefundHTML(refund));
+    printWindow.document.write(generateRefundHTML(refund, currency));
     printWindow.document.close();
     printWindow.print();
     toast.success('Refund sent to printer');
@@ -726,6 +776,7 @@ export default function RefundsPage() {
         'Subtotal',
         'Tax',
         'Total',
+        'Currency',
         'Method',
         'Type',
         'Status',
@@ -740,6 +791,7 @@ export default function RefundsPage() {
         refund.subtotal.toFixed(2),
         refund.tax.toFixed(2),
         refund.total.toFixed(2),
+        refund.currency || currency || '',
         refund.refundMethod,
         refund.refundType,
         refund.status,
@@ -774,10 +826,6 @@ export default function RefundsPage() {
     }
   };
 
-  // ============================================
-  // LOADING / PERMISSION STATES
-  // ============================================
-
   if (loading) {
     return <LoadingSkeleton />;
   }
@@ -786,14 +834,9 @@ export default function RefundsPage() {
     return null;
   }
 
-  // ============================================
-  // RENDER
-  // ============================================
-
   return (
     <div className="min-h-screen bg-gray-50 dark:bg-gray-900 p-6">
       <div className="max-w-7xl mx-auto">
-        {/* Header */}
         <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 mb-6">
           <div>
             <div className="flex items-center gap-3">
@@ -802,7 +845,10 @@ export default function RefundsPage() {
                 className="p-2 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-colors focus-ring"
                 aria-label="Back to Sales"
               >
-                <ArrowLeft className="w-5 h-5 text-gray-500" />
+                <ArrowLeft
+                  className="w-5 h-5 text-gray-500"
+                  aria-hidden="true"
+                />
               </button>
               <div>
                 <h1 className="text-3xl font-bold text-gray-900 dark:text-white">
@@ -817,33 +863,38 @@ export default function RefundsPage() {
           </div>
           <div className="flex flex-wrap gap-3">
             <button
-              onClick={() => fetchRefunds(true)}
+              onClick={() => void fetchRefunds(true)}
               className="flex items-center gap-2 px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors focus-ring"
               disabled={isRefreshing}
             >
               {isRefreshing ? (
-                <Loader2 className="w-4 h-4 animate-spin" />
+                <Loader2
+                  className="w-4 h-4 animate-spin"
+                  aria-hidden="true"
+                />
               ) : (
-                <RefreshCw className="w-4 h-4" />
+                <RefreshCw className="w-4 h-4" aria-hidden="true" />
               )}
               Refresh
             </button>
             <button
-              onClick={handleExport}
+              onClick={() => void handleExport()}
               disabled={exporting || refunds.length === 0}
               className="flex items-center gap-2 px-4 py-2 bg-brand-500 text-white rounded-lg hover:bg-brand-600 transition-colors disabled:opacity-50 focus-ring"
             >
               {exporting ? (
-                <Loader2 className="w-4 h-4 animate-spin" />
+                <Loader2
+                  className="w-4 h-4 animate-spin"
+                  aria-hidden="true"
+                />
               ) : (
-                <Download className="w-4 h-4" />
+                <Download className="w-4 h-4" aria-hidden="true" />
               )}
               Export
             </button>
           </div>
         </div>
 
-        {/* Stats Cards */}
         <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-7 gap-4 mb-6">
           <StatCard title="Total" value={stats.total} color="brand" />
           <StatCard title="Pending" value={stats.pending} color="warning" />
@@ -853,19 +904,18 @@ export default function RefundsPage() {
           <StatCard title="Cancelled" value={stats.cancelled} color="gray" />
           <StatCard
             title="Total Amount"
-            value={formatCurrency(stats.totalAmount)}
+            value={fmt(stats.totalAmount)}
             color="brand"
           />
         </div>
 
-        {/* Additional Stats */}
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
           <div className="card-brand p-4">
             <p className="text-sm text-gray-500 dark:text-gray-400">
               Average Refund Amount
             </p>
             <p className="text-2xl font-bold text-gray-900 dark:text-white tabular-nums">
-              {formatCurrency(stats.averageRefund)}
+              {fmt(stats.averageRefund)}
             </p>
           </div>
           <div className="card-brand p-4">
@@ -894,11 +944,13 @@ export default function RefundsPage() {
           </div>
         </div>
 
-        {/* Filters */}
         <div className="card-brand p-4 mb-6">
           <div className="grid grid-cols-1 md:grid-cols-5 gap-4">
             <div className="relative">
-              <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-5 h-5" />
+              <Search
+                className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-5 h-5"
+                aria-hidden="true"
+              />
               <input
                 type="text"
                 placeholder="Search by receipt, customer..."
@@ -922,17 +974,19 @@ export default function RefundsPage() {
             <input
               type="date"
               value={filters.startDate}
-              onChange={(e) => handleDateChange('startDate', e.target.value)}
-              className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-brand-500 focus:outline-none bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+              onChange={(e) =>
+                handleDateChange('startDate', e.target.value)
+              }
+              className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-brand-500 focus:outline-none bg-white dark:bg-gray-700 text-gray-900 dark:text-white tabular-nums"
             />
             <input
               type="date"
               value={filters.endDate}
               onChange={(e) => handleDateChange('endDate', e.target.value)}
-              className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-brand-500 focus:outline-none bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+              className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-brand-500 focus:outline-none bg-white dark:bg-gray-700 text-gray-900 dark:text-white tabular-nums"
             />
             <button
-              onClick={() => fetchRefunds()}
+              onClick={() => void fetchRefunds()}
               className="px-4 py-2 bg-brand-500 text-white rounded-lg hover:bg-brand-600 transition-colors focus-ring"
             >
               Apply Filters
@@ -940,7 +994,6 @@ export default function RefundsPage() {
           </div>
         </div>
 
-        {/* Refunds List */}
         {refunds.length === 0 ? (
           <div className="card-brand p-12 text-center">
             <div className="text-6xl mb-4">💰</div>
@@ -987,7 +1040,7 @@ export default function RefundsPage() {
                           {titleCase(refund.status)}
                         </span>
                         <span className="font-bold text-gray-900 dark:text-white tabular-nums">
-                          {formatCurrency(refund.total)}
+                          {fmt(refund.total)}
                         </span>
                       </div>
                     </div>
@@ -995,17 +1048,26 @@ export default function RefundsPage() {
                     <div className="p-6">
                       <div className="flex flex-wrap items-start justify-between gap-4">
                         <div className="space-y-2">
-                          <div className="flex items-center gap-4 text-sm text-gray-500 dark:text-gray-400">
+                          <div className="flex items-center gap-4 text-sm text-gray-500 dark:text-gray-400 flex-wrap">
                             <span className="flex items-center gap-1">
-                              <Users className="w-4 h-4" />
+                              <Users
+                                className="w-4 h-4"
+                                aria-hidden="true"
+                              />
                               {refund.customerName || 'Guest'}
                             </span>
                             <span className="flex items-center gap-1">
-                              <FileText className="w-4 h-4" />
+                              <FileText
+                                className="w-4 h-4"
+                                aria-hidden="true"
+                              />
                               Receipt: #{refund.receiptNumber}
                             </span>
                             <span className="flex items-center gap-1 tabular-nums">
-                              <Package className="w-4 h-4" />
+                              <Package
+                                className="w-4 h-4"
+                                aria-hidden="true"
+                              />
                               {refund.items.length} items
                             </span>
                           </div>
@@ -1032,14 +1094,14 @@ export default function RefundsPage() {
                             }}
                             className="px-3 py-1.5 text-brand-accent-600 dark:text-brand-accent-400 hover:bg-brand-accent-50 dark:hover:bg-brand-accent-900/20 rounded-lg text-sm font-medium transition-colors flex items-center gap-1 focus-ring"
                           >
-                            <Eye className="w-4 h-4" />
+                            <Eye className="w-4 h-4" aria-hidden="true" />
                             Details
                           </button>
                           <button
                             onClick={() => handlePrintRefund(refund)}
                             className="px-3 py-1.5 text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg text-sm font-medium transition-colors flex items-center gap-1 focus-ring"
                           >
-                            <Printer className="w-4 h-4" />
+                            <Printer className="w-4 h-4" aria-hidden="true" />
                             Print
                           </button>
                         </div>
@@ -1059,45 +1121,56 @@ export default function RefundsPage() {
                   disabled={filters.page === 1}
                   className="px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg text-sm hover:bg-gray-50 dark:hover:bg-gray-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors text-gray-700 dark:text-gray-300 focus-ring"
                 >
-                  <ChevronLeft className="w-4 h-4 inline" />
+                  <ChevronLeft
+                    className="w-4 h-4 inline"
+                    aria-hidden="true"
+                  />
                   Previous
                 </button>
                 <div className="flex items-center gap-1">
-                  {Array.from({ length: Math.min(totalPages, 5) }, (_, i) => {
-                    let pageNum: number;
-                    if (totalPages <= 5) {
-                      pageNum = i + 1;
-                    } else if (filters.page <= 3) {
-                      pageNum = i + 1;
-                    } else if (filters.page >= totalPages - 2) {
-                      pageNum = totalPages - 4 + i;
-                    } else {
-                      pageNum = filters.page - 2 + i;
-                    }
-                    return (
-                      <button
-                        key={pageNum}
-                        onClick={() => handlePageChange(pageNum)}
-                        className={`w-9 h-9 rounded-lg text-sm transition-colors tabular-nums focus-ring ${
-                          filters.page === pageNum
-                            ? 'bg-brand-accent-500 text-white'
-                            : 'border border-gray-300 dark:border-gray-600 hover:bg-gray-50 dark:hover:bg-gray-700 text-gray-700 dark:text-gray-300'
-                        }`}
-                      >
-                        {pageNum}
-                      </button>
-                    );
-                  })}
+                  {Array.from(
+                    { length: Math.min(totalPages, 5) },
+                    (_, i) => {
+                      let pageNum: number;
+                      if (totalPages <= 5) {
+                        pageNum = i + 1;
+                      } else if (filters.page <= 3) {
+                        pageNum = i + 1;
+                      } else if (filters.page >= totalPages - 2) {
+                        pageNum = totalPages - 4 + i;
+                      } else {
+                        pageNum = filters.page - 2 + i;
+                      }
+                      return (
+                        <button
+                          key={pageNum}
+                          onClick={() => handlePageChange(pageNum)}
+                          className={`w-9 h-9 rounded-lg text-sm transition-colors tabular-nums focus-ring ${
+                            filters.page === pageNum
+                              ? 'bg-brand-accent-500 text-white'
+                              : 'border border-gray-300 dark:border-gray-600 hover:bg-gray-50 dark:hover:bg-gray-700 text-gray-700 dark:text-gray-300'
+                          }`}
+                        >
+                          {pageNum}
+                        </button>
+                      );
+                    },
+                  )}
                 </div>
                 <button
                   onClick={() =>
-                    handlePageChange(Math.min(totalPages, filters.page + 1))
+                    handlePageChange(
+                      Math.min(totalPages, filters.page + 1),
+                    )
                   }
                   disabled={filters.page === totalPages}
                   className="px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg text-sm hover:bg-gray-50 dark:hover:bg-gray-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors text-gray-700 dark:text-gray-300 focus-ring"
                 >
                   Next
-                  <ChevronRight className="w-4 h-4 inline" />
+                  <ChevronRight
+                    className="w-4 h-4 inline"
+                    aria-hidden="true"
+                  />
                 </button>
               </div>
             )}
@@ -1105,11 +1178,11 @@ export default function RefundsPage() {
         )}
       </div>
 
-      {/* Detail Modal */}
       <AnimatePresence>
         {showDetailModal && selectedRefund && (
           <DetailModal
             refundData={selectedRefund}
+            currency={currency}
             onClose={() => setShowDetailModal(false)}
             onPrint={() => handlePrintRefund(selectedRefund)}
           />
@@ -1119,17 +1192,25 @@ export default function RefundsPage() {
   );
 }
 
-// ============================================
-// DETAIL MODAL
-// ============================================
-
 interface DetailModalProps {
   refundData: Refund;
+  currency?: string;
   onClose: () => void;
   onPrint: () => void;
 }
 
-function DetailModal({ refundData, onClose, onPrint }: DetailModalProps) {
+function DetailModal({ refundData, currency, onClose, onPrint }: DetailModalProps) {
+  /**
+   * Format an amount using the refund's own currency when present,
+   * falling back to the page-level currency, and finally to a
+   * plain number if neither is known.
+   */
+  const fmt = (amount: number): string => {
+    const code = refundData.currency || currency;
+    if (!code) return new Intl.NumberFormat('en-US').format(amount);
+    return formatCurrency(amount, code);
+  };
+
   return (
     <div
       className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-modal p-4"
@@ -1153,7 +1234,7 @@ function DetailModal({ refundData, onClose, onPrint }: DetailModalProps) {
             className="p-2 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-colors focus-ring"
             aria-label="Close"
           >
-            <XCircle className="w-6 h-6 text-gray-500" />
+            <XCircle className="w-6 h-6 text-gray-500" aria-hidden="true" />
           </button>
         </div>
 
@@ -1168,7 +1249,7 @@ function DetailModal({ refundData, onClose, onPrint }: DetailModalProps) {
               {titleCase(refundData.status)}
             </span>
             <span className="text-2xl font-bold text-gray-900 dark:text-white tabular-nums">
-              {formatCurrency(refundData.total)}
+              {fmt(refundData.total)}
             </span>
           </div>
 
@@ -1185,7 +1266,7 @@ function DetailModal({ refundData, onClose, onPrint }: DetailModalProps) {
               <p className="text-sm text-gray-500 dark:text-gray-400">
                 Email
               </p>
-              <p className="font-medium text-gray-900 dark:text-white">
+              <p className="font-medium text-gray-900 dark:text-white truncate">
                 {refundData.customerEmail || 'N/A'}
               </p>
             </div>
@@ -1258,7 +1339,7 @@ function DetailModal({ refundData, onClose, onPrint }: DetailModalProps) {
                     )}
                   </div>
                   <span className="font-bold text-gray-900 dark:text-white tabular-nums flex-shrink-0">
-                    {formatCurrency(item.total)}
+                    {fmt(item.total)}
                   </span>
                 </div>
               ))}
@@ -1272,19 +1353,19 @@ function DetailModal({ refundData, onClose, onPrint }: DetailModalProps) {
                   Subtotal
                 </span>
                 <span className="text-gray-900 dark:text-white tabular-nums">
-                  {formatCurrency(refundData.subtotal)}
+                  {fmt(refundData.subtotal)}
                 </span>
               </div>
               <div className="flex justify-between text-sm">
                 <span className="text-gray-500 dark:text-gray-400">Tax</span>
                 <span className="text-gray-900 dark:text-white tabular-nums">
-                  {formatCurrency(refundData.tax)}
+                  {fmt(refundData.tax)}
                 </span>
               </div>
               <div className="flex justify-between font-bold text-lg pt-2 border-t border-gray-200 dark:border-gray-700">
                 <span className="text-gray-900 dark:text-white">Total</span>
                 <span className="text-brand-accent-600 dark:text-brand-accent-400 tabular-nums">
-                  {formatCurrency(refundData.total)}
+                  {fmt(refundData.total)}
                 </span>
               </div>
             </div>
@@ -1295,7 +1376,7 @@ function DetailModal({ refundData, onClose, onPrint }: DetailModalProps) {
               onClick={onPrint}
               className="px-4 py-2 bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-300 rounded-lg hover:bg-gray-300 dark:hover:bg-gray-600 flex items-center gap-2 focus-ring"
             >
-              <Printer className="w-4 h-4" />
+              <Printer className="w-4 h-4" aria-hidden="true" />
               Print
             </button>
             <button
@@ -1310,10 +1391,6 @@ function DetailModal({ refundData, onClose, onPrint }: DetailModalProps) {
     </div>
   );
 }
-
-// ============================================
-// LOADING SKELETON
-// ============================================
 
 function LoadingSkeleton() {
   return (

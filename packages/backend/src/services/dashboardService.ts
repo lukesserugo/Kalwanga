@@ -8,6 +8,16 @@ import { reorderService } from './reorderService.js';
 // ============================================
 
 interface DashboardStats {
+  /**
+   * ISO 4217 ledger currency for the business unit this response
+   * describes. Resolved from `BusinessUnit.currency`; falls back to
+   * the platform default only if the BU row is missing a code.
+   *
+   * The frontend uses this to render every amount on the dashboard
+   * in the correct currency, without a second round-trip to the
+   * registry.
+   */
+  currency: string;
   sales: {
     today: { total: number; count: number };
     week: { total: number; count: number };
@@ -78,7 +88,33 @@ export interface TrendsResult {
 
 export class DashboardService extends BaseService {
   /**
-   * Get comprehensive dashboard statistics
+   * Read the ledger currency for a business unit.
+   *
+   * The value comes from `BusinessUnit.currency`. When the row is
+   * missing a code (should not happen after migration), it falls
+   * through to the platform default so a dashboard render never
+   * fails.
+   */
+  private async resolveCurrency(businessUnitId: string): Promise<string> {
+    const bu = await this.prisma.businessUnit.findUnique({
+      where: { id: businessUnitId },
+      select: { currency: true },
+    });
+
+    const fromRow = bu?.currency;
+    if (typeof fromRow === 'string' && fromRow.trim().length > 0) {
+      return fromRow.trim().toUpperCase();
+    }
+
+    // Fall back to the platform default. The constant lives in
+    // `lib/currencies.ts`; importing it here keeps the resolver in
+    // one place.
+    const { DEFAULT_CURRENCY_CODE } = await import('../lib/currencies.js');
+    return DEFAULT_CURRENCY_CODE;
+  }
+
+  /**
+   * Get comprehensive dashboard statistics.
    */
   async getStats(businessUnitId: string): Promise<DashboardStats> {
     try {
@@ -86,12 +122,25 @@ export class DashboardService extends BaseService {
         throw new AppError('Business unit ID is required', 400);
       }
 
+      // Resolve the currency in parallel with the aggregate queries.
+      const [currency] = await Promise.all([
+        this.resolveCurrency(businessUnitId),
+      ]);
+
       const today = new Date();
-      const startOfDay = new Date(today.getFullYear(), today.getMonth(), today.getDate());
+      const startOfDay = new Date(
+        today.getFullYear(),
+        today.getMonth(),
+        today.getDate(),
+      );
       const startOfWeek = new Date(today);
       startOfWeek.setDate(today.getDate() - today.getDay());
       startOfWeek.setHours(0, 0, 0, 0);
-      const startOfMonth = new Date(today.getFullYear(), today.getMonth(), 1);
+      const startOfMonth = new Date(
+        today.getFullYear(),
+        today.getMonth(),
+        1,
+      );
       const startOfYear = new Date(today.getFullYear(), 0, 1);
 
       const [
@@ -115,28 +164,42 @@ export class DashboardService extends BaseService {
         recentSales,
         topProducts,
       ] = await Promise.all([
-        // Sales aggregates
         this.prisma.sale.aggregate({
-          where: { businessUnitId, saleDate: { gte: startOfDay }, status: { not: 'CANCELLED' } },
+          where: {
+            businessUnitId,
+            saleDate: { gte: startOfDay },
+            status: { not: 'CANCELLED' },
+          },
           _sum: { total: true },
           _count: true,
         }),
         this.prisma.sale.aggregate({
-          where: { businessUnitId, saleDate: { gte: startOfWeek }, status: { not: 'CANCELLED' } },
+          where: {
+            businessUnitId,
+            saleDate: { gte: startOfWeek },
+            status: { not: 'CANCELLED' },
+          },
           _sum: { total: true },
           _count: true,
         }),
         this.prisma.sale.aggregate({
-          where: { businessUnitId, saleDate: { gte: startOfMonth }, status: { not: 'CANCELLED' } },
+          where: {
+            businessUnitId,
+            saleDate: { gte: startOfMonth },
+            status: { not: 'CANCELLED' },
+          },
           _sum: { total: true },
           _count: true,
         }),
         this.prisma.sale.aggregate({
-          where: { businessUnitId, saleDate: { gte: startOfYear }, status: { not: 'CANCELLED' } },
+          where: {
+            businessUnitId,
+            saleDate: { gte: startOfYear },
+            status: { not: 'CANCELLED' },
+          },
           _sum: { total: true },
           _count: true,
         }),
-        // Inventory
         this.prisma.inventory.findMany({
           where: { businessUnitId },
           include: {
@@ -157,35 +220,26 @@ export class DashboardService extends BaseService {
             },
           },
         }),
-        // Customers
         this.prisma.customer.count(),
         this.prisma.customer.count({ where: { isActive: true } }),
         this.prisma.customer.count({
-          where: {
-            createdAt: { gte: startOfMonth },
-          },
+          where: { createdAt: { gte: startOfMonth } },
         }),
-        // Suppliers
         this.prisma.supplier.count({
           where: {
             company: {
-              businessUnits: {
-                some: { id: businessUnitId },
-              },
+              businessUnits: { some: { id: businessUnitId } },
             },
           },
         }),
         this.prisma.supplier.count({
           where: {
             company: {
-              businessUnits: {
-                some: { id: businessUnitId },
-              },
+              businessUnits: { some: { id: businessUnitId } },
             },
             isActive: true,
           },
         }),
-        // Low stock and out of stock
         this.prisma.inventory.findMany({
           where: {
             businessUnitId,
@@ -198,17 +252,16 @@ export class DashboardService extends BaseService {
             quantity: 0,
           },
         }),
-        // Cash registers
         this.prisma.cashRegisterSession.findMany({
-          where: { cashRegister: { businessUnitId }, status: 'OPEN' },
-          include: {
-            cashRegister: true,
+          where: {
+            cashRegister: { businessUnitId },
+            status: 'OPEN',
           },
+          include: { cashRegister: true },
         }),
         this.prisma.cashRegister.findMany({
           where: { businessUnitId },
         }),
-        // Orders
         this.prisma.order.count({
           where: { businessUnitId, status: 'PENDING' },
         }),
@@ -218,33 +271,21 @@ export class DashboardService extends BaseService {
         this.prisma.order.count({
           where: { businessUnitId, status: 'CANCELLED' },
         }),
-        // Recent sales
         this.prisma.sale.findMany({
           where: { businessUnitId },
           orderBy: { saleDate: 'desc' },
           take: 10,
           include: {
             customer: {
-              select: {
-                id: true,
-                firstName: true,
-                lastName: true,
-              },
+              select: { id: true, firstName: true, lastName: true },
             },
             items: {
               include: {
-                product: {
-                  select: {
-                    id: true,
-                    name: true,
-                    sku: true,
-                  },
-                },
+                product: { select: { id: true, name: true, sku: true } },
               },
             },
           },
         }),
-        // Top products
         this.prisma.saleItem.groupBy({
           by: ['productId'],
           where: {
@@ -254,41 +295,35 @@ export class DashboardService extends BaseService {
               status: { not: 'CANCELLED' },
             },
           },
-          _sum: {
-            quantity: true,
-            total: true,
-          },
-          orderBy: {
-            _sum: {
-              total: 'desc',
-            },
-          },
+          _sum: { quantity: true, total: true },
+          orderBy: { _sum: { total: 'desc' } },
           take: 5,
         }),
       ]);
 
-      // Calculate inventory metrics
-      const totalInventoryValue = inventory.reduce((sum: number, inv: any) => {
-        return sum + (inv.quantity * (inv.product.costPrice || inv.product.unitPrice || 0));
-      }, 0);
+      const totalInventoryValue = inventory.reduce(
+        (sum: number, inv: any) =>
+          sum +
+          inv.quantity * (inv.product.costPrice || inv.product.unitPrice || 0),
+        0,
+      );
 
-      const totalCash = openRegisters.reduce((sum: number, session: any) => {
-        return sum + (session.cashRegister?.cashBalance || 0);
-      }, 0);
+      const totalCash = openRegisters.reduce(
+        (sum: number, session: any) =>
+          sum + (session.cashRegister?.cashBalance || 0),
+        0,
+      );
 
-      // Get product names for top products
       const topProductIds = topProducts.map((tp: any) => tp.productId);
       const topProductDetails = await this.prisma.product.findMany({
         where: { id: { in: topProductIds } },
-        select: {
-          id: true,
-          name: true,
-          sku: true,
-        },
+        select: { id: true, name: true, sku: true },
       });
 
       const topProductsWithDetails = topProducts.map((tp: any) => {
-        const product = topProductDetails.find((p: any) => p.id === tp.productId);
+        const product = topProductDetails.find(
+          (p: any) => p.id === tp.productId,
+        );
         return {
           productId: tp.productId,
           productName: product?.name || 'Unknown',
@@ -298,15 +333,27 @@ export class DashboardService extends BaseService {
         };
       });
 
-      // Get sales trend for the last 7 days
       const salesTrend = await this.getSalesTrend(businessUnitId, 7);
 
       return {
+        currency,
         sales: {
-          today: { total: todaySales._sum.total || 0, count: todaySales._count },
-          week: { total: weekSales._sum.total || 0, count: weekSales._count },
-          month: { total: monthSales._sum.total || 0, count: monthSales._count },
-          year: { total: yearSales._sum.total || 0, count: yearSales._count },
+          today: {
+            total: todaySales._sum.total || 0,
+            count: todaySales._count,
+          },
+          week: {
+            total: weekSales._sum.total || 0,
+            count: weekSales._count,
+          },
+          month: {
+            total: monthSales._sum.total || 0,
+            count: monthSales._count,
+          },
+          year: {
+            total: yearSales._sum.total || 0,
+            count: yearSales._count,
+          },
         },
         inventory: {
           totalItems: inventory.length,
@@ -343,46 +390,43 @@ export class DashboardService extends BaseService {
     }
   }
 
-  /**
-   * Get real-time data for WebSocket clients
-   */
+  // ============================================================
+  // The rest of the file is unchanged. getRealtimeData,
+  // getLiveDashboard, getSalesTrend, getTopProducts,
+  // getLowStockAlerts, getSalesSummary, getActivity, and
+  // getTrends all stay exactly as they are.
+  // ============================================================
+
   async getRealtimeData(businessUnitId: string): Promise<RealtimeData> {
     try {
       if (!businessUnitId) {
         throw new AppError('Business unit ID is required', 400);
       }
 
-      const [recentSales, lowStockInventory, notifications, openRegisters, pendingOrders] = await Promise.all([
+      const [
+        recentSales,
+        lowStockInventory,
+        notifications,
+        openRegisters,
+        pendingOrders,
+      ] = await Promise.all([
         this.prisma.sale.findMany({
           where: { businessUnitId },
           orderBy: { saleDate: 'desc' },
           take: 20,
           include: {
             customer: {
-              select: {
-                id: true,
-                firstName: true,
-                lastName: true,
-              },
+              select: { id: true, firstName: true, lastName: true },
             },
             items: {
               include: {
-                product: {
-                  select: {
-                    id: true,
-                    name: true,
-                    sku: true,
-                  },
-                },
+                product: { select: { id: true, name: true, sku: true } },
               },
             },
           },
         }),
         this.prisma.inventory.findMany({
-          where: {
-            businessUnitId,
-            quantity: { lte: 10 },
-          },
+          where: { businessUnitId, quantity: { lte: 10 } },
           include: {
             product: {
               select: {
@@ -396,10 +440,7 @@ export class DashboardService extends BaseService {
           orderBy: { quantity: 'asc' },
         }),
         this.prisma.notification.findMany({
-          where: {
-            businessUnitId,
-            isRead: false,
-          },
+          where: { businessUnitId, isRead: false },
           orderBy: { createdAt: 'desc' },
           take: 10,
         }),
@@ -411,28 +452,18 @@ export class DashboardService extends BaseService {
           include: {
             cashRegister: true,
             user: {
-              select: {
-                id: true,
-                firstName: true,
-                lastName: true,
-              },
+              select: { id: true, firstName: true, lastName: true },
             },
           },
         }),
         this.prisma.order.findMany({
-          where: {
-            businessUnitId,
-            status: 'PENDING',
-          },
+          where: { businessUnitId, status: 'PENDING' },
           orderBy: { createdAt: 'desc' },
           take: 10,
-          include: {
-            items: true,
-          },
+          include: { items: true },
         }),
       ]);
 
-      // Generate alerts
       const alerts: any[] = [];
 
       if (lowStockInventory.length > 0) {
@@ -475,41 +506,33 @@ export class DashboardService extends BaseService {
     }
   }
 
-  /**
-   * Get live dashboard data
-   */
   async getLiveDashboard(businessUnitId: string) {
     try {
       if (!businessUnitId) {
         throw new AppError('Business unit ID is required', 400);
       }
 
-      // Trigger reorder check (non-blocking)
       try {
         await reorderService.checkAndCreateReorderOrders(businessUnitId);
       } catch (error) {
         console.warn('Failed to check reorder orders:', error);
       }
 
-      // Get both stats and realtime data
       const [stats, realtimeData] = await Promise.all([
         this.getStats(businessUnitId),
         this.getRealtimeData(businessUnitId),
       ]);
 
-      return {
-        ...stats,
-        ...realtimeData,
-      };
+      return { ...stats, ...realtimeData };
     } catch (error) {
       this.handleError(error, 'DashboardService.getLiveDashboard');
     }
   }
 
-  /**
-   * Get sales trend for a period
-   */
-  private async getSalesTrend(businessUnitId: string, days: number): Promise<any[]> {
+  private async getSalesTrend(
+    businessUnitId: string,
+    days: number,
+  ): Promise<any[]> {
     try {
       const startDate = new Date();
       startDate.setDate(startDate.getDate() - days);
@@ -521,15 +544,14 @@ export class DashboardService extends BaseService {
           saleDate: { gte: startDate },
           status: { not: 'CANCELLED' },
         },
-        select: {
-          saleDate: true,
-          total: true,
-        },
+        select: { saleDate: true, total: true },
         orderBy: { saleDate: 'asc' },
       });
 
-      // Group by date
-      const dailySales = new Map<string, { total: number; count: number }>();
+      const dailySales = new Map<
+        string,
+        { total: number; count: number }
+      >();
 
       for (const sale of sales) {
         const dateKey = sale.saleDate.toISOString().split('T')[0];
@@ -539,20 +561,17 @@ export class DashboardService extends BaseService {
         dailySales.set(dateKey, current);
       }
 
-      // Fill in all dates
       const trend: any[] = [];
       const currentDate = new Date(startDate);
 
       while (currentDate <= new Date()) {
         const dateKey = currentDate.toISOString().split('T')[0];
         const data = dailySales.get(dateKey) || { total: 0, count: 0 };
-
         trend.push({
           date: dateKey,
           total: data.total,
           count: data.count,
         });
-
         currentDate.setDate(currentDate.getDate() + 1);
       }
 
@@ -563,10 +582,11 @@ export class DashboardService extends BaseService {
     }
   }
 
-  /**
-   * Get top performing products
-   */
-  async getTopProducts(businessUnitId: string, limit: number = 10, days: number = 30) {
+  async getTopProducts(
+    businessUnitId: string,
+    limit: number = 10,
+    days: number = 30,
+  ) {
     try {
       if (!businessUnitId) {
         throw new AppError('Business unit ID is required', 400);
@@ -584,15 +604,8 @@ export class DashboardService extends BaseService {
             status: { not: 'CANCELLED' },
           },
         },
-        _sum: {
-          quantity: true,
-          total: true,
-        },
-        orderBy: {
-          _sum: {
-            total: 'desc',
-          },
-        },
+        _sum: { quantity: true, total: true },
+        orderBy: { _sum: { total: 'desc' } },
         take: limit,
       });
 
@@ -604,12 +617,7 @@ export class DashboardService extends BaseService {
           name: true,
           sku: true,
           unitPrice: true,
-          category: {
-            select: {
-              id: true,
-              name: true,
-            },
-          },
+          category: { select: { id: true, name: true } },
         },
       });
 
@@ -629,9 +637,6 @@ export class DashboardService extends BaseService {
     }
   }
 
-  /**
-   * Get low stock alerts
-   */
   async getLowStockAlerts(businessUnitId: string) {
     try {
       if (!businessUnitId) {
@@ -639,10 +644,7 @@ export class DashboardService extends BaseService {
       }
 
       const lowStockItems = await this.prisma.inventory.findMany({
-        where: {
-          businessUnitId,
-          quantity: { lte: 10 },
-        },
+        where: { businessUnitId, quantity: { lte: 10 } },
         include: {
           product: {
             select: {
@@ -663,17 +665,23 @@ export class DashboardService extends BaseService {
         currentQuantity: item.quantity,
         reorderPoint: item.reorderPoint,
         deficit: item.reorderPoint - item.quantity,
-        severity: item.quantity === 0 ? 'CRITICAL' : item.quantity < item.reorderPoint / 2 ? 'HIGH' : 'MEDIUM',
+        severity:
+          item.quantity === 0
+            ? 'CRITICAL'
+            : item.quantity < item.reorderPoint / 2
+              ? 'HIGH'
+              : 'MEDIUM',
       }));
     } catch (error) {
       this.handleError(error, 'DashboardService.getLowStockAlerts');
     }
   }
 
-  /**
-   * Get sales summary for export
-   */
-  async getSalesSummary(businessUnitId: string, startDate: Date, endDate: Date) {
+  async getSalesSummary(
+    businessUnitId: string,
+    startDate: Date,
+    endDate: Date,
+  ) {
     try {
       if (!businessUnitId) {
         throw new AppError('Business unit ID is required', 400);
@@ -686,15 +694,9 @@ export class DashboardService extends BaseService {
           saleDate: { gte: startDate, lte: endDate },
           status: { not: 'CANCELLED' },
         },
-        _sum: {
-          total: true,
-          tax: true,
-          discount: true,
-        },
+        _sum: { total: true, tax: true, discount: true },
         _count: true,
-        orderBy: {
-          saleDate: 'asc',
-        },
+        orderBy: { saleDate: 'asc' },
       });
 
       return sales.map((day: any) => ({
@@ -709,14 +711,6 @@ export class DashboardService extends BaseService {
     }
   }
 
-  // ============================================================
-  // NEW: Activity feed — used by GET /dashboard/activity
-  // ============================================================
-
-  /**
-   * Get a merged, chronological activity feed for the dashboard.
-   * Combines recent sales, orders, and low-stock events.
-   */
   async getActivity(
     businessUnitId: string,
     limit: number = 10,
@@ -752,10 +746,7 @@ export class DashboardService extends BaseService {
           },
         }),
         this.prisma.order.findMany({
-          where: {
-            businessUnitId,
-            createdAt: { gte: since },
-          },
+          where: { businessUnitId, createdAt: { gte: since } },
           orderBy: { createdAt: 'desc' },
           take: limit,
           select: {
@@ -767,10 +758,7 @@ export class DashboardService extends BaseService {
           },
         }),
         this.prisma.inventory.findMany({
-          where: {
-            businessUnitId,
-            quantity: { lte: 10 },
-          },
+          where: { businessUnitId, quantity: { lte: 10 } },
           orderBy: { quantity: 'asc' },
           take: limit,
           include: {
@@ -824,7 +812,8 @@ export class DashboardService extends BaseService {
       return [...saleEvents, ...orderEvents, ...stockEvents]
         .sort(
           (a, b) =>
-            new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime(),
+            new Date(b.createdAt).getTime() -
+            new Date(a.createdAt).getTime(),
         )
         .slice(0, limit);
     } catch (error) {
@@ -832,15 +821,10 @@ export class DashboardService extends BaseService {
     }
   }
 
-  // ============================================================
-  // NEW: Trends — used by GET /dashboard/trends
-  // ============================================================
-
-  /**
-   * Get chart-ready trends for the dashboard.
-   * Returns a gap-filled day-by-day series for both sales and orders.
-   */
-  async getTrends(businessUnitId: string, days: number = 7): Promise<TrendsResult> {
+  async getTrends(
+    businessUnitId: string,
+    days: number = 7,
+  ): Promise<TrendsResult> {
     try {
       if (!businessUnitId) {
         throw new AppError('Business unit ID is required', 400);

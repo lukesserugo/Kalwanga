@@ -1,13 +1,14 @@
-// D:\Projects\Kalwanga\packages\web\app\(dashboard)\admin\catalog\add\page.tsx
+// packages/web/app/(dashboard)/admin/catalog/add/page.tsx
 
 'use client';
 
-import { useState, useEffect, useRef, useCallback } from 'react';
+import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { useRouter, useParams } from 'next/navigation';
 import Link from 'next/link';
+import Image from 'next/image';
 import {
   Lock, Upload, X, Image as ImageIcon, Eye,
-  Plus, Trash2, Layers, DollarSign, Save,
+  Plus, Trash2, Layers, Banknote, Save,
   Loader2, AlertCircle, CheckCircle, Star,
   Barcode, QrCode, Copy, Check, Info, AlertTriangle,
   Search, Package, Database, ArrowLeft, Download,
@@ -23,9 +24,43 @@ import { categoryService } from '../../../../../services/categoryService';
 import { supplierService } from '../../../../../services/supplierService';
 import { barcodeService } from '../../../../../services/barcodeService';
 import { toast } from '../../../../../utils/toast-manager';
+import { formatCurrency } from '../../../../../utils/formatters';
 import { usePermission } from '../../../../../hooks/usePermission';
 import { useAuth } from '../../../../../hooks/useAuth';
 import { PermissionResource } from '../../../../../types/enums';
+
+// ============================================
+// DOM IMAGE ALIAS
+// ============================================
+//
+// The DOM `Image` constructor and the `next/image` component share
+// a name. Inside this module we alias the DOM constructor as
+// `DomImage` so `compressImage` can use the imperative API while
+// JSX continues to use the Next.js component. Without this alias,
+// `new Image()` resolves to the React component and `.onload` is
+// undefined at runtime.
+//
+// The fallback class covers the SSR pass, where `window` does not
+// exist. Nothing server-side ever calls `new DomImage()`, because
+// `compressImage` is only invoked from browser event handlers, so
+// the fallback is inert.
+
+
+type DomImageConstructor = new (
+  width?: number,
+  height?: number,
+) => HTMLImageElement;
+
+const DomImage: DomImageConstructor =
+  typeof window !== 'undefined'
+    ? (window.Image as DomImageConstructor)
+    : (class {
+        onload: (() => void) | null = null;
+        onerror: ((err: unknown) => void) | null = null;
+        src = '';
+        width = 0;
+        height = 0;
+      } as unknown as DomImageConstructor);
 
 // ============================================
 // TYPES
@@ -60,6 +95,8 @@ interface InventoryItem {
   hasProduct: boolean;
   productId: string | null;
   businessUnitId?: string;
+  /** Resolved currency code for this inventory row's business unit. */
+  currency?: string;
 }
 
 interface Variant {
@@ -96,22 +133,6 @@ interface BarcodeDisplayData {
   format: string;
 }
 
-/**
- * Payload shape sent to `productService.createProductFromInventory`.
- *
- * ⚠ This is the local declaration of the payload the page builds.
- *   It is structurally compatible with
- *   `CreateProductFromInventoryPayload` in the service — if you
- *   change either shape, keep them aligned. The service's
- *   parameter type is the authoritative one; this interface exists
- *   so the page can build the object with full type-checking before
- *   handing it off.
- *
- * ⚠ The local `Variant` interface deliberately omits
- *   `productId` / `createdAt` / `updatedAt` — those are populated
- *   by the backend. That matches `CreateVariantPayload` on the
- *   service side.
- */
 interface ProductPayload {
   name: string;
   sku: string;
@@ -176,6 +197,67 @@ const EMPTY_VARIANT: Variant = {
 };
 
 // ============================================
+// PRODUCT IMAGE
+// ============================================
+//
+// Wraps `next/image` with the two behaviours this admin form needs:
+//
+//   1. `unoptimized` — every source is a user-uploaded data URL
+//      (from `FileReader`) or a runtime-written `/uploads/...`
+//      path. `next/image`'s built-in optimiser cannot process
+//      either, so optimisation is bypassed and the bytes are
+//      served verbatim.
+//
+//   2. Error fallback — when a URL is broken (a stale
+//      `/uploads/...` path, a deleted file, a truncated data
+//      URL), the component swaps to `PLACEHOLDER_IMAGE` so the
+//      layout does not break.
+//
+// The `useEffect` re-syncs the internal src when the `src` prop
+// changes, so a re-uploaded image replaces the previous one
+// rather than staying pinned to the fallback.
+//
+// This is a client component; `next/image` works fine inside one.
+
+interface ProductImageProps {
+  src: string | null | undefined;
+  alt: string;
+  /** Intrinsic width passed to `next/image`. */
+  width: number;
+  /** Intrinsic height passed to `next/image`. */
+  height: number;
+  className?: string;
+}
+
+function ProductImage({
+  src,
+  alt,
+  width,
+  height,
+  className,
+}: ProductImageProps) {
+  const [currentSrc, setCurrentSrc] = useState<string>(
+    src || PLACEHOLDER_IMAGE,
+  );
+
+  useEffect(() => {
+    setCurrentSrc(src || PLACEHOLDER_IMAGE);
+  }, [src]);
+
+  return (
+    <Image
+      src={currentSrc}
+      alt={alt}
+      width={width}
+      height={height}
+      unoptimized
+      className={className}
+      onError={() => setCurrentSrc(PLACEHOLDER_IMAGE)}
+    />
+  );
+}
+
+// ============================================
 // HELPERS
 // ============================================
 
@@ -227,7 +309,12 @@ function compressImage(
   quality: number = 0.85
 ): Promise<string> {
   return new Promise((resolve, reject) => {
-    const img = new Image();
+    // ⚠ `DomImage` is `window.Image`, aliased at the top of the file
+    //   so it does not collide with the `Image` component imported
+    //   from `next/image`. Using the bare `Image` here would resolve
+    //   to the React component and `.onload` would be undefined.
+    const img = new DomImage();
+
     img.onload = () => {
       try {
         const canvas = document.createElement('canvas');
@@ -266,7 +353,15 @@ function compressImage(
         reject(error);
       }
     };
-    img.onerror = reject;
+
+    img.onerror = () => {
+      reject(
+        new Error(
+          'Could not decode the selected image. It may be corrupt or in an unsupported format.'
+        )
+      );
+    };
+
     img.src = dataUrl;
   });
 }
@@ -274,6 +369,7 @@ function compressImage(
 function processImageFile(file: File): Promise<string> {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
+
     reader.onloadend = async () => {
       try {
         const result = reader.result as string;
@@ -288,7 +384,10 @@ function processImageFile(file: File): Promise<string> {
         reject(error);
       }
     };
-    reader.onerror = reject;
+
+    reader.onerror = () =>
+      reject(new Error(`Could not read file: ${file.name}`));
+
     reader.readAsDataURL(file);
   });
 }
@@ -398,6 +497,11 @@ function mapToInventoryItem(raw: any, fallbackBU: string): InventoryItem | null 
     hasProduct: !!raw.productId || !!raw.hasProduct || !!raw.product,
     productId: raw.productId || raw.product?.id || null,
     businessUnitId: raw.businessUnitId || fallbackBU,
+    currency:
+      raw.currency ||
+      raw.businessUnit?.currency ||
+      raw.product?.businessUnit?.currency ||
+      undefined,
   };
 }
 
@@ -409,7 +513,13 @@ export default function AddProductPage() {
   const router = useRouter();
   const params = useParams<{ id?: string }>();
   const { user } = useAuth();
-  const { canCreate, canManage, isLoading: permissionLoading } = usePermission();
+  const {
+    canCreate,
+    canManage,
+    getBusinessUnits,
+    isLoading: permissionLoading,
+  } = usePermission();
+  const availableBusinessUnits = getBusinessUnits();
 
   const [loading, setLoading] = useState(false);
   const [loadingData, setLoadingData] = useState(true);
@@ -446,6 +556,23 @@ export default function AddProductPage() {
   const [inventoryLoading, setInventoryLoading] = useState(false);
   const [businessUnitId, setBusinessUnitId] = useState<string>('');
   const [inventoryLoadError, setInventoryLoadError] = useState<string | null>(null);
+
+  const inventoryBusinessUnitId =
+    selectedInventory?.businessUnitId || businessUnitId;
+  const ledgerCurrency = useMemo(() => {
+    const businessUnitCurrency = availableBusinessUnits.find(
+      (unit) => unit.id === inventoryBusinessUnitId,
+    )?.currency;
+    const candidates = [selectedInventory?.currency, businessUnitCurrency];
+    return candidates.find(
+      (code): code is string =>
+        typeof code === 'string' && /^[A-Za-z]{3}$/.test(code.trim()),
+    )?.trim().toUpperCase() ?? null;
+  }, [
+    availableBusinessUnits,
+    inventoryBusinessUnitId,
+    selectedInventory?.currency,
+  ]);
 
   const [autoGenerateSKU, setAutoGenerateSKU] = useState(true);
 
@@ -487,6 +614,12 @@ export default function AddProductPage() {
     canManage(PermissionResource.PRODUCT);
 
   const autoSelectedRef = useRef(false);
+
+  const fmt = useCallback(
+    (value: number): string =>
+      ledgerCurrency ? formatCurrency(value, ledgerCurrency) : '—',
+    [ledgerCurrency],
+  );
 
   const fetchCategories = useCallback(async () => {
     try {
@@ -1278,6 +1411,25 @@ export default function AddProductPage() {
         return;
       }
 
+      if (!ledgerCurrency) {
+        const msg =
+          'The linked inventory business unit has no resolved ledger currency. Update its settings before creating the product.';
+        setErrors((prev) => ({ ...prev, general: msg }));
+        toast.error(msg);
+        return;
+      }
+
+      if (
+        selectedInventory?.businessUnitId &&
+        selectedInventory.businessUnitId !== resolvedBusinessUnitId
+      ) {
+        const msg =
+          'The selected inventory belongs to a different business unit. Select inventory from the active business unit.';
+        setErrors((prev) => ({ ...prev, general: msg }));
+        toast.error(msg);
+        return;
+      }
+
       setLoading(true);
 
       try {
@@ -1333,12 +1485,6 @@ export default function AddProductPage() {
             ? formData.categoryId
             : undefined;
 
-        // ── The payload handed to the service ──────────────────
-        // `ProductPayload` (above) and
-        // `CreateProductFromInventoryPayload` (in the service) are
-        // structurally compatible. This interface alias makes the
-        // dependency explicit so a drift between the two shapes
-        // fails the build rather than the runtime.
         const productData: ProductPayload = {
           name: formData.name.trim(),
           sku: formData.sku.trim().toUpperCase(),
@@ -1374,12 +1520,6 @@ export default function AddProductPage() {
           createdBy: user?.id || 'system',
         };
 
-        // ⚠ No cast needed. `CreateProductFromInventoryPayload` on
-        //   the service side accepts this shape as-is — the local
-        //   `Variant` interface intentionally omits the
-        //   server-managed fields (`productId`, `createdAt`,
-        //   `updatedAt`), matching `CreateVariantPayload` on the
-        //   service.
         const payload: CreateProductFromInventoryPayload = productData;
 
         await productService.createProductFromInventory(
@@ -1454,13 +1594,12 @@ export default function AddProductPage() {
       <div className="space-y-6">
         {previewImage && (
           <div className="relative rounded-lg overflow-hidden bg-gray-100 dark:bg-gray-700 aspect-video max-w-2xl mx-auto">
-            <img
+            <ProductImage
               src={previewImage}
               alt="Product preview"
+              width={640}
+              height={360}
               className="w-full h-full object-contain"
-              onError={(e) => {
-                (e.target as HTMLImageElement).src = PLACEHOLDER_IMAGE;
-              }}
             />
             <div className="absolute bottom-2 right-2">
               <span className="text-xs bg-black/50 text-white px-2 py-1 rounded">
@@ -1480,13 +1619,12 @@ export default function AddProductPage() {
                   : 'border-gray-200 dark:border-gray-600'
               } group hover:border-brand-400 transition-all`}
             >
-              <img
+              <ProductImage
                 src={image}
                 alt={`Product ${index + 1}`}
+                width={96}
+                height={96}
                 className="w-full h-full object-cover"
-                onError={(e) => {
-                  (e.target as HTMLImageElement).src = PLACEHOLDER_IMAGE;
-                }}
               />
               <div className="absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center gap-1">
                 <button
@@ -1576,7 +1714,7 @@ export default function AddProductPage() {
           Access Restricted
         </h2>
         <p className="text-gray-500 dark:text-gray-400 mt-2 text-center max-w-md">
-          You don't have permission to add products. Please contact your administrator.
+          You don&apos;t have permission to add products. Please contact your administrator.
         </p>
         <button
           onClick={() => router.push('/admin/catalog')}
@@ -1623,6 +1761,12 @@ export default function AddProductPage() {
                   ? 'Update existing product information'
                   : 'Select an inventory item to create a product for sales'}
               </p>
+              <p className="text-xs text-gray-400 dark:text-gray-500 mt-1">
+                Amounts are shown in{' '}
+                <span className="font-medium">
+                  {ledgerCurrency ?? 'Currency unresolved'}
+                </span>
+              </p>
             </div>
           </div>
           <Link
@@ -1655,6 +1799,10 @@ export default function AddProductPage() {
                       </span>
                       <span>•</span>
                       <span>Location: {selectedInventory.location}</span>
+                      <span>•</span>
+                      <span className="tabular-nums">
+                        {fmt(selectedInventory.unitPrice)}
+                      </span>
                     </div>
                   </div>
                   {!isEditMode && (
@@ -1797,6 +1945,10 @@ export default function AddProductPage() {
                               </span>
                               <span>•</span>
                               <span>Location: {item.location}</span>
+                              <span>•</span>
+                              <span className="tabular-nums">
+                                {fmt(item.unitPrice)}
+                              </span>
                               {item.barcode && (
                                 <>
                                   <span>•</span>
@@ -1850,13 +2002,12 @@ export default function AddProductPage() {
                     <p className="text-xs text-gray-500 dark:text-gray-400 mb-2 text-center">
                       Barcode
                     </p>
-                    <img
+                    <ProductImage
                       src={barcodeData.barcodeUrl}
                       alt="Barcode"
+                      width={320}
+                      height={120}
                       className="w-full max-w-xs mx-auto h-auto"
-                      onError={(e) => {
-                        (e.target as HTMLImageElement).src = PLACEHOLDER_IMAGE;
-                      }}
                     />
                     <p className="text-sm font-mono text-center mt-2 text-gray-800 dark:text-gray-200">
                       {barcodeData.barcode}
@@ -1871,13 +2022,12 @@ export default function AddProductPage() {
                       <p className="text-xs text-gray-500 dark:text-gray-400 mb-2 text-center">
                         QR Code
                       </p>
-                      <img
+                      <ProductImage
                         src={barcodeData.qrCodeUrl}
                         alt="QR Code"
+                        width={128}
+                        height={128}
                         className="w-32 h-32 mx-auto object-contain"
-                        onError={(e) => {
-                          (e.target as HTMLImageElement).src = PLACEHOLDER_IMAGE;
-                        }}
                       />
                     </div>
                   )}
@@ -1920,7 +2070,7 @@ export default function AddProductPage() {
             <nav className="flex gap-2 sm:gap-4 py-2">
               {[
                 { id: 'basic', label: 'Basic Info', icon: Info },
-                { id: 'pricing', label: 'Pricing', icon: DollarSign },
+                { id: 'pricing', label: 'Pricing', icon: Banknote },
                 { id: 'inventory', label: 'Inventory', icon: Package },
                 { id: 'images', label: 'Images', icon: ImageIcon },
                 { id: 'variants', label: 'Variants', icon: Layers },
@@ -2266,9 +2416,6 @@ export default function AddProductPage() {
                       Unit Price <span className="text-brand-accent-500">*</span>
                     </label>
                     <div className="relative">
-                      <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-500 dark:text-gray-400">
-                        $
-                      </span>
                       <input
                         type="number"
                         name="unitPrice"
@@ -2280,13 +2427,17 @@ export default function AddProductPage() {
                           setFormData({ ...formData, unitPrice: e.target.value })
                         }
                         onBlur={(e) => handleBlur('unitPrice', e.target.value)}
-                        className={`w-full pl-8 pr-3 py-2 border rounded-lg focus:ring-2 focus:ring-brand-500 focus:border-brand-500 dark:focus:ring-brand-400 focus:outline-none bg-white dark:bg-gray-700 text-gray-900 dark:text-white placeholder-gray-400 dark:placeholder-gray-500 transition-colors duration-200 tabular-nums ${
+                        className={`w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-brand-500 focus:border-brand-500 dark:focus:ring-brand-400 focus:outline-none bg-white dark:bg-gray-700 text-gray-900 dark:text-white placeholder-gray-400 dark:placeholder-gray-500 transition-colors duration-200 tabular-nums ${
                           errors.unitPrice
                             ? 'border-brand-accent-500 dark:border-brand-accent-500'
                             : 'border-gray-300 dark:border-gray-600'
                         }`}
                         placeholder="0.00"
+                        disabled={!ledgerCurrency}
                       />
+                      <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs font-medium text-gray-400 dark:text-gray-500 pointer-events-none">
+                        {ledgerCurrency ?? '—'}
+                      </span>
                     </div>
                     {errors.unitPrice && (
                       <p className="mt-1 text-sm text-brand-accent-500 dark:text-brand-accent-400">
@@ -2299,9 +2450,6 @@ export default function AddProductPage() {
                       Cost Price
                     </label>
                     <div className="relative">
-                      <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-500 dark:text-gray-400">
-                        $
-                      </span>
                       <input
                         type="number"
                         step="0.01"
@@ -2310,9 +2458,13 @@ export default function AddProductPage() {
                         onChange={(e) =>
                           setFormData({ ...formData, costPrice: e.target.value })
                         }
-                        className="w-full pl-8 pr-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-brand-500 focus:border-brand-500 dark:focus:ring-brand-400 focus:outline-none bg-white dark:bg-gray-700 text-gray-900 dark:text-white placeholder-gray-400 dark:placeholder-gray-500 transition-colors duration-200 tabular-nums"
+                        className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-brand-500 focus:border-brand-500 dark:focus:ring-brand-400 focus:outline-none bg-white dark:bg-gray-700 text-gray-900 dark:text-white placeholder-gray-400 dark:placeholder-gray-500 transition-colors duration-200 tabular-nums"
                         placeholder="0.00"
+                        disabled={!ledgerCurrency}
                       />
+                      <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs font-medium text-gray-400 dark:text-gray-500 pointer-events-none">
+                        {ledgerCurrency ?? '—'}
+                      </span>
                     </div>
                   </div>
                 </div>
@@ -2346,7 +2498,7 @@ export default function AddProductPage() {
                           Unit Price:
                         </span>
                         <span className="font-medium text-gray-900 dark:text-white ml-2 tabular-nums">
-                          ${parseFloat(formData.unitPrice || '0').toFixed(2)}
+                          {fmt(parseFloat(formData.unitPrice || '0'))}
                         </span>
                       </div>
                       <div>
@@ -2354,7 +2506,7 @@ export default function AddProductPage() {
                           Cost Price:
                         </span>
                         <span className="font-medium text-gray-900 dark:text-white ml-2 tabular-nums">
-                          ${parseFloat(formData.costPrice || '0').toFixed(2)}
+                          {fmt(parseFloat(formData.costPrice || '0'))}
                         </span>
                       </div>
                       <div>
@@ -2448,9 +2600,18 @@ export default function AddProductPage() {
                           </span>
                         </div>
                       )}
+                      <div>
+                        <span className="text-gray-600 dark:text-gray-400">
+                          Unit Price:
+                        </span>
+                        <span className="font-medium text-gray-900 dark:text-white ml-1 block tabular-nums">
+                          {fmt(selectedInventory.unitPrice)}
+                        </span>
+                      </div>
                     </div>
                     <div className="mt-3 pt-3 border-t border-success-200 dark:border-success-700 text-xs text-gray-500 dark:text-gray-400">
                       Stock changes to this product will update the linked inventory.
+                      All amounts are in {ledgerCurrency}.
                     </div>
                   </div>
                 )}
@@ -2594,7 +2755,9 @@ export default function AddProductPage() {
                             </p>
                             <div className="flex flex-wrap items-center gap-4 text-sm text-gray-500 dark:text-gray-400 mt-1">
                               <span>SKU: {variant.sku}</span>
-                              <span className="tabular-nums">Price: ${variant.price.toFixed(2)}</span>
+                              <span className="tabular-nums">
+                                Price: {fmt(variant.price)}
+                              </span>
                               <span className="tabular-nums">Stock: {variant.stock}</span>
                               {variant.barcode && (
                                 <span>Barcode: {variant.barcode}</span>
@@ -2626,14 +2789,12 @@ export default function AddProductPage() {
                                 key={imgIndex}
                                 className="relative w-16 h-16 rounded-lg overflow-hidden border border-gray-200 dark:border-gray-700"
                               >
-                                <img
+                                <ProductImage
                                   src={img}
                                   alt={`${variant.name} ${imgIndex + 1}`}
+                                  width={64}
+                                  height={64}
                                   className="w-full h-full object-cover"
-                                  onError={(e) => {
-                                    (e.target as HTMLImageElement).src =
-                                      PLACEHOLDER_IMAGE;
-                                  }}
                                 />
                               </div>
                             ))}
@@ -2700,9 +2861,6 @@ export default function AddProductPage() {
                           Price <span className="text-brand-accent-500">*</span>
                         </label>
                         <div className="relative">
-                          <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-500 dark:text-gray-400">
-                            $
-                          </span>
                           <input
                             type="number"
                             step="0.01"
@@ -2714,9 +2872,12 @@ export default function AddProductPage() {
                                 price: parseFloat(e.target.value) || 0,
                               })
                             }
-                            className="w-full pl-8 pr-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-brand-500 focus:border-brand-500 dark:focus:ring-brand-400 focus:outline-none bg-white dark:bg-gray-700 text-gray-900 dark:text-white placeholder-gray-400 dark:placeholder-gray-500 transition-colors duration-200 tabular-nums"
+                            className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-brand-500 focus:border-brand-500 dark:focus:ring-brand-400 focus:outline-none bg-white dark:bg-gray-700 text-gray-900 dark:text-white placeholder-gray-400 dark:placeholder-gray-500 transition-colors duration-200 tabular-nums"
                             placeholder="0.00"
                           />
+                          <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs font-medium text-gray-400 dark:text-gray-500 pointer-events-none">
+                            {ledgerCurrency}
+                          </span>
                         </div>
                       </div>
                       <div>
@@ -2750,14 +2911,12 @@ export default function AddProductPage() {
                               key={index}
                               className="relative w-20 h-20 rounded-lg overflow-hidden border-2 border-gray-200 dark:border-gray-600"
                             >
-                              <img
+                              <ProductImage
                                 src={img}
                                 alt={`Variant ${index + 1}`}
+                                width={80}
+                                height={80}
                                 className="w-full h-full object-cover"
-                                onError={(e) => {
-                                  (e.target as HTMLImageElement).src =
-                                    PLACEHOLDER_IMAGE;
-                                }}
                               />
                               <button
                                 type="button"

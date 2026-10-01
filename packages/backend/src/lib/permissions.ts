@@ -866,12 +866,17 @@ export function resolvePermissions(user: {
     return [WILDCARD, ...ALL_PERMISSIONS];
   }
 
-  if (Array.isArray(user.permissions) && user.permissions.length > 0) {
-    // If a custom override happens to contain the wildcard, honour it.
-    return user.permissions;
-  }
+  if (!Array.isArray(user.permissions)) return [];
 
-  return ROLE_PERMISSIONS[user.role] ?? [];
+  const knownPermissions = new Set<string>(ALL_PERMISSIONS);
+  return [...new Set(
+    user.permissions.filter(
+      (permission) =>
+        typeof permission === 'string' &&
+        permission !== WILDCARD &&
+        knownPermissions.has(permission),
+    ),
+  )];
 }
 
 /**

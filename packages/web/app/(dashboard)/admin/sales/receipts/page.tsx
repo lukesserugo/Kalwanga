@@ -2,7 +2,12 @@
 
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
+import React, {
+  useState,
+  useEffect,
+  useCallback,
+  useMemo,
+} from 'react';
 import { useRouter } from 'next/navigation';
 import { useUser } from '@clerk/nextjs';
 import { motion, AnimatePresence } from 'framer-motion';
@@ -44,22 +49,7 @@ import { useAuth } from '../../../../../hooks/useAuth';
 import { toast } from '../../../../../utils/toast-manager';
 import { api } from '../../../../../services/api';
 
-// ============================================
-// LOCAL SERVICE EXTENSIONS
-// ============================================
-//
-// The frontend `saleService` does not declare `exportSales`,
-// `sendReceiptEmail`, or `voidSale`. All three routes exist on the
-// backend:
-//
-//   GET    /sales/export                         → { success, data: [...] }
-//   POST   /sales/:id/email-receipt              → { success, data, message }
-//   POST   /sales/:id/void                       → { success, data, message }
-//
-// We call them through the shared `api` client (the same client
-// `saleService` uses) rather than mutating the shared service from
-// this page. When the service gains these methods, swap the local
-// helpers for direct service calls.
+const DEFAULT_CURRENCY = 'USD';
 
 async function exportSalesRemote(params: {
   startDate?: string;
@@ -122,10 +112,6 @@ async function voidSaleRemote(
   return { success: true, data: body };
 }
 
-// ============================================
-// INTERFACES
-// ============================================
-
 type ReceiptPaymentMethod =
   | 'CASH'
   | 'CREDIT_CARD'
@@ -187,6 +173,9 @@ interface Receipt {
   promotionDiscount?: number;
   loyaltyPointsUsed?: number;
   loyaltyDiscount?: number;
+
+  /** ISO 4217 ledger currency for this receipt. Optional. */
+  currency?: string;
 }
 
 interface ReceiptFilters {
@@ -210,9 +199,24 @@ interface ReceiptStats {
   byPaymentMethod: Record<string, number>;
 }
 
-// ============================================
-// HELPERS
-// ============================================
+function pickCurrency(...candidates: Array<unknown>): string {
+  for (const c of candidates) {
+    if (typeof c === 'string' && c.trim().length > 0) {
+      return c.trim().toUpperCase();
+    }
+  }
+  return DEFAULT_CURRENCY;
+}
+
+function resolveSaleCurrency(sale: any, fallback: string): string {
+  const payment = sale?.payments?.[0];
+  return pickCurrency(
+    sale?.currency,
+    payment?.displayCurrency,
+    payment?.currency,
+    fallback,
+  );
+}
 
 function normalizePaymentMethod(raw: string): ReceiptPaymentMethod {
   const value = (raw || 'CASH').toUpperCase();
@@ -251,7 +255,7 @@ function normalizeReceiptStatus(raw: string): Receipt['status'] {
   }
 }
 
-function saleToReceipt(sale: any): Receipt {
+function saleToReceipt(sale: any, fallbackCurrency: string): Receipt {
   const items: ReceiptItem[] = (sale.items || []).map((item: any) => ({
     id: item.id,
     productId: item.productId,
@@ -322,12 +326,14 @@ function saleToReceipt(sale: any): Receipt {
     promotionDiscount: breakdown.promotionDiscount ?? 0,
     loyaltyPointsUsed: breakdown.loyaltyPointsUsed ?? 0,
     loyaltyDiscount: breakdown.loyaltyDiscount ?? 0,
+    currency: pickCurrency(
+      sale.currency,
+      payment?.currency,
+      payment?.displayCurrency,
+      fallbackCurrency,
+    ),
   };
 }
-
-// ============================================
-// SUB-COMPONENTS
-// ============================================
 
 function StatCard({
   title,
@@ -389,10 +395,6 @@ function PaymentMethodBadge({
   );
 }
 
-// ============================================
-// STYLE HELPERS
-// ============================================
-
 const getStatusColor = (status: string): string => {
   const colors: Record<string, string> = {
     issued:
@@ -444,7 +446,7 @@ const getReceiptTypeLabel = (type: string): string => {
   return labels[type] || type;
 };
 
-const getStatusIcon = (status: string) => {
+const getStatusIcon = (status: string): React.ElementType => {
   const icons: Record<string, React.ElementType> = {
     issued: CheckCircle,
     sent: Send,
@@ -457,451 +459,47 @@ const getStatusIcon = (status: string) => {
 
 const StatusIcon = ({ status }: { status: string }) => {
   const Icon = getStatusIcon(status);
-  return <Icon className="w-4 h-4 inline mr-1" />;
+  return <Icon className="w-4 h-4 inline mr-1" aria-hidden="true" />;
 };
 
-// ============================================
-// MAIN COMPONENT
-// ============================================
+function buildReceiptHTML(
+  receipt: Receipt,
+  currency: string,
+): string {
+  const fmt = (amount: number | null | undefined): string =>
+    formatCurrency(amount ?? 0, currency);
 
-export default function ReceiptsPage() {
-  const { isLoaded, isSignedIn } = useUser();
-  const { user: authUser } = useAuth();
-  const router = useRouter();
+  const promotionDiscount = receipt.promotionDiscount ?? 0;
+  const promotionCode = receipt.promotionCode ?? null;
+  const loyaltyPointsUsed = receipt.loyaltyPointsUsed ?? 0;
+  const loyaltyDiscount = receipt.loyaltyDiscount ?? 0;
 
-  const [receipts, setReceipts] = useState<Receipt[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [isRefreshing, setIsRefreshing] = useState(false);
-  const [stats, setStats] = useState<ReceiptStats>({
-    total: 0,
-    issued: 0,
-    sent: 0,
-    printed: 0,
-    cancelled: 0,
-    void: 0,
-    totalAmount: 0,
-    averageAmount: 0,
-    byPaymentMethod: {
-      CASH: 0,
-      CREDIT_CARD: 0,
-      DEBIT_CARD: 0,
-      MOBILE_MONEY: 0,
-      BANK_TRANSFER: 0,
-      GIFT_CARD: 0,
-      LOYALTY_POINTS: 0,
-      CRYPTO: 0,
-      CHECK: 0,
-    },
-  });
+  const promotionLabel = receipt.discountType
+    ? getDiscountTypeLabel(receipt.discountType) || 'Promotion'
+    : 'Promotion';
 
-  const [filters, setFilters] = useState<ReceiptFilters>({
-    search: '',
-    status: 'all',
-    startDate: new Date(Date.now() - 30 * 24 * 60 * 60 * 1000)
-      .toISOString()
-      .split('T')[0],
-    endDate: new Date().toISOString().split('T')[0],
-    page: 1,
-    limit: 10,
-  });
+  const promotionLine =
+    promotionDiscount > 0
+      ? `<div class="row discount-line"><span>${promotionLabel}${
+          promotionCode ? ` (${promotionCode})` : ''
+        }</span><span>-${fmt(promotionDiscount)}</span></div>`
+      : '';
 
-  const [totalPages, setTotalPages] = useState(1);
-  const [totalReceipts, setTotalReceipts] = useState(0);
-  const [selectedReceipt, setSelectedReceipt] = useState<Receipt | null>(null);
-  const [showDetailModal, setShowDetailModal] = useState(false);
-  const [showEmailModal, setShowEmailModal] = useState(false);
-  const [showVoidModal, setShowVoidModal] = useState(false);
-  const [processing, setProcessing] = useState(false);
-  const [voidReason, setVoidReason] = useState('');
-  const [emailAddress, setEmailAddress] = useState('');
-  const [exporting, setExporting] = useState(false);
-  const [downloadingPdf, setDownloadingPdf] = useState(false);
-  const [copied, setCopied] = useState(false);
+  const loyaltyLine =
+    loyaltyPointsUsed > 0
+      ? `<div class="row discount-line"><span>${loyaltyPointsUsed} loyalty points</span><span>-${fmt(loyaltyDiscount)}</span></div>`
+      : '';
 
-  const userRole = (authUser?.role as string) || 'EMPLOYEE';
-  const canManageReceipts = ['SUPER_ADMIN', 'ADMIN', 'MANAGER'].includes(
-    userRole,
-  );
-  const canViewReceipts = [
-    'SUPER_ADMIN',
-    'ADMIN',
-    'MANAGER',
-    'EMPLOYEE',
-    'CASHIER',
-  ].includes(userRole);
+  const rawDiscountLine =
+    receipt.discount > 0 &&
+    promotionDiscount === 0 &&
+    loyaltyDiscount === 0
+      ? `<div class="row discount-line"><span>Discount</span><span>-${fmt(
+          receipt.discount,
+        )}</span></div>`
+      : '';
 
-  // Redirect if unauthorized
-  useEffect(() => {
-    if (isLoaded && !isSignedIn) {
-      router.push('/login?redirect=/admin/sales/receipts');
-      return;
-    }
-    if (isLoaded && isSignedIn && !canViewReceipts) {
-      router.push('/admin/sales');
-      toast.error('You do not have permission to view receipts');
-    }
-  }, [isLoaded, isSignedIn, router, canViewReceipts]);
-
-  // ============================================
-  // FETCH
-  // ============================================
-
-  const fetchReceipts = useCallback(
-    async (silent = false) => {
-      if (!authUser) return;
-
-      try {
-        if (!silent) setLoading(true);
-        else setIsRefreshing(true);
-
-        const params: any = {
-          page: filters.page,
-          limit: filters.limit,
-          search: filters.search || undefined,
-          startDate: filters.startDate
-            ? new Date(filters.startDate).toISOString()
-            : undefined,
-          endDate: filters.endDate
-            ? new Date(`${filters.endDate}T23:59:59.999Z`).toISOString()
-            : undefined,
-          sortBy: 'saleDate',
-          sortOrder: 'desc',
-        };
-
-        if (filters.status !== 'all') {
-          switch (filters.status) {
-            case 'issued':
-            case 'sent':
-            case 'printed':
-              params.status = 'COMPLETED';
-              break;
-            case 'cancelled':
-              params.status = 'CANCELLED';
-              break;
-            case 'void':
-              params.status = 'VOID';
-              break;
-          }
-        }
-
-        const [response, aggregates] = await Promise.all([
-          saleService.getAllSales(params),
-          saleService
-            .getSalesStats({
-              startDate: params.startDate,
-              endDate: params.endDate,
-            })
-            .catch((err) => {
-              console.warn('Failed to fetch sales aggregates:', err);
-              return null;
-            }),
-        ]);
-
-        const rawSales: any[] = (response as any).data || [];
-        const mapped: Receipt[] = rawSales.map(saleToReceipt);
-
-        setReceipts(mapped);
-        setTotalReceipts((response as any).total || mapped.length);
-        setTotalPages((response as any).totalPages || 1);
-
-        const pageTotal = mapped.reduce(
-          (sum: number, receipt: Receipt) => sum + (receipt.total || 0),
-          0,
-        );
-        const serverTotalRevenue = (aggregates as any)?.totalRevenue ?? null;
-        const serverTotalSales = (aggregates as any)?.totalSales ?? null;
-
-        const byPaymentMethod: Record<string, number> = {
-          CASH: 0,
-          CREDIT_CARD: 0,
-          DEBIT_CARD: 0,
-          MOBILE_MONEY: 0,
-          BANK_TRANSFER: 0,
-          GIFT_CARD: 0,
-          LOYALTY_POINTS: 0,
-          CRYPTO: 0,
-          CHECK: 0,
-        };
-        mapped.forEach((r) => {
-          if (byPaymentMethod[r.paymentMethod] !== undefined) {
-            byPaymentMethod[r.paymentMethod] += 1;
-          }
-        });
-
-        const computed: ReceiptStats = {
-          total: (response as any).total || mapped.length,
-          issued: mapped.filter((r) => r.status === 'issued').length,
-          sent: mapped.filter((r) => r.status === 'sent').length,
-          printed: mapped.filter((r) => r.status === 'printed').length,
-          cancelled: mapped.filter((r) => r.status === 'cancelled').length,
-          void: mapped.filter((r) => r.status === 'void').length,
-          totalAmount: serverTotalRevenue ?? pageTotal,
-          averageAmount:
-            serverTotalSales && serverTotalRevenue
-              ? serverTotalRevenue / serverTotalSales
-              : mapped.length > 0
-                ? pageTotal / mapped.length
-                : 0,
-          byPaymentMethod,
-        };
-        setStats(computed);
-      } catch (error: any) {
-        console.error('Error fetching receipts:', error);
-        toast.error(error.message || 'Failed to load receipts');
-        setReceipts([]);
-      } finally {
-        setLoading(false);
-        setIsRefreshing(false);
-      }
-    },
-    [authUser, filters],
-  );
-
-  useEffect(() => {
-    fetchReceipts();
-  }, [fetchReceipts]);
-
-  // ============================================
-  // FILTER HANDLERS
-  // ============================================
-
-  const handleSearch = (e: React.ChangeEvent<HTMLInputElement>) => {
-    setFilters((prev) => ({ ...prev, search: e.target.value, page: 1 }));
-  };
-
-  const handleStatusChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
-    setFilters((prev) => ({ ...prev, status: e.target.value, page: 1 }));
-  };
-
-  const handleDateChange = (
-    field: 'startDate' | 'endDate',
-    value: string,
-  ) => {
-    setFilters((prev) => ({ ...prev, [field]: value, page: 1 }));
-  };
-
-  const handlePageChange = (newPage: number) => {
-    setFilters((prev) => ({ ...prev, page: newPage }));
-  };
-
-  // ============================================
-  // ACTION HANDLERS
-  // ============================================
-
-  const handleSendEmail = async () => {
-    if (!selectedReceipt) return;
-    const target = (emailAddress || selectedReceipt.customerEmail || '').trim();
-    if (!target) {
-      toast.error('Please enter an email address');
-      return;
-    }
-
-    try {
-      setProcessing(true);
-      await sendReceiptEmailRemote(selectedReceipt.saleId, target);
-      toast.success(`Receipt sent to ${target}`);
-      setShowEmailModal(false);
-      setEmailAddress('');
-      fetchReceipts(true);
-    } catch (error: any) {
-      console.error('Failed to send receipt email:', error);
-      toast.error(
-        error?.response?.data?.message ||
-          error?.message ||
-          'Failed to send receipt email',
-      );
-    } finally {
-      setProcessing(false);
-    }
-  };
-
-  const handlePrintReceipt = async (receipt: Receipt) => {
-    try {
-      setProcessing(true);
-      const printWindow = window.open('', '_blank');
-      if (!printWindow) {
-        toast.error('Please allow popups to print receipts');
-        return;
-      }
-      const receiptHTML = generateReceiptHTML(receipt);
-      printWindow.document.write(receiptHTML);
-      printWindow.document.close();
-      printWindow.print();
-      toast.success('Receipt sent to printer');
-    } catch (error: any) {
-      console.error('Failed to print receipt:', error);
-      toast.error(error.message || 'Failed to print receipt');
-    } finally {
-      setProcessing(false);
-    }
-  };
-
-  const handleDownloadPdf = async (receipt: Receipt) => {
-    try {
-      setDownloadingPdf(true);
-      const printWindow = window.open('', '_blank');
-      if (!printWindow) {
-        toast.error('Please allow popups to prepare the PDF');
-        return;
-      }
-      printWindow.document.write(generateReceiptHTML(receipt));
-      printWindow.document.close();
-      setTimeout(() => printWindow.print(), 300);
-      toast.success('Receipt ready to save as PDF');
-    } catch (error: any) {
-      console.error('Failed to prepare receipt PDF:', error);
-      toast.error(error.message || 'Failed to prepare receipt PDF');
-    } finally {
-      setDownloadingPdf(false);
-    }
-  };
-
-  const handleVoidReceipt = async () => {
-    if (!selectedReceipt || !voidReason.trim()) return;
-
-    try {
-      setProcessing(true);
-      await voidSaleRemote(selectedReceipt.saleId, voidReason.trim());
-      toast.success('Receipt voided successfully');
-      setShowVoidModal(false);
-      setVoidReason('');
-      fetchReceipts(true);
-    } catch (error: any) {
-      console.error('Failed to void receipt:', error);
-      toast.error(
-        error?.response?.data?.message ||
-          error?.message ||
-          'Failed to void receipt',
-      );
-    } finally {
-      setProcessing(false);
-    }
-  };
-
-  const handleCopyReceiptNumber = (receiptNumber: string) => {
-    navigator.clipboard.writeText(receiptNumber);
-    setCopied(true);
-    setTimeout(() => setCopied(false), 2000);
-    toast.success('Receipt number copied');
-  };
-
-  const handleExport = async () => {
-    try {
-      setExporting(true);
-
-      const startDate = filters.startDate || undefined;
-      const endDate = filters.endDate || undefined;
-
-      const result = await exportSalesRemote({
-        startDate,
-        endDate,
-        format: 'json',
-      });
-
-      const rowsData: any[] = Array.isArray(result.data) ? result.data : [];
-
-      if (rowsData.length === 0) {
-        toast.error('No receipts to export');
-        return;
-      }
-
-      const headers = [
-        'Receipt',
-        'Date',
-        'Customer',
-        'Subtotal',
-        'Tax',
-        'Discount',
-        'Discount Type',
-        'Promotion Code',
-        'Promotion Discount',
-        'Loyalty Points Used',
-        'Loyalty Discount',
-        'Total',
-        'Payment',
-        'Status',
-        'Items',
-      ];
-      const rows = rowsData.map((receipt: any) => {
-        const breakdown = saleService.extractBreakdown(receipt);
-        return [
-          receipt.receiptNumber || receipt.id || '',
-          receipt.date ||
-            (receipt.saleDate
-              ? new Date(receipt.saleDate).toISOString().split('T')[0]
-              : ''),
-          receipt.customer || 'Guest',
-          (receipt.subtotal || 0).toFixed(2),
-          (receipt.tax || 0).toFixed(2),
-          (receipt.discount || 0).toFixed(2),
-          breakdown.discountType ?? '',
-          breakdown.promotionCode ?? '',
-          (breakdown.promotionDiscount ?? 0).toFixed(2),
-          String(breakdown.loyaltyPointsUsed ?? 0),
-          (breakdown.loyaltyDiscount ?? 0).toFixed(2),
-          (receipt.total || 0).toFixed(2),
-          receipt.paymentMethod || 'N/A',
-          receipt.status || 'COMPLETED',
-          String(receipt.items || receipt.itemsCount || 0),
-        ];
-      });
-
-      const csv = [
-        headers.join(','),
-        ...rows.map((row: (string | number)[]) => row.join(',')),
-      ].join('\n');
-
-      const blob = new Blob([csv], { type: 'text/csv' });
-      const url = window.URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = `receipts-${new Date().toISOString().split('T')[0]}.csv`;
-      document.body.appendChild(a);
-      a.click();
-      document.body.removeChild(a);
-      window.URL.revokeObjectURL(url);
-
-      toast.success('Receipts exported successfully');
-    } catch (error: any) {
-      console.error('Failed to export receipts:', error);
-      toast.error(error.message || 'Failed to export receipts');
-    } finally {
-      setExporting(false);
-    }
-  };
-
-  // ============================================
-  // RECEIPT HTML
-  // ============================================
-
-  const generateReceiptHTML = (receipt: Receipt): string => {
-    const promotionDiscount = receipt.promotionDiscount ?? 0;
-    const promotionCode = receipt.promotionCode ?? null;
-    const loyaltyPointsUsed = receipt.loyaltyPointsUsed ?? 0;
-    const loyaltyDiscount = receipt.loyaltyDiscount ?? 0;
-
-    const promotionLabel = receipt.discountType
-      ? getDiscountTypeLabel(receipt.discountType) || 'Promotion'
-      : 'Promotion';
-
-    const promotionLine =
-      promotionDiscount > 0
-        ? `<div class="row discount-line"><span>${promotionLabel}${
-            promotionCode ? ` (${promotionCode})` : ''
-          }</span><span>-$${promotionDiscount.toFixed(2)}</span></div>`
-        : '';
-
-    const loyaltyLine =
-      loyaltyPointsUsed > 0
-        ? `<div class="row discount-line"><span>${loyaltyPointsUsed} loyalty points</span><span>-$${loyaltyDiscount.toFixed(2)}</span></div>`
-        : '';
-
-    const rawDiscountLine =
-      receipt.discount > 0 && promotionDiscount === 0 && loyaltyDiscount === 0
-        ? `<div class="row discount-line"><span>Discount</span><span>-$${receipt.discount.toFixed(2)}</span></div>`
-        : '';
-
-    return `
+  return `
       <!DOCTYPE html>
       <html>
         <head>
@@ -964,7 +562,7 @@ export default function ReceiptsPage() {
               <div class="item">
                 <span class="name">${item.productName}</span>
                 <span class="qty">x${item.quantity}</span>
-                <span class="price">$${item.total.toFixed(2)}</span>
+                <span class="price">${fmt(item.total)}</span>
               </div>
             `,
               )
@@ -972,25 +570,25 @@ export default function ReceiptsPage() {
           </div>
 
           <div class="totals">
-            <div class="row"><span>Subtotal</span><span>$${receipt.subtotal.toFixed(
-              2,
+            <div class="row"><span>Subtotal</span><span>${fmt(
+              receipt.subtotal,
             )}</span></div>
-            <div class="row"><span>Tax</span><span>$${receipt.tax.toFixed(
-              2,
+            <div class="row"><span>Tax</span><span>${fmt(
+              receipt.tax,
             )}</span></div>
             ${promotionLine}
             ${loyaltyLine}
             ${rawDiscountLine}
             <div class="row grand-total">
               <span>TOTAL</span>
-              <span>$${receipt.total.toFixed(2)}</span>
+              <span>${fmt(receipt.total)}</span>
             </div>
             <div class="payment-info">
-              <div class="row"><span>Paid</span><span>$${receipt.paidAmount.toFixed(
-                2,
+              <div class="row"><span>Paid</span><span>${fmt(
+                receipt.paidAmount,
               )}</span></div>
-              <div class="row"><span>Change</span><span>$${receipt.changeAmount.toFixed(
-                2,
+              <div class="row"><span>Change</span><span>${fmt(
+                receipt.changeAmount,
               )}</span></div>
               <div class="row"><span>Payment</span><span>${
                 receipt.paymentMethod
@@ -1016,11 +614,437 @@ export default function ReceiptsPage() {
         </body>
       </html>
     `;
+}
+
+export default function ReceiptsPage() {
+  const { isLoaded, isSignedIn } = useUser();
+  const { user: authUser } = useAuth();
+  const router = useRouter();
+
+  const [receipts, setReceipts] = useState<Receipt[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [isRefreshing, setIsRefreshing] = useState(false);
+  const [stats, setStats] = useState<ReceiptStats>({
+    total: 0,
+    issued: 0,
+    sent: 0,
+    printed: 0,
+    cancelled: 0,
+    void: 0,
+    totalAmount: 0,
+    averageAmount: 0,
+    byPaymentMethod: {
+      CASH: 0,
+      CREDIT_CARD: 0,
+      DEBIT_CARD: 0,
+      MOBILE_MONEY: 0,
+      BANK_TRANSFER: 0,
+      GIFT_CARD: 0,
+      LOYALTY_POINTS: 0,
+      CRYPTO: 0,
+      CHECK: 0,
+    },
+  });
+  const [listCurrency, setListCurrency] = useState<string>(DEFAULT_CURRENCY);
+
+  const [filters, setFilters] = useState<ReceiptFilters>({
+    search: '',
+    status: 'all',
+    startDate: new Date(Date.now() - 30 * 24 * 60 * 60 * 1000)
+      .toISOString()
+      .split('T')[0],
+    endDate: new Date().toISOString().split('T')[0],
+    page: 1,
+    limit: 10,
+  });
+
+  const [totalPages, setTotalPages] = useState(1);
+  const [totalReceipts, setTotalReceipts] = useState(0);
+  const [selectedReceipt, setSelectedReceipt] = useState<Receipt | null>(
+    null,
+  );
+  const [showDetailModal, setShowDetailModal] = useState(false);
+  const [showEmailModal, setShowEmailModal] = useState(false);
+  const [showVoidModal, setShowVoidModal] = useState(false);
+  const [processing, setProcessing] = useState(false);
+  const [voidReason, setVoidReason] = useState('');
+  const [emailAddress, setEmailAddress] = useState('');
+  const [exporting, setExporting] = useState(false);
+  const [downloadingPdf, setDownloadingPdf] = useState(false);
+  const [copied, setCopied] = useState(false);
+
+  const userRole = (authUser?.role as string) || 'EMPLOYEE';
+  const canManageReceipts = useMemo(
+    () => ['SUPER_ADMIN', 'ADMIN', 'MANAGER'].includes(userRole),
+    [userRole],
+  );
+  const canViewReceipts = useMemo(
+    () =>
+      ['SUPER_ADMIN', 'ADMIN', 'MANAGER', 'EMPLOYEE', 'CASHIER'].includes(
+        userRole,
+      ),
+    [userRole],
+  );
+
+  const displayCurrency = listCurrency || DEFAULT_CURRENCY;
+
+  useEffect(() => {
+    if (isLoaded && !isSignedIn) {
+      router.push('/login?redirect=/admin/sales/receipts');
+      return;
+    }
+    if (isLoaded && isSignedIn && !canViewReceipts) {
+      router.push('/admin/sales');
+      toast.error('You do not have permission to view receipts');
+    }
+  }, [isLoaded, isSignedIn, router, canViewReceipts]);
+
+  const fetchReceipts = useCallback(
+    async (silent = false) => {
+      if (!authUser) return;
+
+      try {
+        if (!silent) setLoading(true);
+        else setIsRefreshing(true);
+
+        const params: any = {
+          page: filters.page,
+          limit: filters.limit,
+          search: filters.search || undefined,
+          startDate: filters.startDate
+            ? new Date(filters.startDate).toISOString()
+            : undefined,
+          endDate: filters.endDate
+            ? new Date(`${filters.endDate}T23:59:59.999Z`).toISOString()
+            : undefined,
+          sortBy: 'saleDate',
+          sortOrder: 'desc',
+        };
+
+        if (filters.status !== 'all') {
+          switch (filters.status) {
+            case 'issued':
+            case 'sent':
+            case 'printed':
+              params.status = 'COMPLETED';
+              break;
+            case 'cancelled':
+              params.status = 'CANCELLED';
+              break;
+            case 'void':
+              params.status = 'VOID';
+              break;
+          }
+        }
+
+        const [response, aggregates] = await Promise.all([
+          saleService.getAllSales(params),
+          saleService
+            .getSalesStats({
+              startDate: params.startDate,
+              endDate: params.endDate,
+            })
+            .catch((err) => {
+              console.warn('Failed to fetch sales aggregates:', err);
+              return null;
+            }),
+        ]);
+
+        const envelopeCurrency = pickCurrency(
+          (response as any).currency,
+          listCurrency,
+          DEFAULT_CURRENCY,
+        );
+
+        const rawSales: any[] = (response as any).data || [];
+        const mapped: Receipt[] = rawSales.map((sale) =>
+          saleToReceipt(sale, envelopeCurrency),
+        );
+
+        setReceipts(mapped);
+        setTotalReceipts((response as any).total || mapped.length);
+        setTotalPages((response as any).totalPages || 1);
+        if ((response as any).currency) {
+          setListCurrency((response as any).currency);
+        }
+
+        const pageTotal = mapped.reduce(
+          (sum: number, receipt: Receipt) => sum + (receipt.total || 0),
+          0,
+        );
+        const serverTotalRevenue = (aggregates as any)?.totalRevenue ?? null;
+        const serverTotalSales = (aggregates as any)?.totalSales ?? null;
+
+        const byPaymentMethod: Record<string, number> = {
+          CASH: 0,
+          CREDIT_CARD: 0,
+          DEBIT_CARD: 0,
+          MOBILE_MONEY: 0,
+          BANK_TRANSFER: 0,
+          GIFT_CARD: 0,
+          LOYALTY_POINTS: 0,
+          CRYPTO: 0,
+          CHECK: 0,
+        };
+        mapped.forEach((r) => {
+          if (byPaymentMethod[r.paymentMethod] !== undefined) {
+            byPaymentMethod[r.paymentMethod] += 1;
+          }
+        });
+
+        const computed: ReceiptStats = {
+          total: (response as any).total || mapped.length,
+          issued: mapped.filter((r) => r.status === 'issued').length,
+          sent: mapped.filter((r) => r.status === 'sent').length,
+          printed: mapped.filter((r) => r.status === 'printed').length,
+          cancelled: mapped.filter((r) => r.status === 'cancelled').length,
+          void: mapped.filter((r) => r.status === 'void').length,
+          totalAmount: serverTotalRevenue ?? pageTotal,
+          averageAmount:
+            serverTotalSales && serverTotalRevenue
+              ? serverTotalRevenue / serverTotalSales
+              : mapped.length > 0
+                ? pageTotal / mapped.length
+                : 0,
+          byPaymentMethod,
+        };
+        setStats(computed);
+      } catch (error: any) {
+        console.error('Error fetching receipts:', error);
+        toast.error(error.message || 'Failed to load receipts');
+        setReceipts([]);
+      } finally {
+        setLoading(false);
+        setIsRefreshing(false);
+      }
+    },
+    [authUser, filters, listCurrency],
+  );
+
+  useEffect(() => {
+    void fetchReceipts();
+  }, [fetchReceipts]);
+
+  const handleSearch = (e: React.ChangeEvent<HTMLInputElement>) => {
+    setFilters((prev) => ({ ...prev, search: e.target.value, page: 1 }));
   };
 
-  // ============================================
-  // LOADING / PERMISSION STATES
-  // ============================================
+  const handleStatusChange = (
+    e: React.ChangeEvent<HTMLSelectElement>,
+  ) => {
+    setFilters((prev) => ({ ...prev, status: e.target.value, page: 1 }));
+  };
+
+  const handleDateChange = (
+    field: 'startDate' | 'endDate',
+    value: string,
+  ) => {
+    setFilters((prev) => ({ ...prev, [field]: value, page: 1 }));
+  };
+
+  const handlePageChange = (newPage: number) => {
+    setFilters((prev) => ({ ...prev, page: newPage }));
+  };
+
+  const handleSendEmail = async () => {
+    if (!selectedReceipt) return;
+    const target = (
+      emailAddress ||
+      selectedReceipt.customerEmail ||
+      ''
+    ).trim();
+    if (!target) {
+      toast.error('Please enter an email address');
+      return;
+    }
+
+    try {
+      setProcessing(true);
+      await sendReceiptEmailRemote(selectedReceipt.saleId, target);
+      toast.success(`Receipt sent to ${target}`);
+      setShowEmailModal(false);
+      setEmailAddress('');
+      void fetchReceipts(true);
+    } catch (error: any) {
+      console.error('Failed to send receipt email:', error);
+      toast.error(
+        error?.response?.data?.message ||
+          error?.message ||
+          'Failed to send receipt email',
+      );
+    } finally {
+      setProcessing(false);
+    }
+  };
+
+  const handlePrintReceipt = useCallback(
+    async (receipt: Receipt) => {
+      try {
+        setProcessing(true);
+        const printWindow = window.open('', '_blank');
+        if (!printWindow) {
+          toast.error('Please allow popups to print receipts');
+          return;
+        }
+        const currency = pickCurrency(receipt.currency, displayCurrency);
+        printWindow.document.write(buildReceiptHTML(receipt, currency));
+        printWindow.document.close();
+        printWindow.print();
+        toast.success('Receipt sent to printer');
+      } catch (error: any) {
+        console.error('Failed to print receipt:', error);
+        toast.error(error.message || 'Failed to print receipt');
+      } finally {
+        setProcessing(false);
+      }
+    },
+    [displayCurrency],
+  );
+
+  const handleDownloadPdf = useCallback(
+    async (receipt: Receipt) => {
+      try {
+        setDownloadingPdf(true);
+        const printWindow = window.open('', '_blank');
+        if (!printWindow) {
+          toast.error('Please allow popups to prepare the PDF');
+          return;
+        }
+        const currency = pickCurrency(receipt.currency, displayCurrency);
+        printWindow.document.write(buildReceiptHTML(receipt, currency));
+        printWindow.document.close();
+        setTimeout(() => printWindow.print(), 300);
+        toast.success('Receipt ready to save as PDF');
+      } catch (error: any) {
+        console.error('Failed to prepare receipt PDF:', error);
+        toast.error(error.message || 'Failed to prepare receipt PDF');
+      } finally {
+        setDownloadingPdf(false);
+      }
+    },
+    [displayCurrency],
+  );
+
+  const handleVoidReceipt = async () => {
+    if (!selectedReceipt || !voidReason.trim()) return;
+
+    try {
+      setProcessing(true);
+      await voidSaleRemote(selectedReceipt.saleId, voidReason.trim());
+      toast.success('Receipt voided successfully');
+      setShowVoidModal(false);
+      setVoidReason('');
+      void fetchReceipts(true);
+    } catch (error: any) {
+      console.error('Failed to void receipt:', error);
+      toast.error(
+        error?.response?.data?.message ||
+          error?.message ||
+          'Failed to void receipt',
+      );
+    } finally {
+      setProcessing(false);
+    }
+  };
+
+  const handleCopyReceiptNumber = (receiptNumber: string) => {
+    navigator.clipboard.writeText(receiptNumber);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
+    toast.success('Receipt number copied');
+  };
+
+  const handleExport = async () => {
+    try {
+      setExporting(true);
+
+      const startDate = filters.startDate || undefined;
+      const endDate = filters.endDate || undefined;
+
+      const result = await exportSalesRemote({
+        startDate,
+        endDate,
+        format: 'json',
+      });
+
+      const rowsData: any[] = Array.isArray(result.data) ? result.data : [];
+
+      if (rowsData.length === 0) {
+        toast.error('No receipts to export');
+        return;
+      }
+
+      const exportCurrency = pickCurrency(
+        (result as any).currency,
+        displayCurrency,
+      );
+
+      const headers = [
+        'Receipt',
+        'Date',
+        'Customer',
+        'Currency',
+        'Subtotal',
+        'Tax',
+        'Discount',
+        'Discount Type',
+        'Promotion Code',
+        'Promotion Discount',
+        'Loyalty Points Used',
+        'Loyalty Discount',
+        'Total',
+        'Payment',
+        'Status',
+        'Items',
+      ];
+      const rows = rowsData.map((receipt: any) => {
+        const breakdown = saleService.extractBreakdown(receipt);
+        return [
+          receipt.receiptNumber || receipt.id || '',
+          receipt.date ||
+            (receipt.saleDate
+              ? new Date(receipt.saleDate).toISOString().split('T')[0]
+              : ''),
+          receipt.customer || 'Guest',
+          resolveSaleCurrency(receipt, exportCurrency),
+          (receipt.subtotal || 0).toFixed(2),
+          (receipt.tax || 0).toFixed(2),
+          (receipt.discount || 0).toFixed(2),
+          breakdown.discountType ?? '',
+          breakdown.promotionCode ?? '',
+          (breakdown.promotionDiscount ?? 0).toFixed(2),
+          String(breakdown.loyaltyPointsUsed ?? 0),
+          (breakdown.loyaltyDiscount ?? 0).toFixed(2),
+          (receipt.total || 0).toFixed(2),
+          receipt.paymentMethod || 'N/A',
+          receipt.status || 'COMPLETED',
+          String(receipt.items || receipt.itemsCount || 0),
+        ];
+      });
+
+      const csv = [
+        headers.join(','),
+        ...rows.map((row: (string | number)[]) => row.join(',')),
+      ].join('\n');
+
+      const blob = new Blob([csv], { type: 'text/csv' });
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `receipts-${new Date().toISOString().split('T')[0]}.csv`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      window.URL.revokeObjectURL(url);
+
+      toast.success('Receipts exported successfully');
+    } catch (error: any) {
+      console.error('Failed to export receipts:', error);
+      toast.error(error.message || 'Failed to export receipts');
+    } finally {
+      setExporting(false);
+    }
+  };
 
   if (loading) {
     return <LoadingSkeleton />;
@@ -1030,22 +1054,21 @@ export default function ReceiptsPage() {
     return null;
   }
 
-  // ============================================
-  // RENDER
-  // ============================================
-
   return (
     <div className="min-h-screen bg-gray-50 dark:bg-gray-900 p-6">
       <div className="max-w-7xl mx-auto">
-        {/* Header */}
         <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 mb-6">
           <div>
             <div className="flex items-center gap-3">
               <button
                 onClick={() => router.push('/admin/sales')}
                 className="p-2 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-colors focus-ring"
+                aria-label="Back to Sales"
               >
-                <ArrowLeft className="w-5 h-5 text-gray-500" />
+                <ArrowLeft
+                  className="w-5 h-5 text-gray-500"
+                  aria-hidden="true"
+                />
               </button>
               <div>
                 <h1 className="text-3xl font-bold text-gray-900 dark:text-white">
@@ -1053,40 +1076,46 @@ export default function ReceiptsPage() {
                 </h1>
                 <p className="text-gray-600 dark:text-gray-400 mt-1">
                   Manage customer receipts and transaction records
-                  {totalReceipts > 0 && ` · ${totalReceipts} total receipts`}
+                  {totalReceipts > 0 &&
+                    ` · ${totalReceipts} total receipts`}
                 </p>
               </div>
             </div>
           </div>
           <div className="flex flex-wrap gap-3">
             <button
-              onClick={() => fetchReceipts(true)}
+              onClick={() => void fetchReceipts(true)}
               className="flex items-center gap-2 px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors focus-ring"
               disabled={isRefreshing}
             >
               {isRefreshing ? (
-                <Loader2 className="w-4 h-4 animate-spin" />
+                <Loader2
+                  className="w-4 h-4 animate-spin"
+                  aria-hidden="true"
+                />
               ) : (
-                <RefreshCw className="w-4 h-4" />
+                <RefreshCw className="w-4 h-4" aria-hidden="true" />
               )}
               Refresh
             </button>
             <button
-              onClick={handleExport}
+              onClick={() => void handleExport()}
               disabled={exporting}
               className="flex items-center gap-2 px-4 py-2 bg-brand-500 text-white rounded-lg hover:bg-brand-600 transition-colors disabled:opacity-50 focus-ring"
             >
               {exporting ? (
-                <Loader2 className="w-4 h-4 animate-spin" />
+                <Loader2
+                  className="w-4 h-4 animate-spin"
+                  aria-hidden="true"
+                />
               ) : (
-                <Download className="w-4 h-4" />
+                <Download className="w-4 h-4" aria-hidden="true" />
               )}
               Export All
             </button>
           </div>
         </div>
 
-        {/* Stats */}
         <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-7 gap-4 mb-6">
           <StatCard title="Total" value={stats.total} color="brand" />
           <StatCard
@@ -1121,19 +1150,18 @@ export default function ReceiptsPage() {
           />
           <StatCard
             title="Total Amount"
-            value={formatCurrency(stats.totalAmount)}
+            value={formatCurrency(stats.totalAmount, displayCurrency)}
             color="brand"
           />
         </div>
 
-        {/* Additional Stats */}
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
           <div className="card-brand p-4">
             <p className="text-sm text-gray-500 dark:text-gray-400">
               Average Receipt Amount
             </p>
             <p className="text-2xl font-bold text-gray-900 dark:text-white tabular-nums">
-              {formatCurrency(stats.averageAmount)}
+              {formatCurrency(stats.averageAmount, displayCurrency)}
             </p>
           </div>
           <div className="card-brand p-4">
@@ -1177,11 +1205,13 @@ export default function ReceiptsPage() {
           </div>
         </div>
 
-        {/* Filters */}
         <div className="card-brand p-4 mb-6">
           <div className="grid grid-cols-1 md:grid-cols-5 gap-4">
             <div className="relative">
-              <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-5 h-5" />
+              <Search
+                className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-5 h-5"
+                aria-hidden="true"
+              />
               <input
                 type="text"
                 placeholder="Search by receipt #, customer..."
@@ -1205,17 +1235,19 @@ export default function ReceiptsPage() {
             <input
               type="date"
               value={filters.startDate}
-              onChange={(e) => handleDateChange('startDate', e.target.value)}
-              className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-brand-500 focus:outline-none bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+              onChange={(e) =>
+                handleDateChange('startDate', e.target.value)
+              }
+              className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-brand-500 focus:outline-none bg-white dark:bg-gray-700 text-gray-900 dark:text-white tabular-nums"
             />
             <input
               type="date"
               value={filters.endDate}
               onChange={(e) => handleDateChange('endDate', e.target.value)}
-              className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-brand-500 focus:outline-none bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+              className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-brand-500 focus:outline-none bg-white dark:bg-gray-700 text-gray-900 dark:text-white tabular-nums"
             />
             <button
-              onClick={() => fetchReceipts()}
+              onClick={() => void fetchReceipts()}
               className="px-4 py-2 bg-brand-500 text-white rounded-lg hover:bg-brand-600 transition-colors focus-ring"
             >
               Apply Filters
@@ -1223,7 +1255,6 @@ export default function ReceiptsPage() {
           </div>
         </div>
 
-        {/* List */}
         {receipts.length === 0 ? (
           <div className="card-brand p-12 text-center">
             <div className="text-6xl mb-4">🧾</div>
@@ -1244,6 +1275,10 @@ export default function ReceiptsPage() {
                   const hasBreakdown =
                     (receipt.promotionDiscount ?? 0) > 0 ||
                     (receipt.loyaltyPointsUsed ?? 0) > 0;
+                  const rowCurrency = pickCurrency(
+                    receipt.currency,
+                    displayCurrency,
+                  );
 
                   return (
                     <motion.div
@@ -1254,7 +1289,7 @@ export default function ReceiptsPage() {
                       className="card-brand p-0 overflow-hidden hover:shadow-card-hover transition-all"
                     >
                       <div className="px-6 py-4 border-b border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800/50 flex flex-wrap items-center justify-between gap-3">
-                        <div className="flex items-center gap-3">
+                        <div className="flex items-center gap-3 flex-wrap">
                           <span className="font-mono font-bold text-success-600 dark:text-success-400 tabular-nums">
                             #{receipt.receiptNumber}
                           </span>
@@ -1266,7 +1301,10 @@ export default function ReceiptsPage() {
                           </span>
                           {hasBreakdown && (
                             <span className="inline-flex items-center gap-1 px-2 py-0.5 bg-brand-100 dark:bg-brand-900/30 text-brand-700 dark:text-brand-400 rounded-full text-xs">
-                              <Sparkles className="w-3 h-3" />
+                              <Sparkles
+                                className="w-3 h-3"
+                                aria-hidden="true"
+                              />
                               Discounted
                             </span>
                           )}
@@ -1282,7 +1320,7 @@ export default function ReceiptsPage() {
                               receipt.status.slice(1)}
                           </span>
                           <span className="font-bold text-gray-900 dark:text-white tabular-nums">
-                            {formatCurrency(receipt.total)}
+                            {formatCurrency(receipt.total, rowCurrency)}
                           </span>
                         </div>
                       </div>
@@ -1290,17 +1328,26 @@ export default function ReceiptsPage() {
                       <div className="p-6">
                         <div className="flex flex-wrap items-start justify-between gap-4">
                           <div className="space-y-2">
-                            <div className="flex items-center gap-4 text-sm text-gray-500 dark:text-gray-400">
+                            <div className="flex items-center gap-4 text-sm text-gray-500 dark:text-gray-400 flex-wrap">
                               <span className="flex items-center gap-1">
-                                <User className="w-4 h-4" />
+                                <User
+                                  className="w-4 h-4"
+                                  aria-hidden="true"
+                                />
                                 {receipt.customerName || 'Guest'}
                               </span>
                               <span className="flex items-center gap-1">
-                                <MailIcon className="w-4 h-4" />
+                                <MailIcon
+                                  className="w-4 h-4"
+                                  aria-hidden="true"
+                                />
                                 {receipt.customerEmail || 'N/A'}
                               </span>
                               <span className="flex items-center gap-1 tabular-nums">
-                                <Package className="w-4 h-4" />
+                                <Package
+                                  className="w-4 h-4"
+                                  aria-hidden="true"
+                                />
                                 {receipt.items.length} items
                               </span>
                             </div>
@@ -1334,47 +1381,64 @@ export default function ReceiptsPage() {
                               }}
                               className="px-3 py-1.5 text-brand-600 dark:text-brand-400 hover:bg-brand-50 dark:hover:bg-brand-900/20 rounded-lg text-sm font-medium transition-colors flex items-center gap-1 focus-ring"
                             >
-                              <Eye className="w-4 h-4" />
+                              <Eye className="w-4 h-4" aria-hidden="true" />
                               Details
                             </button>
                             <button
-                              onClick={() => handlePrintReceipt(receipt)}
+                              onClick={() => void handlePrintReceipt(receipt)}
                               disabled={processing}
                               className="px-3 py-1.5 text-brand-accent-600 dark:text-brand-accent-400 hover:bg-brand-accent-50 dark:hover:bg-brand-accent-900/20 rounded-lg text-sm font-medium transition-colors flex items-center gap-1 disabled:opacity-50 focus-ring"
                             >
-                              <Printer className="w-4 h-4" />
+                              <Printer
+                                className="w-4 h-4"
+                                aria-hidden="true"
+                              />
                               Print
                             </button>
                             <button
-                              onClick={() => handleDownloadPdf(receipt)}
+                              onClick={() => void handleDownloadPdf(receipt)}
                               disabled={downloadingPdf}
                               className="px-3 py-1.5 text-danger-600 dark:text-danger-400 hover:bg-danger-50 dark:hover:bg-danger-900/20 rounded-lg text-sm font-medium transition-colors flex items-center gap-1 disabled:opacity-50 focus-ring"
                             >
-                              <FileText className="w-4 h-4" />
+                              <FileText
+                                className="w-4 h-4"
+                                aria-hidden="true"
+                              />
                               PDF
                             </button>
                             <button
                               onClick={() => {
                                 setSelectedReceipt(receipt);
-                                setEmailAddress(receipt.customerEmail || '');
+                                setEmailAddress(
+                                  receipt.customerEmail || '',
+                                );
                                 setShowEmailModal(true);
                               }}
                               className="px-3 py-1.5 text-brand-600 dark:text-brand-400 hover:bg-brand-50 dark:hover:bg-brand-900/20 rounded-lg text-sm font-medium transition-colors flex items-center gap-1 focus-ring"
                             >
-                              <Mail className="w-4 h-4" />
+                              <Mail className="w-4 h-4" aria-hidden="true" />
                               Email
                             </button>
                             <button
                               onClick={() =>
-                                handleCopyReceiptNumber(receipt.receiptNumber)
+                                handleCopyReceiptNumber(
+                                  receipt.receiptNumber,
+                                )
                               }
                               className="px-3 py-1.5 text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg text-sm font-medium transition-colors flex items-center gap-1 focus-ring"
                               title="Copy receipt number"
+                              aria-label="Copy receipt number"
                             >
                               {copied ? (
-                                <Check className="w-4 h-4" />
+                                <Check
+                                  className="w-4 h-4"
+                                  aria-hidden="true"
+                                />
                               ) : (
-                                <Copy className="w-4 h-4" />
+                                <Copy
+                                  className="w-4 h-4"
+                                  aria-hidden="true"
+                                />
                               )}
                             </button>
                           </div>
@@ -1386,7 +1450,6 @@ export default function ReceiptsPage() {
               </AnimatePresence>
             </div>
 
-            {/* Pagination */}
             {totalPages > 1 && (
               <div className="flex flex-wrap justify-center items-center gap-2 mt-6">
                 <button
@@ -1396,45 +1459,56 @@ export default function ReceiptsPage() {
                   disabled={filters.page === 1}
                   className="px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg text-sm hover:bg-gray-50 dark:hover:bg-gray-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors text-gray-700 dark:text-gray-300 focus-ring"
                 >
-                  <ChevronLeft className="w-4 h-4 inline" />
+                  <ChevronLeft
+                    className="w-4 h-4 inline"
+                    aria-hidden="true"
+                  />
                   Previous
                 </button>
                 <div className="flex items-center gap-1">
-                  {Array.from({ length: Math.min(totalPages, 5) }, (_, i) => {
-                    let pageNum: number;
-                    if (totalPages <= 5) {
-                      pageNum = i + 1;
-                    } else if (filters.page <= 3) {
-                      pageNum = i + 1;
-                    } else if (filters.page >= totalPages - 2) {
-                      pageNum = totalPages - 4 + i;
-                    } else {
-                      pageNum = filters.page - 2 + i;
-                    }
-                    return (
-                      <button
-                        key={pageNum}
-                        onClick={() => handlePageChange(pageNum)}
-                        className={`w-9 h-9 rounded-lg text-sm transition-colors tabular-nums focus-ring ${
-                          filters.page === pageNum
-                            ? 'bg-success-600 text-white'
-                            : 'border border-gray-300 dark:border-gray-600 hover:bg-gray-50 dark:hover:bg-gray-700 text-gray-700 dark:text-gray-300'
-                        }`}
-                      >
-                        {pageNum}
-                      </button>
-                    );
-                  })}
+                  {Array.from(
+                    { length: Math.min(totalPages, 5) },
+                    (_, i) => {
+                      let pageNum: number;
+                      if (totalPages <= 5) {
+                        pageNum = i + 1;
+                      } else if (filters.page <= 3) {
+                        pageNum = i + 1;
+                      } else if (filters.page >= totalPages - 2) {
+                        pageNum = totalPages - 4 + i;
+                      } else {
+                        pageNum = filters.page - 2 + i;
+                      }
+                      return (
+                        <button
+                          key={pageNum}
+                          onClick={() => handlePageChange(pageNum)}
+                          className={`w-9 h-9 rounded-lg text-sm transition-colors tabular-nums focus-ring ${
+                            filters.page === pageNum
+                              ? 'bg-success-600 text-white'
+                              : 'border border-gray-300 dark:border-gray-600 hover:bg-gray-50 dark:hover:bg-gray-700 text-gray-700 dark:text-gray-300'
+                          }`}
+                        >
+                          {pageNum}
+                        </button>
+                      );
+                    },
+                  )}
                 </div>
                 <button
                   onClick={() =>
-                    handlePageChange(Math.min(totalPages, filters.page + 1))
+                    handlePageChange(
+                      Math.min(totalPages, filters.page + 1),
+                    )
                   }
                   disabled={filters.page === totalPages}
                   className="px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg text-sm hover:bg-gray-50 dark:hover:bg-gray-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors text-gray-700 dark:text-gray-300 focus-ring"
                 >
                   Next
-                  <ChevronRight className="w-4 h-4 inline" />
+                  <ChevronRight
+                    className="w-4 h-4 inline"
+                    aria-hidden="true"
+                  />
                 </button>
               </div>
             )}
@@ -1442,19 +1516,22 @@ export default function ReceiptsPage() {
         )}
       </div>
 
-      {/* Detail Modal */}
       <AnimatePresence>
         {showDetailModal && selectedReceipt && (
           <DetailModal
             receiptData={selectedReceipt}
+            currency={pickCurrency(
+              selectedReceipt.currency,
+              displayCurrency,
+            )}
             onClose={() => setShowDetailModal(false)}
-            onPrint={() => handlePrintReceipt(selectedReceipt)}
+            onPrint={() => void handlePrintReceipt(selectedReceipt)}
             onEmail={() => {
               setShowDetailModal(false);
               setEmailAddress(selectedReceipt.customerEmail || '');
               setShowEmailModal(true);
             }}
-            onDownloadPdf={() => handleDownloadPdf(selectedReceipt)}
+            onDownloadPdf={() => void handleDownloadPdf(selectedReceipt)}
             onVoid={() => {
               setShowDetailModal(false);
               setVoidReason('');
@@ -1467,7 +1544,6 @@ export default function ReceiptsPage() {
         )}
       </AnimatePresence>
 
-      {/* Email Modal */}
       <AnimatePresence>
         {showEmailModal && selectedReceipt && (
           <EmailModal
@@ -1478,19 +1554,18 @@ export default function ReceiptsPage() {
               setShowEmailModal(false);
               setEmailAddress('');
             }}
-            onConfirm={handleSendEmail}
+            onConfirm={() => void handleSendEmail()}
             processing={processing}
           />
         )}
       </AnimatePresence>
 
-      {/* Void Modal */}
       <AnimatePresence>
         {showVoidModal && selectedReceipt && (
           <VoidModal
             receiptData={selectedReceipt}
             onClose={() => setShowVoidModal(false)}
-            onConfirm={handleVoidReceipt}
+            onConfirm={() => void handleVoidReceipt()}
             reason={voidReason}
             setReason={setVoidReason}
             processing={processing}
@@ -1501,12 +1576,9 @@ export default function ReceiptsPage() {
   );
 }
 
-// ============================================
-// DETAIL MODAL
-// ============================================
-
 interface DetailModalProps {
   receiptData: Receipt;
+  currency: string;
   onClose: () => void;
   onPrint: () => void;
   onEmail: () => void;
@@ -1519,6 +1591,7 @@ interface DetailModalProps {
 
 function DetailModal({
   receiptData,
+  currency,
   onClose,
   onPrint,
   onEmail,
@@ -1559,8 +1632,9 @@ function DetailModal({
           <button
             onClick={onClose}
             className="p-2 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-colors focus-ring"
+            aria-label="Close"
           >
-            <XCircle className="w-6 h-6 text-gray-500" />
+            <XCircle className="w-6 h-6 text-gray-500" aria-hidden="true" />
           </button>
         </div>
 
@@ -1577,7 +1651,9 @@ function DetailModal({
                 {receiptData.businessUnitPhone}
               </p>
               <div className="border-t border-dashed border-gray-300 dark:border-gray-600 my-2"></div>
-              <p className="font-mono text-sm">#{receiptData.receiptNumber}</p>
+              <p className="font-mono text-sm">
+                #{receiptData.receiptNumber}
+              </p>
               <p className="text-xs text-gray-500 dark:text-gray-400">
                 {formatDateTime(receiptData.createdAt)}
               </p>
@@ -1597,7 +1673,7 @@ function DetailModal({
                         {item.productName} × {item.quantity}
                       </span>
                       <span className="tabular-nums">
-                        {formatCurrency(item.total)}
+                        {formatCurrency(item.total, currency)}
                       </span>
                     </div>
                   ))}
@@ -1612,13 +1688,13 @@ function DetailModal({
                 <div className="flex justify-between text-sm">
                   <span>Subtotal</span>
                   <span className="tabular-nums">
-                    {formatCurrency(receiptData.subtotal)}
+                    {formatCurrency(receiptData.subtotal, currency)}
                   </span>
                 </div>
                 <div className="flex justify-between text-sm">
                   <span>Tax</span>
                   <span className="tabular-nums">
-                    {formatCurrency(receiptData.tax)}
+                    {formatCurrency(receiptData.tax, currency)}
                   </span>
                 </div>
                 {promotionDiscount > 0 && (
@@ -1628,7 +1704,7 @@ function DetailModal({
                       {promotionCode ? ` (${promotionCode})` : ''}
                     </span>
                     <span className="tabular-nums">
-                      -{formatCurrency(promotionDiscount)}
+                      -{formatCurrency(promotionDiscount, currency)}
                     </span>
                   </div>
                 )}
@@ -1638,7 +1714,7 @@ function DetailModal({
                       {loyaltyPointsUsed} loyalty points
                     </span>
                     <span className="tabular-nums">
-                      -{formatCurrency(loyaltyDiscount)}
+                      -{formatCurrency(loyaltyDiscount, currency)}
                     </span>
                   </div>
                 )}
@@ -1646,26 +1722,26 @@ function DetailModal({
                   <div className="flex justify-between text-sm text-success-600 dark:text-success-400">
                     <span>Discount</span>
                     <span className="tabular-nums">
-                      -{formatCurrency(receiptData.discount)}
+                      -{formatCurrency(receiptData.discount, currency)}
                     </span>
                   </div>
                 )}
                 <div className="flex justify-between font-bold text-lg">
                   <span>Total</span>
                   <span className="tabular-nums">
-                    {formatCurrency(receiptData.total)}
+                    {formatCurrency(receiptData.total, currency)}
                   </span>
                 </div>
                 <div className="flex justify-between text-sm">
                   <span>Paid</span>
                   <span className="tabular-nums">
-                    {formatCurrency(receiptData.paidAmount)}
+                    {formatCurrency(receiptData.paidAmount, currency)}
                   </span>
                 </div>
                 <div className="flex justify-between text-sm">
                   <span>Change</span>
                   <span className="tabular-nums">
-                    {formatCurrency(receiptData.changeAmount)}
+                    {formatCurrency(receiptData.changeAmount, currency)}
                   </span>
                 </div>
                 <div className="flex justify-between text-sm">
@@ -1682,14 +1758,20 @@ function DetailModal({
               aria-label="Discount breakdown"
             >
               <p className="text-xs font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400 flex items-center gap-1.5">
-                <Sparkles className="w-3 h-3 text-brand-500" />
+                <Sparkles
+                  className="w-3 h-3 text-brand-500"
+                  aria-hidden="true"
+                />
                 Discount Breakdown
               </p>
 
               {promotionDiscount > 0 && (
                 <div className="flex items-center justify-between text-sm">
                   <span className="flex items-center gap-2 text-gray-600 dark:text-gray-400">
-                    <Tag className="w-3.5 h-3.5 text-brand-500 shrink-0" />
+                    <Tag
+                      className="w-3.5 h-3.5 text-brand-500 shrink-0"
+                      aria-hidden="true"
+                    />
                     <span>{promotionLabel}</span>
                     {promotionCode && (
                       <code className="px-1.5 py-0.5 rounded bg-gray-200 dark:bg-gray-700 text-[10px] font-mono tabular-nums">
@@ -1698,7 +1780,7 @@ function DetailModal({
                     )}
                   </span>
                   <span className="tabular-nums font-medium text-success-600 dark:text-success-400 shrink-0">
-                    -{formatCurrency(promotionDiscount)}
+                    -{formatCurrency(promotionDiscount, currency)}
                   </span>
                 </div>
               )}
@@ -1706,13 +1788,16 @@ function DetailModal({
               {loyaltyPointsUsed > 0 && (
                 <div className="flex items-center justify-between text-sm">
                   <span className="flex items-center gap-2 text-gray-600 dark:text-gray-400">
-                    <Star className="w-3.5 h-3.5 text-warning-500 fill-current shrink-0" />
+                    <Star
+                      className="w-3.5 h-3.5 text-warning-500 fill-current shrink-0"
+                      aria-hidden="true"
+                    />
                     <span className="tabular-nums">
                       {loyaltyPointsUsed} loyalty points
                     </span>
                   </span>
                   <span className="tabular-nums font-medium text-success-600 dark:text-success-400 shrink-0">
-                    -{formatCurrency(loyaltyDiscount)}
+                    -{formatCurrency(loyaltyDiscount, currency)}
                   </span>
                 </div>
               )}
@@ -1729,13 +1814,17 @@ function DetailModal({
               </p>
             </div>
             <div>
-              <p className="text-sm text-gray-500 dark:text-gray-400">Email</p>
-              <p className="font-medium text-gray-900 dark:text-white">
+              <p className="text-sm text-gray-500 dark:text-gray-400">
+                Email
+              </p>
+              <p className="font-medium text-gray-900 dark:text-white truncate">
                 {receiptData.customerEmail || 'N/A'}
               </p>
             </div>
             <div>
-              <p className="text-sm text-gray-500 dark:text-gray-400">Type</p>
+              <p className="text-sm text-gray-500 dark:text-gray-400">
+                Type
+              </p>
               <p className="font-medium text-gray-900 dark:text-white">
                 {getReceiptTypeLabel(receiptData.receiptType)}
               </p>
@@ -1761,14 +1850,14 @@ function DetailModal({
               disabled={processing}
               className="px-4 py-2 bg-brand-accent-600 text-white rounded-lg hover:bg-brand-accent-700 flex items-center gap-2 disabled:opacity-50 focus-ring"
             >
-              <Printer className="w-4 h-4" />
+              <Printer className="w-4 h-4" aria-hidden="true" />
               Print
             </button>
             <button
               onClick={onEmail}
               className="px-4 py-2 bg-brand-500 text-white rounded-lg hover:bg-brand-600 flex items-center gap-2 focus-ring"
             >
-              <Mail className="w-4 h-4" />
+              <Mail className="w-4 h-4" aria-hidden="true" />
               Email
             </button>
             <button
@@ -1777,9 +1866,12 @@ function DetailModal({
               className="px-4 py-2 bg-danger-600 text-white rounded-lg hover:bg-danger-700 flex items-center gap-2 disabled:opacity-50 focus-ring"
             >
               {downloadingPdf ? (
-                <Loader2 className="w-4 h-4 animate-spin" />
+                <Loader2
+                  className="w-4 h-4 animate-spin"
+                  aria-hidden="true"
+                />
               ) : (
-                <FileText className="w-4 h-4" />
+                <FileText className="w-4 h-4" aria-hidden="true" />
               )}
               {downloadingPdf ? 'Preparing...' : 'PDF'}
             </button>
@@ -1790,7 +1882,7 @@ function DetailModal({
                   onClick={onVoid}
                   className="px-4 py-2 bg-danger-600 text-white rounded-lg hover:bg-danger-700 flex items-center gap-2 focus-ring"
                 >
-                  <XCircle className="w-4 h-4" />
+                  <XCircle className="w-4 h-4" aria-hidden="true" />
                   Void
                 </button>
               )}
@@ -1806,10 +1898,6 @@ function DetailModal({
     </div>
   );
 }
-
-// ============================================
-// EMAIL MODAL
-// ============================================
 
 interface EmailModalProps {
   receiptData: Receipt;
@@ -1869,9 +1957,9 @@ function EmailModal({
             className="px-4 py-2 bg-brand-500 text-white rounded-lg hover:bg-brand-600 flex items-center gap-2 disabled:opacity-50 focus-ring"
           >
             {processing ? (
-              <Loader2 className="w-4 h-4 animate-spin" />
+              <Loader2 className="w-4 h-4 animate-spin" aria-hidden="true" />
             ) : (
-              <Send className="w-4 h-4" />
+              <Send className="w-4 h-4" aria-hidden="true" />
             )}
             {processing ? 'Sending...' : 'Send Email'}
           </button>
@@ -1880,10 +1968,6 @@ function EmailModal({
     </div>
   );
 }
-
-// ============================================
-// VOID MODAL
-// ============================================
 
 interface VoidModalProps {
   receiptData: Receipt;
@@ -1944,9 +2028,9 @@ function VoidModal({
             className="px-4 py-2 bg-danger-600 text-white rounded-lg hover:bg-danger-700 flex items-center gap-2 disabled:opacity-50 focus-ring"
           >
             {processing ? (
-              <Loader2 className="w-4 h-4 animate-spin" />
+              <Loader2 className="w-4 h-4 animate-spin" aria-hidden="true" />
             ) : (
-              <XCircle className="w-4 h-4" />
+              <XCircle className="w-4 h-4" aria-hidden="true" />
             )}
             {processing ? 'Voiding...' : 'Confirm Void'}
           </button>
@@ -1955,10 +2039,6 @@ function VoidModal({
     </div>
   );
 }
-
-// ============================================
-// LOADING SKELETON
-// ============================================
 
 function LoadingSkeleton() {
   return (

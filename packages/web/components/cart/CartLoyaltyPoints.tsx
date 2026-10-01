@@ -19,6 +19,34 @@ interface CartLoyaltyPointsProps {
   disabled?: boolean;
   className?: string;
   appliedPoints?: number;
+
+  /**
+   * ── Phase 2: ISO 4217 currency code for the cart. ─────────────
+   *
+   * Pass `cart.currency` from the parent. The two amounts this
+   * component renders (the applied-points discount and the
+   * estimated-discount preview) are denominated in this currency,
+   * and `formatCurrency(x, currency)` renders them correctly.
+   *
+   * ⚠ Optional for backward compatibility with callers that have
+   *   not been migrated yet. When omitted, `formatCurrency` falls
+   *   back to `'USD'` — which is what every caller got before
+   *   Phase 2, so the unmigrated behaviour is unchanged.
+   */
+  currency?: string;
+
+  /**
+   * ── Phase 2: display symbol for `currency`. ───────────────────
+   *
+   * Currently unused by the render path (the two amounts use
+   * `formatCurrency`, which produces its own symbol), but accepted
+   * so a caller that has `cart.currencySymbol` in hand can pass it
+   * without a TypeScript mismatch. Reserved for future use if a
+   * compact symbol-only display is added.
+   *
+   * ⚠ Optional; safe to omit.
+   */
+  currencySymbol?: string;
 }
 
 interface LoyaltyResponse {
@@ -29,8 +57,39 @@ interface LoyaltyResponse {
 }
 
 /**
- * Mirrors the backend conversion in `CartService.applyLoyaltyPoints`:
- *   1 point = $0.10  →  10 points per $1.
+ * Points-per-currency-unit conversion rate.
+ *
+ * ⚠ SEMANTIC BUG (pre-existing, NOT introduced by Phase 2):
+ *   The rate `1 point = 0.10` is a HARDCODED USD-derived rate.
+ *   It is mirrored on the backend in
+ *   `CartService.applyLoyaltyPoints` and in
+ *   `CheckoutService.processCheckout`, both of which do
+ *   `points * 0.1`.
+ *
+ *   On a UGX cart, `1 point = 0.10 UGX` is effectively zero —
+ *   redeeming 500 points discounts the cart by UGX 50 against a
+ *   subtotal that is typically in the millions. The customer sees
+ *   a discount of essentially nothing.
+ *
+ *   The frontend math here is CORRECT relative to the backend —
+ *   it uses the same rate the backend uses, so the "estimated
+ *   discount" preview matches what the backend will actually
+ *   apply. The bug is in the RATE ITSELF, which must come from
+ *   `CartSettings` (or `LoyaltyProgram`) and be currency-aware
+ *   before this is correct on non-USD deployments.
+ *
+ *   Fixing this requires a coordinated backend + frontend change:
+ *     1. Add `pointsPerCurrencyUnit` (or equivalent) to
+ *        `CartSettings` / `LoyaltyProgram`.
+ *     2. Resolve the rate through `currencyService` server-side.
+ *     3. Surface the resolved rate on the cart payload.
+ *     4. Replace this constant with the resolved rate from the
+ *        payload.
+ *
+ *   Until then, this constant keeps the frontend preview in sync
+ *   with the backend's actual behaviour. Do NOT change it in
+ *   isolation — the preview would then lie about what the backend
+ *   will do.
  */
 const POINTS_PER_CURRENCY_UNIT = 10;
 
@@ -49,6 +108,14 @@ export function CartLoyaltyPoints({
   disabled = false,
   className = '',
   appliedPoints = 0,
+  // ── Phase 2: currency props ──────────────────────────────
+  // Optional for backward compatibility. See the prop JSDoc.
+  // `currencySymbol` is accepted for symmetry with the other
+  // cart components but is not read by the render path — the
+  // two amounts go through `formatCurrency`, which produces
+  // its own symbol from `currency`.
+  currency,
+  currencySymbol: _currencySymbol,
 }: CartLoyaltyPointsProps) {
   const { isAuthenticated } = useAuth();
 
@@ -57,6 +124,13 @@ export function CartLoyaltyPoints({
   const [isLoading, setIsLoading] = useState(false);
   const [isFetching, setIsFetching] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  // ── Phase 2: resolve the currency code for formatting ────
+  // Prefer the prop (authoritative — comes from `cart.currency`,
+  // resolved server-side). Fall back to `'USD'` for unmigrated
+  // callers so `formatCurrency` behaves exactly as it did before
+  // Phase 2.
+  const resolvedCurrency = currency ?? 'USD';
 
   const fetchCustomerPoints = useCallback(async () => {
     if (!customerId || !isAuthenticated) return;
@@ -188,7 +262,18 @@ export function CartLoyaltyPoints({
             points applied
           </span>
           <span className="text-sm font-medium text-secondary-700 dark:text-secondary-300 tabular-nums">
-            −{formatCurrency(appliedPoints / POINTS_PER_CURRENCY_UNIT)}
+            {/*
+              ── Phase 2: format in the cart's own currency ──
+              `formatCurrency(x, resolvedCurrency)` renders the
+              discount with the correct ISO code. When the caller
+              is unmigrated (`currency` undefined),
+              `resolvedCurrency` is `'USD'` and the render is
+              identical to the pre-Phase-2 behaviour.
+            */}
+            −{formatCurrency(
+              appliedPoints / POINTS_PER_CURRENCY_UNIT,
+              resolvedCurrency,
+            )}
           </span>
         </div>
       )}
@@ -247,7 +332,8 @@ export function CartLoyaltyPoints({
               <span>
                 Estimated discount:{' '}
                 <strong className="text-success-600 dark:text-success-400 tabular-nums">
-                  {formatCurrency(estimatedDiscount)}
+                  {/* ── Phase 2: same currency resolution ── */}
+                  {formatCurrency(estimatedDiscount, resolvedCurrency)}
                 </strong>
               </span>
             </div>

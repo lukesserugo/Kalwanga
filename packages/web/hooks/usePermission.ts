@@ -18,22 +18,11 @@ import {
 // CONSTANTS
 // ============================================================
 
-const SUPER_ADMIN_ROLES = new Set<string>([
-  'SUPER_ADMIN',
-  'super_admin',
-  'SuperAdmin',
-]);
-
 const WILDCARD_TOKENS = new Set<string>(['*', '*:*', '*:*:*']);
 
 // ============================================================
 // HELPERS
 // ============================================================
-
-function isSuperAdminRole(role: string | null | undefined): boolean {
-  if (!role) return false;
-  return SUPER_ADMIN_ROLES.has(role);
-}
 
 function hasWildcardToken(permissions: readonly string[]): boolean {
   return permissions.some((p) => WILDCARD_TOKENS.has(p));
@@ -133,31 +122,9 @@ export function usePermission() {
     [permissionsKeyValue]
   );
 
-  // ────────────────────────────────────────────────────────────
-  // FIX #2 — SUPER ADMIN
-  //
-  // Prefer the authoritative flag from useAuth, then fall back
-  // to the same checks the hook previously used. The fallbacks
-  // exist so this hook remains correct if it's ever consumed
-  // without useAuth in scope (unit tests, storybook, etc.).
-  // ────────────────────────────────────────────────────────────
   const isSuperAdmin: boolean = useMemo(() => {
-    // Authoritative source of truth.
-    if (authIsSuperAdmin) return true;
-
-    // Defensive fallbacks.
-    if (isSuperAdminRole(userRole)) return true;
-    if (isSuperAdminRole((user as any)?.role)) return true;
-    if (hasWildcardToken(permissions)) return true;
-
-    return false;
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [
-    authIsSuperAdmin,
-    userRole,
-    (user as any)?.role,
-    permissionsKeyValue,
-  ]);
+    return authIsSuperAdmin;
+  }, [authIsSuperAdmin]);
 
   // ────────────────────────────────────────────────────────────
   // FIX #3 — CANONICAL CHECKER — stable via refs.

@@ -26,3 +26,17 @@ export type { CartActionsProps } from './CartActions';
 export type { CartTotalsProps } from './CartTotals';
 export type { CartItemListProps } from './CartItemList';
 export type { CartCheckoutButtonProps } from './CartCheckoutButton';
+
+// ── Phase 2: prop types for currency-aware components ──────────
+//
+// The following components now carry a `currency` (and in two
+// cases `currencySymbol`) prop that is either REQUIRED or newly
+// added. Exporting their prop types through the barrel lets
+// consumers discover the new prop signatures without digging
+// into the component files, and lets TypeScript surface a
+// missing-required-prop error at the call site.
+//
+// ⚠ Only `CartItemCardProps.currency` is REQUIRED. The others
+//   accept `currency` optionally for backward compatibility.
+//   See each component's JSDoc for the exact contract.
+export type { CartItemCardProps } from './CartItemCard';

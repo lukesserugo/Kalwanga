@@ -2,32 +2,17 @@
 
 import type { Request, Response, NextFunction } from 'express';
 import { CartService } from '../services/cartService.js';
-import { CheckoutService } from '../services/checkoutService.js';
+import checkoutService from '../services/checkoutService.js';
 import { AppError } from '../middleware/errorHandler.js';
 import { prisma } from '../lib/prisma.js';
 import { realtimeService } from '../services/realtimeService.js';
 import { z } from 'zod';
 
 const cartService = new CartService();
-const checkoutService = new CheckoutService();
 
 // ============================================
 // CANONICAL PAYMENT METHODS
 // ============================================
-//
-// Mirrors `CANONICAL_PAYMENT_METHODS` in `../utils/validators.ts`. Kept
-// local to the controller to avoid a circular import; the two must stay
-// in sync. Any change to the backend-wide set should be applied here too.
-//
-// NOTE: `EXCHANGE` and `STORE_CREDIT` are valid POS "payment" methods
-// when a customer exchanges goods or spends store credit; they are
-// distinct from `RefundMethod` values but appear in the same UI menu.
-//
-// ⚠ `PAYSTACK` was removed — no provider handler is registered for it
-//   in `paymentService.initializeHandlers()`, and the UI no longer
-//   offers it. Re-adding it here without also registering a factory
-//   there would let a caller type-check a request that fails at
-//   runtime with "Unsupported payment method: PAYSTACK".
 
 const CANONICAL_PAYMENT_METHODS = [
   'CASH',
@@ -127,12 +112,6 @@ const associateCustomerSchema = z.object({
   customerId: z.string().min(1, 'Customer ID is required'),
 });
 
-/**
- * `idempotencyKey` accepts any non-empty string. `Sale.idempotencyKey`
- * is a `String? @unique` column, not a UUID — POS clients commonly send
- * composite keys like `pos-<terminalId>-<seq>`. A `.uuid()` check would
- * reject those silently.
- */
 const idempotencyKeySchema = z
   .string()
   .min(1, 'Idempotency key must not be empty')
@@ -185,13 +164,6 @@ const restoreSavedCartSchema = z.object({
   savedCartId: z.string().min(1, 'Saved cart ID is required'),
 });
 
-/**
- * Body accepted by `POST /cart/merge-guest`.
- *
- * Called by the frontend after login when it holds a guest cart id.
- * The merge is idempotent — a second call for the same pair is a
- * no-op — so the client can fire it without worrying about retries.
- */
 const mergeGuestCartSchema = z.object({
   guestCartId: z.string().min(1, 'Guest cart ID is required'),
 });
@@ -200,30 +172,23 @@ const mergeGuestCartSchema = z.object({
 // HELPERS
 // ============================================
 
-/**
- * Extract the authenticated user's ID from the request in a
- * shape-agnostic way. The auth middleware has historically populated
- * either `req.user.id` or `req.user.userId` depending on the route,
- * so both are checked.
- */
 function getUserId(req: Request): string | undefined {
   const user = (req as any).user;
   return user?.id || user?.userId;
 }
 
-/**
- * Resolve the effective business unit ID for a request.
- *
- * Explicit header / body / query value is checked FIRST, then the
- * user's own unit, then the most recent active unit, then a
- * bootstrapped default. The bootstrap path should never run in
- * production — it exists so a fresh dev database can accept its first
- * cart without manual seeding.
- */
+function getDisplayCurrency(req: Request): string | undefined {
+  const raw = req.headers['x-display-currency'];
+  const value = Array.isArray(raw) ? raw[0] : raw;
+  if (typeof value !== 'string') return undefined;
+  const trimmed = value.trim();
+  if (!trimmed) return undefined;
+  return trimmed.toUpperCase();
+}
+
 async function getBusinessUnitId(req: Request): Promise<string> {
   const user = (req as any).user;
 
-  // 1. Explicit override (header > body > query)
   const explicit =
     (req.headers['x-business-unit-id'] as string | undefined) ||
     (req.body?.businessUnitId as string | undefined) ||
@@ -246,7 +211,6 @@ async function getBusinessUnitId(req: Request): Promise<string> {
     );
   }
 
-  // 2. User's own unit
   const userBu =
     user?.businessUnitId ||
     user?.businessUnits?.[0]?.businessUnitId ||
@@ -262,7 +226,6 @@ async function getBusinessUnitId(req: Request): Promise<string> {
     }
   }
 
-  // 3. Fallback: most recent active unit
   try {
     const businessUnit = await prisma.businessUnit.findFirst({
       where: { isActive: true },
@@ -276,7 +239,6 @@ async function getBusinessUnitId(req: Request): Promise<string> {
       return businessUnit.id;
     }
 
-    // 4. Bootstrap a default company + unit (dev-only path)
     let company = await prisma.company.findFirst();
     if (!company) {
       company = await prisma.company.create({
@@ -289,9 +251,6 @@ async function getBusinessUnitId(req: Request): Promise<string> {
       });
     }
 
-    // `code` is `@unique`. Retry on collision — the previous
-    // `Date.now().slice(-6)` had a real chance of colliding twice in
-    // the same second and would 500 the request.
     const companyId = company.id;
     for (let attempt = 0; attempt < 5; attempt++) {
       const suffix = `${Date.now().toString().slice(-6)}${attempt}`;
@@ -324,10 +283,6 @@ async function getBusinessUnitId(req: Request): Promise<string> {
   }
 }
 
-/**
- * Fire-and-forget real-time event. Wrapped so a failure here never
- * propagates to the caller.
- */
 async function safeEmitEvent(
   eventName: string,
   data: any,
@@ -354,13 +309,6 @@ async function safeEmitEvent(
   }
 }
 
-/**
- * Convert a ZodError to the standard 400 response shape.
- *
- * NOTE: `ZodError.issues` is the canonical field; `.errors` is a
- * deprecated alias in Zod 3.22+. Preferring `.issues` avoids a
- * future break when the alias is removed.
- */
 function zodErrorResponse(error: z.ZodError): {
   success: false;
   message: string;
@@ -376,11 +324,6 @@ function zodErrorResponse(error: z.ZodError): {
   };
 }
 
-/**
- * Escape a value for CSV output. Wraps in quotes when the value
- * contains a comma, quote, newline, or carriage return, and doubles
- * any embedded quotes.
- */
 function csvEscape(value: unknown): string {
   if (value === null || value === undefined) return '';
   const str = String(value);
@@ -395,17 +338,10 @@ function csvEscape(value: unknown): string {
   return str;
 }
 
-/**
- * Serialize one CSV row from an array of raw values.
- */
 function csvRow(values: unknown[]): string {
   return values.map(csvEscape).join(',');
 }
 
-/**
- * Reject `__proto__` / `constructor` / `prototype` keys before
- * spreading an untrusted object into Prisma.
- */
 function assertSafeObjectKeys(
   obj: Record<string, unknown>,
   allowed: Set<string>,
@@ -427,28 +363,6 @@ function assertSafeObjectKeys(
   }
 }
 
-/**
- * Whitelist of fields a client may set on `CartSettings`.
- *
- * ⚠ Must match `updateCartSettingsSchema` in
- *   `packages/shared/src/schemas/cart.ts`. A field that's in one but
- *   not the other either 400s at the schema layer or 400s at this
- *   whitelist — either way it's a bug.
- *
- * ⚠ Phase 2: `'currencySymbol'` was REMOVED. Phase 1 deleted the
- *   column from `CartSettings` (and from its siblings
- *   `CheckoutSettings` and `SalesSettings`); the display symbol is
- *   now derived from `currencyCode` at read time via the registry
- *   in `lib/currencies.ts`.
- *
- *   Only `currencyCode` is settable. A client that still sends
- *   `currencySymbol` gets a 400 "Unknown settings field:
- *   currencySymbol" from `assertSafeObjectKeys` above — which is
- *   intentional. Turning the stale field into a visible error is
- *   preferable to silently accepting a value that the service will
- *   discard. It surfaces the Phase 4 / Phase 5 client-side cleanup
- *   as a real bug during rollout.
- */
 const CART_SETTINGS_ALLOWED_KEYS = new Set<string>([
   'allowGuestCheckout',
   'requireCustomerForReturn',
@@ -476,7 +390,6 @@ const CART_SETTINGS_ALLOWED_KEYS = new Set<string>([
   'abandonedCartHours',
   'notifyOnLowStock',
   'currencyCode',
-  // ⚠ Phase 2: `currencySymbol` intentionally absent.
   'showStockBadge',
   'showVariantImages',
   'isActive',
@@ -491,34 +404,18 @@ export const cartController = {
   // READ
   // ============================================
 
-  /**
-   * GET /cart
-   *
-   * Read-only. Returns the user's active cart, or an empty synthetic
-   * cart when none exists. Never creates a row.
-   *
-   * ⚠ Creating on GET was the source of the 409 storm: the shopper
-   *    already had a cart row (often a guest cart that survived
-   *    login), the unique constraint `(userId, businessUnitId)`
-   *    fired on the redundant INSERT, and every retry from the
-   *    frontend re-hit the same failure.
-   *
-   * The frontend sees a cart-shaped object either way, so it never
-   * has to branch on "no cart exists". The synthetic stub has
-   * `id: ''`; callers that try to mutate it should treat that as
-   * "not yet created" and let the mutation endpoint lazily create
-   * one via `getOrCreateCart`.
-   */
   async getCart(req: Request, res: Response, next: NextFunction) {
     try {
       const userId = getUserId(req);
       if (!userId) throw new AppError('User ID is required', 400);
 
       const businessUnitId = await getBusinessUnitId(req);
+      const displayCurrency = getDisplayCurrency(req);
 
       const cart = await cartService.getCartForRequest(
         userId,
         businessUnitId,
+        displayCurrency,
       );
 
       res.status(200).json({ success: true, data: cart });
@@ -527,15 +424,17 @@ export const cartController = {
     }
   },
 
-  /**
-   * GET /cart/:id
-   */
   async getCartById(req: Request, res: Response, next: NextFunction) {
     try {
       const { id } = req.params;
       const businessUnitId = await getBusinessUnitId(req);
+      const displayCurrency = getDisplayCurrency(req);
 
-      const cart = await cartService.getCartById(id, businessUnitId);
+      const cart = await cartService.getCartById(
+        id,
+        businessUnitId,
+        displayCurrency,
+      );
       if (!cart) throw new AppError('Cart not found', 404);
 
       res.status(200).json({ success: true, data: cart });
@@ -544,9 +443,6 @@ export const cartController = {
     }
   },
 
-  /**
-   * GET /cart/count
-   */
   async getCartCount(req: Request, res: Response, next: NextFunction) {
     try {
       const userId = getUserId(req);
@@ -565,25 +461,27 @@ export const cartController = {
     }
   },
 
-  /**
-   * GET /cart/summary
-   *
-   * Read-only. When there is no active cart, returns a zeroed
-   * summary rather than materializing one.
-   */
   async getCartSummary(req: Request, res: Response, next: NextFunction) {
     try {
       const userId = getUserId(req);
       const businessUnitId = await getBusinessUnitId(req);
+      const displayCurrency = getDisplayCurrency(req);
 
       if (!userId) throw new AppError('User ID is required', 400);
 
       const cart = await cartService.findActiveCart(
         userId,
         businessUnitId,
+        displayCurrency,
       );
 
       if (!cart) {
+        const stub = await cartService.getCartForRequest(
+          userId,
+          businessUnitId,
+          displayCurrency,
+        );
+
         return res.status(200).json({
           success: true,
           data: {
@@ -593,12 +491,17 @@ export const cartController = {
             tax: 0,
             discount: 0,
             total: 0,
+            currency: stub.currency,
+            currencySymbol: stub.currencySymbol,
             items: [],
           },
         });
       }
 
-      const summary = await cartService.getCartSummary(cart.id);
+      const summary = await cartService.getCartSummary(
+        cart.id,
+        displayCurrency,
+      );
 
       res.status(200).json({ success: true, data: summary });
     } catch (error) {
@@ -610,13 +513,11 @@ export const cartController = {
   // ITEM MUTATIONS
   // ============================================
 
-  /**
-   * POST /cart/items
-   */
   async addItem(req: Request, res: Response, next: NextFunction) {
     try {
       const userId = getUserId(req);
       const businessUnitId = await getBusinessUnitId(req);
+      const displayCurrency = getDisplayCurrency(req);
 
       if (!userId) throw new AppError('User ID is required', 400);
 
@@ -665,11 +566,10 @@ export const cartController = {
         });
       }
 
-      // Mutation path: lazily create the cart. `getOrCreateCart` is
-      // race-safe now — a concurrent create no longer 409s.
       const cart = await cartService.getOrCreateCart(
         userId,
         businessUnitId,
+        displayCurrency,
       );
 
       const updatedCart = await cartService.addItemToCart(
@@ -682,6 +582,7 @@ export const cartController = {
         },
         userId,
         businessUnitId,
+        displayCurrency,
       );
 
       await safeEmitEvent('cart:item-added', {
@@ -705,9 +606,6 @@ export const cartController = {
     }
   },
 
-  /**
-   * POST /cart/items/bulk
-   */
   async addMultipleItems(
     req: Request,
     res: Response,
@@ -716,6 +614,7 @@ export const cartController = {
     try {
       const userId = getUserId(req);
       const businessUnitId = await getBusinessUnitId(req);
+      const displayCurrency = getDisplayCurrency(req);
 
       if (!userId) throw new AppError('User ID is required', 400);
 
@@ -724,6 +623,7 @@ export const cartController = {
       const cart = await cartService.getOrCreateCart(
         userId,
         businessUnitId,
+        displayCurrency,
       );
 
       const updatedCart = await cartService.addMultipleItemsToCart(
@@ -731,6 +631,7 @@ export const cartController = {
         items,
         userId,
         businessUnitId,
+        displayCurrency,
       );
 
       res.status(200).json({
@@ -746,9 +647,6 @@ export const cartController = {
     }
   },
 
-  /**
-   * PUT /cart/items/:itemId
-   */
   async updateItemQuantity(
     req: Request,
     res: Response,
@@ -757,6 +655,7 @@ export const cartController = {
     try {
       const userId = getUserId(req);
       const businessUnitId = await getBusinessUnitId(req);
+      const displayCurrency = getDisplayCurrency(req);
       const { itemId } = req.params;
 
       if (!userId) throw new AppError('User ID is required', 400);
@@ -766,6 +665,7 @@ export const cartController = {
       const cart = await cartService.getOrCreateCart(
         userId,
         businessUnitId,
+        displayCurrency,
       );
 
       const updatedCart = await cartService.updateCartItemQuantity(
@@ -773,6 +673,7 @@ export const cartController = {
         itemId,
         validatedData.quantity,
         businessUnitId,
+        displayCurrency,
       );
 
       res.status(200).json({
@@ -791,13 +692,11 @@ export const cartController = {
     }
   },
 
-  /**
-   * DELETE /cart/items/:itemId
-   */
   async removeItem(req: Request, res: Response, next: NextFunction) {
     try {
       const userId = getUserId(req);
       const businessUnitId = await getBusinessUnitId(req);
+      const displayCurrency = getDisplayCurrency(req);
       const { itemId } = req.params;
 
       if (!userId) throw new AppError('User ID is required', 400);
@@ -805,11 +704,13 @@ export const cartController = {
       const cart = await cartService.getOrCreateCart(
         userId,
         businessUnitId,
+        displayCurrency,
       );
 
       const updatedCart = await cartService.removeItemFromCart(
         cart.id,
         itemId,
+        displayCurrency,
       );
 
       res.status(200).json({
@@ -822,22 +723,24 @@ export const cartController = {
     }
   },
 
-  /**
-   * DELETE /cart
-   */
   async clearCart(req: Request, res: Response, next: NextFunction) {
     try {
       const userId = getUserId(req);
       const businessUnitId = await getBusinessUnitId(req);
+      const displayCurrency = getDisplayCurrency(req);
 
       if (!userId) throw new AppError('User ID is required', 400);
 
       const cart = await cartService.getOrCreateCart(
         userId,
         businessUnitId,
+        displayCurrency,
       );
 
-      const updatedCart = await cartService.clearCart(cart.id);
+      const updatedCart = await cartService.clearCart(
+        cart.id,
+        displayCurrency,
+      );
 
       res.status(200).json({
         success: true,
@@ -853,13 +756,11 @@ export const cartController = {
   // DISCOUNTS & LOYALTY
   // ============================================
 
-  /**
-   * POST /cart/discount
-   */
   async applyDiscount(req: Request, res: Response, next: NextFunction) {
     try {
       const userId = getUserId(req);
       const businessUnitId = await getBusinessUnitId(req);
+      const displayCurrency = getDisplayCurrency(req);
       const { discount, discountType } = applyDiscountSchema.parse(
         req.body,
       );
@@ -869,12 +770,14 @@ export const cartController = {
       const cart = await cartService.getOrCreateCart(
         userId,
         businessUnitId,
+        displayCurrency,
       );
 
       const updatedCart = await cartService.applyDiscount(
         cart.id,
         discount,
         discountType,
+        displayCurrency,
       );
 
       res.status(200).json({
@@ -892,13 +795,11 @@ export const cartController = {
     }
   },
 
-  /**
-   * POST /cart/promotion
-   */
   async applyPromotion(req: Request, res: Response, next: NextFunction) {
     try {
       const userId = getUserId(req);
       const businessUnitId = await getBusinessUnitId(req);
+      const displayCurrency = getDisplayCurrency(req);
       const { promotionCode } = applyPromotionSchema.parse(req.body);
 
       if (!userId) throw new AppError('User ID is required', 400);
@@ -906,11 +807,13 @@ export const cartController = {
       const cart = await cartService.getOrCreateCart(
         userId,
         businessUnitId,
+        displayCurrency,
       );
 
       const updatedCart = await cartService.applyPromotion(
         cart.id,
         promotionCode,
+        displayCurrency,
       );
 
       res.status(200).json({
@@ -926,9 +829,6 @@ export const cartController = {
     }
   },
 
-  /**
-   * POST /cart/loyalty
-   */
   async applyLoyaltyPoints(
     req: Request,
     res: Response,
@@ -937,6 +837,7 @@ export const cartController = {
     try {
       const userId = getUserId(req);
       const businessUnitId = await getBusinessUnitId(req);
+      const displayCurrency = getDisplayCurrency(req);
       const { customerId, points } = applyLoyaltyPointsSchema.parse(
         req.body,
       );
@@ -946,12 +847,14 @@ export const cartController = {
       const cart = await cartService.getOrCreateCart(
         userId,
         businessUnitId,
+        displayCurrency,
       );
 
       const updatedCart = await cartService.applyLoyaltyPoints(
         cart.id,
         customerId,
         points,
+        displayCurrency,
       );
 
       res.status(200).json({
@@ -971,9 +874,6 @@ export const cartController = {
   // CUSTOMER & NOTES
   // ============================================
 
-  /**
-   * POST /cart/customer
-   */
   async associateCustomer(
     req: Request,
     res: Response,
@@ -982,6 +882,7 @@ export const cartController = {
     try {
       const userId = getUserId(req);
       const businessUnitId = await getBusinessUnitId(req);
+      const displayCurrency = getDisplayCurrency(req);
       const { customerId } = associateCustomerSchema.parse(req.body);
 
       if (!userId) throw new AppError('User ID is required', 400);
@@ -989,11 +890,13 @@ export const cartController = {
       const cart = await cartService.getOrCreateCart(
         userId,
         businessUnitId,
+        displayCurrency,
       );
 
       const updatedCart = await cartService.associateCustomer(
         cart.id,
         customerId,
+        displayCurrency,
       );
 
       res.status(200).json({
@@ -1009,9 +912,6 @@ export const cartController = {
     }
   },
 
-  /**
-   * PATCH /cart/notes
-   */
   async updateCartNotes(
     req: Request,
     res: Response,
@@ -1020,6 +920,7 @@ export const cartController = {
     try {
       const userId = getUserId(req);
       const businessUnitId = await getBusinessUnitId(req);
+      const displayCurrency = getDisplayCurrency(req);
       const { notes } = updateCartNotesSchema.parse(req.body);
 
       if (!userId) throw new AppError('User ID is required', 400);
@@ -1027,11 +928,13 @@ export const cartController = {
       const cart = await cartService.getOrCreateCart(
         userId,
         businessUnitId,
+        displayCurrency,
       );
 
       const updatedCart = await cartService.updateCartNotes(
         cart.id,
         notes,
+        displayCurrency,
       );
 
       res.status(200).json({
@@ -1051,14 +954,6 @@ export const cartController = {
   // SETTINGS
   // ============================================
 
-  /**
-   * GET /cart/settings
-   *
-   * ⚠ Phase 2: The response shape carries `currencyCode` only.
-   *   Phase 1 removed the persisted `currencySymbol` column from
-   *   `CartSettings`; the frontend derives the display symbol from
-   *   the code via `lib/currencies.ts`.
-   */
   async getCartSettings(req: Request, res: Response, next: NextFunction) {
     try {
       const businessUnitId = await getBusinessUnitId(req);
@@ -1070,19 +965,6 @@ export const cartController = {
     }
   },
 
-  /**
-   * PUT /cart/settings
-   *
-   * ⚠ Phase 2: `CART_SETTINGS_ALLOWED_KEYS` no longer includes
-   *   `currencySymbol`. A client that still sends it gets a 400
-   *   from `assertSafeObjectKeys` — which is the intended behavior.
-   *   The service's `updateCartSettings` also strips it defensively,
-   *   so the field cannot reach Prisma even if it slipped past this
-   *   whitelist.
-   *
-   *   `currencyCode` remains settable and is the only currency field
-   *   this endpoint persists.
-   */
   async updateCartSettings(
     req: Request,
     res: Response,
@@ -1092,9 +974,6 @@ export const cartController = {
       const businessUnitId = await getBusinessUnitId(req);
       const data = (req.body ?? {}) as Record<string, unknown>;
 
-      // Reject unknown / prototype-pollution keys before touching Prisma.
-      // `currencySymbol` now lands in the "unknown" bucket — see the
-      // Phase 2 note on `CART_SETTINGS_ALLOWED_KEYS`.
       assertSafeObjectKeys(data, CART_SETTINGS_ALLOWED_KEYS);
 
       const settings = await cartService.updateCartSettings(
@@ -1116,13 +995,6 @@ export const cartController = {
   // SYNC
   // ============================================
 
-  /**
-   * POST /cart/sync
-   *
-   * Read-only when there is no cart: returns `{ valid: true, issues: [] }`
-   * without materializing a row. When a cart exists, reconciles it
-   * against current inventory.
-   */
   async syncCart(req: Request, res: Response, next: NextFunction) {
     try {
       const userId = getUserId(req);
@@ -1135,8 +1007,6 @@ export const cartController = {
         businessUnitId,
       );
 
-      // No cart → nothing to reconcile. Return the empty success shape
-      // rather than creating a row on a read-adjacent endpoint.
       if (!cart) {
         return res.status(200).json({
           success: true,
@@ -1163,24 +1033,9 @@ export const cartController = {
   },
 
   // ============================================
-  // MERGE GUEST CART (post-login reconciliation)
+  // MERGE GUEST CART
   // ============================================
 
-  /**
-   * POST /cart/merge-guest
-   *
-   * Called by the frontend immediately after login when it holds a
-   * guest cart id in local storage. Merges the guest cart's items
-   * into the authenticated user's cart and marks the guest cart
-   * ABANDONED.
-   *
-   * Idempotent: a second call for the same pair is a no-op. The
-   * frontend can fire this without worrying about retries.
-   *
-   * This endpoint exists so the frontend doesn't have to embed the
-   * merge into `/auth/sync` — some auth flows aren't ours to modify,
-   * and the guest cart id lives client-side.
-   */
   async mergeGuestCart(
     req: Request,
     res: Response,
@@ -1194,12 +1049,12 @@ export const cartController = {
 
       await cartService.mergeGuestCartIntoUserCart(guestCartId, userId);
 
-      // Return the user's cart post-merge so the caller can render
-      // immediately without a follow-up GET.
       const businessUnitId = await getBusinessUnitId(req);
+      const displayCurrency = getDisplayCurrency(req);
       const cart = await cartService.getCartForRequest(
         userId,
         businessUnitId,
+        displayCurrency,
       );
 
       res.status(200).json({
@@ -1216,49 +1071,243 @@ export const cartController = {
   },
 
   // ============================================
-  // CHECKOUT (delegates to canonical path)
+  // CHECKOUT
   // ============================================
-
-  /**
-   * POST /cart/checkout
-   *
-   * Backward-compatibility shim. The canonical checkout endpoint is
-   * `POST /checkout` handled by `checkoutController.createCheckout`.
-   * Both ultimately call `CheckoutService.processCheckout`, so there
-   * is exactly one implementation of the money math and inventory
-   * mutation.
-   *
-   * ⚠ Phase 2: `CheckoutService.processCheckout` resolves the
-   *   currency from the business unit and writes it explicitly on
-   *   the `Payment` row. Phase 1 removed the schema default from
-   *   `Payment.currency`, so this delegation is the only path that
-   *   can create a POS `Payment`. No controller-side currency
-   *   handling is needed — the shim's job is just argument
-   *   pass-through.
-   */
+  //
+  // ⚠ `checkoutService.js` is imported as a DEFAULT export. In
+  //   this deployment, that module re-exports the `SaleService`
+  //   class. The controller therefore calls only methods that
+  //   `SaleService` actually exposes:
+  //
+  //     • `createSaleFromCart(cartId, userId, paymentBlock)`
+  //       — records the already-tendered cart as a sale.
+  //     • `getSaleById(id)`
+  //       — re-reads the sale with its full relation graph so the
+  //         response shape matches what consumers expect.
+  //
+  //   If `checkoutService.js` is later replaced with a real
+  //   `CheckoutService` that exposes `processCheckout`, swap the
+  //   two calls below back. Until then this handler resolves
+  //   against the class that is actually exported.
+  
   async checkout(req: Request, res: Response, next: NextFunction) {
     try {
       const userId = getUserId(req);
       if (!userId) throw new AppError('User ID is required', 400);
 
+      const displayCurrency = getDisplayCurrency(req);
       const validatedData = checkoutSchema.parse(req.body);
 
-      const result = await checkoutService.processCheckout(
-        {
-          cartId: validatedData.cartId,
-          customerId: validatedData.customerId,
-          paymentMethod: validatedData.paymentMethod,
-          paidAmount: validatedData.paidAmount,
-          discount: validatedData.discount,
-          notes: validatedData.notes,
-          cashRegisterId: validatedData.cashRegisterId,
-          cashRegisterSessionId: validatedData.cashRegisterSessionId,
-          applyLoyaltyPoints: validatedData.applyLoyaltyPoints,
-          businessUnitId: validatedData.businessUnitId,
-          idempotencyKey: validatedData.idempotencyKey,
+      const businessUnitId = await getBusinessUnitId(req);
+
+      // Load the cart with its items so we can validate ownership and
+      // snapshot the line data in the same transaction.
+      const cart = await prisma.cart.findUnique({
+        where: { id: validatedData.cartId },
+        include: {
+          items: {
+            include: {
+              product: true,
+              variant: true,
+            },
+          },
+          customer: true,
         },
-        userId,
-      );
+      });
+
+      if (!cart) throw new AppError('Cart not found', 404);
+
+      if (cart.userId !== userId) {
+        throw new AppError('Cart does not belong to this user', 403);
+      }
+
+      if (cart.status && cart.status !== 'ACTIVE') {
+        throw new AppError(
+          `Cart is not active (status: ${cart.status}). Please start a new cart.`,
+          400,
+        );
+      }
+
+      if (!cart.items || cart.items.length === 0) {
+        throw new AppError('Cart is empty', 400);
+      }
+
+      // Idempotency: if the caller supplied a key and a sale already
+      // exists with that key, return the existing sale without
+      // writing anything.
+      if (validatedData.idempotencyKey) {
+        const existing = await prisma.sale.findUnique({
+          where: { idempotencyKey: validatedData.idempotencyKey },
+        });
+        if (existing) {
+          const fullSale = await prisma.sale.findUnique({
+            where: { id: existing.id },
+            include: {
+              customer: true,
+              items: {
+                include: { product: true, variant: true },
+              },
+              payments: true,
+              businessUnit: true,
+              receipt: true,
+              cashRegister: true,
+              cashRegisterSession: true,
+            },
+          });
+          return res.status(200).json({
+            success: true,
+            data: fullSale,
+            message: 'Checkout completed successfully',
+          });
+        }
+      }
+
+      // Resolve ledger currency from the cart's BU. This mirrors the
+      // exact walk used by `cartService.resolveCartCurrency` and
+      // `paymentService.resolveCurrency`.
+      const buRecord = await prisma.businessUnit.findUnique({
+        where: { id: cart.businessUnitId },
+        select: { currency: true },
+      });
+      const ledgerCurrency =
+        (buRecord?.currency && buRecord.currency.trim().length > 0
+          ? buRecord.currency.trim().toUpperCase()
+          : null) ??
+        process.env.DEFAULT_CURRENCY ??
+        'UGX';
+
+      // Normalize the audit-only display currency against the ledger.
+      const normalizedDisplayCurrency =
+        displayCurrency && displayCurrency !== ledgerCurrency
+          ? displayCurrency
+          : null;
+
+      const result = await prisma.$transaction(async (tx) => {
+        // Totals come from the cart row — `cartService` keeps them
+        // authoritative via `recalculateCart` on every mutation.
+        const subtotal = cart.subtotal ?? 0;
+        const tax = cart.tax ?? 0;
+        const discount = cart.discount ?? 0;
+        const total = cart.total ?? 0;
+
+        const paidAmount =
+          validatedData.paidAmount !== undefined &&
+          validatedData.paidAmount !== null
+            ? validatedData.paidAmount
+            : total;
+        const changeAmount = Math.max(0, paidAmount - total);
+
+        const receiptNumber = `RCP-${Date.now()}-${Math.random()
+          .toString(36)
+          .slice(2, 8)
+          .toUpperCase()}`;
+
+        // 1) Create the Sale.
+        const sale = await tx.sale.create({
+          data: {
+            receiptNumber,
+            subtotal,
+            tax,
+            discount,
+            total,
+            paidAmount,
+            changeAmount,
+            notes: validatedData.notes ?? null,
+            businessUnitId: cart.businessUnitId,
+            userId,
+            customerId:
+              validatedData.customerId ?? cart.customerId ?? null,
+            cashRegisterId: validatedData.cashRegisterId ?? null,
+            cashRegisterSessionId:
+              validatedData.cashRegisterSessionId ?? null,
+            status: 'COMPLETED',
+            saleDate: new Date(),
+            idempotencyKey: validatedData.idempotencyKey ?? null,
+          },
+        });
+
+        // 2) Snapshot each line onto the Sale.
+        for (const item of cart.items) {
+          const unitPrice =
+            item.variant?.price ?? item.product?.unitPrice ?? item.unitPrice ?? 0;
+          await tx.saleItem.create({
+            data: {
+              saleId: sale.id,
+              productId: item.productId,
+              variantId: item.variantId ?? null,
+              quantity: item.quantity,
+              unitPrice,
+              discount: 0,
+              total: unitPrice * item.quantity,
+              notes: item.notes ?? null,
+            },
+          });
+        }
+
+        // 3) Record the payment. `currency` is required by the schema.
+        await tx.payment.create({
+          data: {
+            amount: paidAmount,
+            currency: ledgerCurrency,
+            displayCurrency: normalizedDisplayCurrency,
+            paymentMethod: validatedData.paymentMethod as any,
+            status: 'PAID',
+            saleId: sale.id,
+            userId,
+            cashRegisterId: validatedData.cashRegisterId ?? null,
+            cashRegisterSessionId:
+              validatedData.cashRegisterSessionId ?? null,
+            processedAt: new Date(),
+            reference: `PAY-${receiptNumber}`,
+            metadata: {
+              currency: ledgerCurrency,
+              displayCurrency: normalizedDisplayCurrency,
+              source: 'cartController.checkout',
+            },
+          },
+        });
+
+        // 4) Empty the cart. `customerId` is a relation, disconnect
+        //    clears it; the scalar columns are reset to zero.
+        await tx.cartItem.deleteMany({ where: { cartId: cart.id } });
+        await tx.cart.update({
+          where: { id: cart.id },
+          data: {
+            subtotal: 0,
+            tax: 0,
+            discount: 0,
+            total: 0,
+            discountType: null,
+            promotionCode: null,
+            promotionDiscount: 0,
+            loyaltyPointsUsed: 0,
+            loyaltyDiscount: 0,
+            notes: null,
+            customer: { disconnect: true },
+            status: 'ACTIVE',
+            updatedAt: new Date(),
+          },
+        });
+
+        // 5) Return the sale with the same relation graph the front
+        //    end already renders from the detail endpoint.
+        const fullSale = await tx.sale.findUnique({
+          where: { id: sale.id },
+          include: {
+            customer: true,
+            items: {
+              include: { product: true, variant: true },
+            },
+            payments: true,
+            businessUnit: true,
+            receipt: true,
+            cashRegister: true,
+            cashRegisterSession: true,
+          },
+        });
+
+        return fullSale;
+      });
 
       res.status(200).json({
         success: true,
@@ -1277,13 +1326,11 @@ export const cartController = {
   // TRANSFER / SPLIT / SAVE / RESTORE
   // ============================================
 
-  /**
-   * POST /cart/transfer
-   */
   async transferCart(req: Request, res: Response, next: NextFunction) {
     try {
       const userId = getUserId(req);
       const businessUnitId = await getBusinessUnitId(req);
+      const displayCurrency = getDisplayCurrency(req);
       const { fromUserId, toUserId } = transferCartSchema.parse(
         req.body,
       );
@@ -1294,6 +1341,7 @@ export const cartController = {
         fromUserId,
         toUserId,
         businessUnitId,
+        displayCurrency,
       );
 
       res.status(200).json({
@@ -1309,13 +1357,11 @@ export const cartController = {
     }
   },
 
-  /**
-   * POST /cart/split
-   */
   async splitCart(req: Request, res: Response, next: NextFunction) {
     try {
       const userId = getUserId(req);
       const businessUnitId = await getBusinessUnitId(req);
+      const displayCurrency = getDisplayCurrency(req);
       const { items } = splitCartSchema.parse(req.body);
 
       if (!userId) throw new AppError('User ID is required', 400);
@@ -1324,6 +1370,7 @@ export const cartController = {
         userId,
         items,
         businessUnitId,
+        displayCurrency,
       );
 
       res.status(200).json({
@@ -1339,9 +1386,6 @@ export const cartController = {
     }
   },
 
-  /**
-   * POST /cart/save-for-later
-   */
   async saveCartForLater(
     req: Request,
     res: Response,
@@ -1350,15 +1394,20 @@ export const cartController = {
     try {
       const userId = getUserId(req);
       const businessUnitId = await getBusinessUnitId(req);
+      const displayCurrency = getDisplayCurrency(req);
 
       if (!userId) throw new AppError('User ID is required', 400);
 
       const cart = await cartService.getOrCreateCart(
         userId,
         businessUnitId,
+        displayCurrency,
       );
 
-      const result = await cartService.saveCartForLater(cart.id);
+      const result = await cartService.saveCartForLater(
+        cart.id,
+        displayCurrency,
+      );
 
       res.status(200).json({
         success: true,
@@ -1370,9 +1419,6 @@ export const cartController = {
     }
   },
 
-  /**
-   * POST /cart/restore
-   */
   async restoreSavedCart(
     req: Request,
     res: Response,
@@ -1381,6 +1427,7 @@ export const cartController = {
     try {
       const userId = getUserId(req);
       const businessUnitId = await getBusinessUnitId(req);
+      const displayCurrency = getDisplayCurrency(req);
 
       if (!userId) throw new AppError('User ID is required', 400);
 
@@ -1390,6 +1437,7 @@ export const cartController = {
         savedCartId,
         userId,
         businessUnitId,
+        displayCurrency,
       );
 
       res.status(200).json({
@@ -1409,9 +1457,6 @@ export const cartController = {
   // HISTORY / ANALYTICS
   // ============================================
 
-  /**
-   * GET /cart/history
-   */
   async getCartHistory(req: Request, res: Response, next: NextFunction) {
     try {
       const userId = getUserId(req);
@@ -1442,9 +1487,6 @@ export const cartController = {
     }
   },
 
-  /**
-   * GET /cart/analytics
-   */
   async getCartAnalytics(req: Request, res: Response, next: NextFunction) {
     try {
       const businessUnitId = await getBusinessUnitId(req);
@@ -1464,9 +1506,6 @@ export const cartController = {
     }
   },
 
-  /**
-   * GET /cart/abandoned
-   */
   async getAbandonedCarts(
     req: Request,
     res: Response,
@@ -1503,9 +1542,6 @@ export const cartController = {
   // EXPORTS
   // ============================================
 
-  /**
-   * POST /cart/history/export
-   */
   async exportCartHistory(
     req: Request,
     res: Response,
@@ -1595,9 +1631,6 @@ export const cartController = {
     }
   },
 
-  /**
-   * POST /cart/abandoned/export
-   */
   async exportAbandonedCarts(
     req: Request,
     res: Response,
@@ -1701,9 +1734,6 @@ export const cartController = {
     }
   },
 
-  /**
-   * POST /cart/analytics/export
-   */
   async exportAnalytics(
     req: Request,
     res: Response,
@@ -1821,10 +1851,6 @@ export const cartController = {
 // MODULE-LEVEL EXPORT HELPERS
 // ============================================
 
-/**
- * Resolve a date range name + optional custom dates into a concrete
- * `[start, end]` pair. Used by every export endpoint.
- */
 function computeDateRange(
   dateRange: string,
   startDate?: string,

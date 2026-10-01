@@ -1,13 +1,10 @@
 // packages/web/services/dashboardService.ts
+
 import { api } from './api';
 
 // ============================================
 // TYPES — mirror the backend exactly
 // ============================================
-//
-// Source of truth: packages/backend/src/services/dashboardService.ts.
-// The wire shapes are what the backend's `res.json({ data })` emits
-// after `api.get<T>` unwraps the envelope.
 
 export interface SalesPeriodStats {
   total: number;
@@ -23,6 +20,12 @@ export interface DashboardTopProduct {
 }
 
 export interface DashboardStats {
+  /**
+   * ISO 4217 ledger currency for the business unit this response
+   * describes. Populated by the backend from
+   * `BusinessUnit.currency`.
+   */
+  currency: string;
   sales: {
     today: SalesPeriodStats;
     week: SalesPeriodStats;
@@ -39,7 +42,6 @@ export interface DashboardStats {
   customers: {
     total: number;
     active: number;
-    /** ⚠ Field name is `newThisMonth`, NOT `new`. */
     newThisMonth: number;
   };
   suppliers: {
@@ -56,11 +58,8 @@ export interface DashboardStats {
     completed: number;
     cancelled: number;
   };
-  /** Raw Prisma sale rows with customer + items included. */
   recentActivity: unknown[];
-  /** Mapped product rows — see `DashboardTopProduct`. */
   topProducts: DashboardTopProduct[];
-  /** Daily sales for the last 7 days. */
   salesTrend: Array<{ date: string; total: number; count: number }>;
 }
 
@@ -103,14 +102,11 @@ export interface RealtimeData {
 }
 
 export interface TrendPoint {
-  /** ISO date, `YYYY-MM-DD`. */
   date: string;
-  /** Currency amount for sales trends, order total for order trends. */
   value: number;
 }
 
 export interface TrendsResult {
-  /** Backend echoes the range it used, e.g. `"7d"`. */
   range: string;
   sales: TrendPoint[];
   orders: TrendPoint[];
@@ -144,32 +140,22 @@ export type DashboardRange = 'today' | 'week' | 'month' | 'quarter' | 'year';
 // ============================================
 
 export const dashboardService = {
-  /**
-   * GET /dashboard/stats
-   *
-   * `api.get<T>` already unwraps `{ success, data }`, so this returns
-   * the payload directly. Do NOT reach for `.data`.
-   */
   async getStats(): Promise<DashboardStats> {
     return api.get<DashboardStats>('/dashboard/stats');
   },
 
-  /** GET /dashboard/realtime */
   async getRealtimeData(): Promise<RealtimeData> {
     return api.get<RealtimeData>('/dashboard/realtime');
   },
 
-  /** GET /dashboard/live — stats + realtime in one round trip. */
   async getLiveDashboard(): Promise<DashboardStats & RealtimeData> {
     return api.get<DashboardStats & RealtimeData>('/dashboard/live');
   },
 
-  /** GET /dashboard/trends?range=week */
   async getTrends(range: DashboardRange = 'week'): Promise<TrendsResult> {
     return api.get<TrendsResult>('/dashboard/trends', { params: { range } });
   },
 
-  /** GET /dashboard/activity?limit=10&range=week */
   async getActivity(
     limit = 10,
     range: DashboardRange = 'week',
@@ -179,7 +165,6 @@ export const dashboardService = {
     });
   },
 
-  /** GET /dashboard/top-products?limit=10&range=week */
   async getTopProducts(
     limit = 10,
     range: DashboardRange = 'week',
@@ -189,12 +174,10 @@ export const dashboardService = {
     });
   },
 
-  /** GET /dashboard/low-stock */
   async getLowStockAlerts(): Promise<LowStockAlert[]> {
     return api.get<LowStockAlert[]>('/dashboard/low-stock');
   },
 
-  /** GET /dashboard/sales-summary?startDate=…&endDate=… */
   async getSalesSummary(params?: {
     startDate?: string;
     endDate?: string;

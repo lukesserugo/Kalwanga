@@ -2,32 +2,16 @@
 
 'use client';
 
-// ============================================
-// MOBILE MONEY PROVIDER PICKER
-// ============================================
-//
-// Lets the user pick between MTN, Airtel, and M-Pesa. The parent
-// `PaymentSection` renders this when the selected method is
-// `MOBILE_MONEY`. Each provider knows its required phone format
-// and its backend routing hint.
-//
-// ⚠ The icon paths below are served from `packages/web/public/`.
-//   If the files don't exist yet, the `<Image>` onError handler
-//   hides the broken image and the picker falls back to a
-//   label-only layout. Add the SVGs to
-//   `packages/web/public/icons/payments/` to restore the icons.
-
 import { useCallback } from 'react';
-import Image from 'next/image';
 import { Smartphone, CheckCircle, AlertCircle } from 'lucide-react';
 import { useThemeStore } from '../../app/stores/themeStore';
+import {
+  MpesaLogo,
+  MtnLogo,
+  AirtelLogo,
+  type ProviderLogoProps,
+} from './ProviderLogos';
 
-/**
- * The three mobile-money sub-providers the backend routes via
- * `paymentMethod: 'MOBILE_MONEY'` + `metadata.provider`. Matches
- * `MobileMoneyProvider` in `services/checkoutService.ts` and the
- * backend's `MOBILE_MONEY_NETWORKS` constant.
- */
 export type MobileProvider = 'MTN' | 'AIRTEL' | 'MPESA';
 
 export interface MobileProviderSpec {
@@ -35,11 +19,10 @@ export interface MobileProviderSpec {
   name: string;
   description: string;
   /**
-   * Local asset path under `public/`. Served by Next.js; no
-   * external CDN dependency and no third-party request from the
-   * user's browser.
+   * Inline SVG component. Replaces the previous `iconUrl` string
+   * — no runtime asset fetch, no 404 risk, no `public/` dependency.
    */
-  iconUrl: string;
+  Logo: React.ComponentType<ProviderLogoProps>;
   /** Placeholder phone number for this provider's country. */
   phonePlaceholder: string;
   /** Digits (national, without country code) used for length check. */
@@ -49,16 +32,14 @@ export interface MobileProviderSpec {
 }
 
 /**
- * Read-only so a consumer can't mutate the shared array. The
- * picker iterates this; a caller that needs a filtered list should
- * build a new array rather than mutating this one.
+ * Read-only so a consumer can't mutate the shared array.
  */
 export const MOBILE_PROVIDERS: readonly MobileProviderSpec[] = [
   {
     id: 'MPESA',
     name: 'M-Pesa',
     description: 'Safaricom STK push',
-    iconUrl: '/icons/payments/mpesa.svg',
+    Logo: MpesaLogo,
     phonePlaceholder: '+254 712 345 678',
     nationalDigits: 9,
     countryCode: '254',
@@ -67,7 +48,7 @@ export const MOBILE_PROVIDERS: readonly MobileProviderSpec[] = [
     id: 'MTN',
     name: 'MTN Mobile Money',
     description: 'MTN MoMo prompt',
-    iconUrl: '/icons/payments/mtn.svg',
+    Logo: MtnLogo,
     phonePlaceholder: '+256 770 000 000',
     nationalDigits: 9,
     countryCode: '256',
@@ -76,7 +57,7 @@ export const MOBILE_PROVIDERS: readonly MobileProviderSpec[] = [
     id: 'AIRTEL',
     name: 'Airtel Money',
     description: 'Airtel Money prompt',
-    iconUrl: '/icons/payments/airtel.svg',
+    Logo: AirtelLogo,
     phonePlaceholder: '+256 700 000 000',
     nationalDigits: 9,
     countryCode: '256',
@@ -119,6 +100,7 @@ export function MobileMoneyProviderPicker({
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
         {MOBILE_PROVIDERS.map((provider) => {
           const isActive = selected === provider.id;
+          const Logo = provider.Logo;
 
           return (
             <button
@@ -142,18 +124,7 @@ export function MobileMoneyProviderPicker({
                       : 'bg-gray-100 dark:bg-gray-700'
                   }`}
                 >
-                  <Image
-                    src={provider.iconUrl}
-                    alt={provider.name}
-                    width={24}
-                    height={24}
-                    priority={false}
-                    loading="lazy"
-                    className="rounded object-contain"
-                    onError={(e) => {
-                      (e.target as HTMLImageElement).style.display = 'none';
-                    }}
-                  />
+                  <Logo className="w-6 h-6 rounded object-contain" />
                 </div>
                 <div className="min-w-0 flex-1">
                   <p
@@ -188,30 +159,6 @@ export function MobileMoneyProviderPicker({
 // ============================================
 // PHONE VALIDATION HELPER
 // ============================================
-//
-// Accepts a phone string and a provider spec. Returns `null` when
-// valid, or a human-readable error message.
-//
-// The rule is deliberately permissive: strip non-digits, require at
-// least the provider's national digit count, and cap at 15 total
-// digits (E.164 max).
-//
-// ── Country-code handling ─────────────────────────────────
-//
-// The country code is only stripped when the number actually looks
-// international:
-//
-//   • A leading `+` (so the user explicitly typed the country
-//     code), OR
-//   • A digit count strictly greater than
-//     `countryCode.length + nationalDigits` (so the country code
-//     is present without a `+`).
-//
-// Stripping the country code based on `startsWith` alone produced
-// false negatives for national numbers that happened to begin with
-// the same digits as the country code (e.g. a Ugandan national
-// number starting `256…` under an MTN spec whose countryCode is
-// `'256'`). The stricter gate closes that gap.
 
 export function validatePhoneForProvider(
   phone: string,

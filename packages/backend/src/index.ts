@@ -59,6 +59,24 @@ import companyRoutes from './routes/companies.js';
 import backupRoutes from './routes/backup.js';
 import webhookRoutes from './routes/webhooks.js';
 
+// ── Phase 3a: currency routes ──────────────────────────────
+// Exposes:
+//   GET  /currencies
+//   GET  /currencies/rates
+//   POST /exchange-rates
+//   GET  /exchange-rates
+//   DELETE /exchange-rates
+//   POST /exchange-rates/refresh
+//   PATCH /business-units/:id/currency
+//   POST /business-units/:id/currency/convert
+//   PUT  /customers/me/preferred-currency
+//
+// ⚠ The `/currencies` and `/currencies/rates` endpoints are PUBLIC
+//   by design — the payer needs them to render the picker before
+//   logging in. The rest are admin-gated inside the router itself.
+//   See `routes/currency.ts`.
+import currencyRoutes from './routes/currency.js';
+
 // Import user-related routes
 import userActivityRoutes from './routes/userActivity.js';
 import userImportRoutes from './routes/userImport.js';
@@ -96,6 +114,16 @@ app.use(
 //
 // `x-business-unit-id` is read by `getBusinessUnitId()` in the
 // product controller as the highest-priority BU source.
+//
+// `x-display-currency` (Phase 3a) is sent by the frontend on every
+// request when the payer has chosen a display currency. The backend
+// reads it to populate `cart.display*` fields and to stamp
+// `Payment.displayCurrency` at checkout.
+//
+// ⚠ All three custom headers MUST be listed here. A missing header
+//   causes the browser to block the entire preflight, which breaks
+//   every request from the origin — not just the ones that use the
+//   header.
 
 app.use(
   cors({
@@ -114,6 +142,12 @@ app.use(
       'x-company-id',
       'x-request-id',
       'x-guest-session',
+      'Idempotency-Key',
+      // ── Phase 3a ─────────────────────────────────────────
+      // Whitelisted so the preflight for a display-currency
+      // request succeeds. Omission would break every API call
+      // from the browser, not just the picker flow.
+      'x-display-currency',
     ],
     exposedHeaders: ['Content-Disposition'],
     maxAge: 86400,
@@ -190,6 +224,31 @@ const guestLimiter = rateLimit({
   message: {
     success: false,
     error: 'Too many guest requests, please try again later.',
+  },
+  standardHeaders: true,
+  legacyHeaders: false,
+});
+
+/**
+ * Rate limiter for the currency endpoints.
+ *
+ * ── Phase 3a ────────────────────────────────────────────────
+ * The registry endpoint (`GET /currencies`) is called once per
+ * page load per visitor, is cheap to serve (static object), and
+ * does not touch the database. It should not be throttled by the
+ * general limiter — a busy storefront would exhaust the shared
+ * bucket for a read that is effectively a static asset.
+ *
+ * A generous dedicated bucket is sufficient. The admin endpoints
+ * (rate override, currency change) sit behind `requireAuth` and
+ * are self-limiting by authentication.
+ */
+const currencyLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 1000,
+  message: {
+    success: false,
+    error: 'Too many currency requests, please try again later.',
   },
   standardHeaders: true,
   legacyHeaders: false,
@@ -442,6 +501,46 @@ app.use('/users/invite', userInvitationRoutes);
 logger.info('Public invitation routes mounted');
 
 // ============================================
+// CURRENCY ROUTES — Phase 3a
+// ============================================
+//
+// ⚠ MOUNTED BEFORE `/cart` AND `/business-units`.
+//
+// The currency router registers `PATCH /business-units/:id/currency`
+// and `POST /business-units/:id/currency/convert`. Express matches
+// routes in registration order, so these must be registered BEFORE
+// the direct `/business-units/:id` handlers further down this file.
+// Otherwise `GET /business-units/:id` (which is broader) would
+// intercept requests that include the `/currency` suffix, and the
+// currency routes would 404.
+//
+// The route is mounted at the root (`/`) because the paths it
+// defines carry their own prefixes:
+//   • `/currencies`                        (public)
+//   • `/currencies/rates`                  (public)
+//   • `/exchange-rates`                    (admin)
+//   • `/business-units/:id/currency`       (admin)
+//   • `/customers/me/preferred-currency`   (authenticated)
+//
+// The `currencyLimiter` applies only to the public registry read,
+// which is high-frequency and does not touch the database.
+
+app.use('/currencies', currencyLimiter);
+
+app.use('/', currencyRoutes);
+
+logger.info('Currency routes mounted:');
+logger.info('   - GET    /currencies                 (public)');
+logger.info('   - GET    /currencies/rates           (public)');
+logger.info('   - POST   /exchange-rates             (admin)');
+logger.info('   - GET    /exchange-rates             (admin)');
+logger.info('   - DELETE /exchange-rates             (admin)');
+logger.info('   - POST   /exchange-rates/refresh     (admin)');
+logger.info('   - PATCH  /business-units/:id/currency         (admin)');
+logger.info('   - POST   /business-units/:id/currency/convert (admin)');
+logger.info('   - PUT    /customers/me/preferred-currency     (auth)');
+
+// ============================================
 // GUEST ROUTES — anonymous storefront visitors
 // ============================================
 //
@@ -519,8 +618,23 @@ logger.info('User group routes mounted at: /user-groups');
 // ============================================
 // DIRECT BUSINESS UNIT ROUTES
 // ============================================
+//
+// ⚠ The `GET /business-units/current` handler is registered FIRST,
+//   before the parametrized `/business-units/:id` route. Express
+//   matches in registration order, so `current` must be reachable
+//   without being shadowed by the `:id` pattern.
+//
+//   The currency settings page (`app/(dashboard)/admin/settings/
+//   currency/page.tsx`) relies on this endpoint to resolve the
+//   admin's business unit and read its settlement currency.
 
 console.log('🔄 Registering business unit routes...');
+
+app.get(
+  '/business-units/current',
+  authMiddleware,
+  businessUnitController.getCurrentBusinessUnit,
+);
 
 app.get('/business-units', businessUnitController.getAllBusinessUnits);
 app.get(
@@ -577,6 +691,7 @@ app.delete(
 console.log('✅ Business unit routes registered');
 console.log('   - POST /business-units');
 console.log('   - GET /business-units');
+console.log('   - GET /business-units/current');
 console.log('   - GET /business-units/:id');
 console.log('   - PUT /business-units/:id');
 console.log('   - DELETE /business-units/:id');
@@ -630,6 +745,8 @@ logger.info('   - /onboarding/*');
 logger.info('   - /users/*');
 logger.info('   - /user-groups/*');
 logger.info('   - /business-units/*');
+logger.info('   - /currencies/*                    ← currency registry (public)');
+logger.info('   - /exchange-rates/*                ← currency rates (admin)');
 logger.info('   - /audit/*');
 logger.info('   - /products/*');
 logger.info('   - /inventory/*');
@@ -770,6 +887,10 @@ server.listen(PORT, async () => {
     `🔗 Payment Providers API: http://localhost:${PORT}/payment-providers`,
   );
   logger.info(`🔗 Onboarding API: http://localhost:${PORT}/onboarding`);
+  logger.info(`🔗 Currency Registry: http://localhost:${PORT}/currencies`);
+  logger.info(
+    `🔗 Exchange Rates:    http://localhost:${PORT}/exchange-rates`,
+  );
   logger.info(`🔗 Guest Cart API: http://localhost:${PORT}/cart/guest`);
   logger.info(
     `🔗 Guest Wishlist API: http://localhost:${PORT}/wishlist/guest`,

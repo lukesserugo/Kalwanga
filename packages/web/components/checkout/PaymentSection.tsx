@@ -33,6 +33,41 @@ import { toast } from '../../utils/toast-manager';
 import type { PaymentMethod } from '../../services/saleService';
 
 // ============================================
+// CURRENCY RESOLUTION
+// ============================================
+//
+// `formatCurrency` requires a currency code as its second argument
+// by design — the platform invariant is that every amount is
+// rendered in a code that came from the backend at request time.
+//
+// The cart this section will be paying into carries its own
+// `currency` (resolved server-side from the business unit). The
+// caller passes it via the `currency` prop.
+//
+// When the prop is omitted, we fall back to the deployment default
+// (`NEXT_PUBLIC_DEFAULT_CURRENCY`) — never a hardcoded `'USD'`.
+// When that env var is also unset, `formatCurrency` receives an
+// empty code and renders a bare number, which is honest about the
+// missing configuration.
+
+/**
+ * Resolve the currency code for this section.
+ *
+ * Priority:
+ *   1. The `currency` prop (the caller's authoritative code).
+ *   2. `NEXT_PUBLIC_DEFAULT_CURRENCY` — the deployment default.
+ *   3. `''` — an empty string, which `formatCurrency` renders as
+ *      a bare number.
+ */
+function resolveSectionCurrency(propCurrency?: string | null): string {
+  return (
+    propCurrency ||
+    process.env.NEXT_PUBLIC_DEFAULT_CURRENCY ||
+    ''
+  );
+}
+
+// ============================================
 // TYPES
 // ============================================
 
@@ -61,13 +96,13 @@ interface PaymentDetails {
 interface PaymentSectionProps {
   total: number;
   /**
-   * Optional currency.
+   * Ledger currency code for `total`. Read from the cart / business
+   * unit that will be charged.
    *
-   * ⚠ When omitted, `formatCurrency` is called without a currency
-   *   argument and falls back to its own default. Do NOT default
-   *   this to `'USD'` on the client — the backend resolves the
-   *   currency from the business unit, and the client should not
-   *   invent one.
+   * ⚠ When omitted, the deployment's `NEXT_PUBLIC_DEFAULT_CURRENCY`
+   *   is used. Never a hardcoded symbol. When that env is also
+   *   unset, amounts render as bare numbers — the operator sees
+   *   the missing configuration rather than a fabricated symbol.
    */
   currency?: string;
   onPaymentComplete: (
@@ -86,6 +121,10 @@ type Step = 'select' | 'details' | 'processing' | 'complete';
 // ============================================
 // DEFAULT METHODS
 // ============================================
+//
+// ⚠ TIGO and VODAFONE were removed from the mobile-money dropdown
+//   below — no backend handler exists. The `MOBILE_MONEY` option
+//   itself remains; the dropdown offers only MTN, AIRTEL, and MPESA.
 
 const DEFAULT_PAYMENT_METHODS: PaymentMethodOption[] = [
   {
@@ -119,7 +158,7 @@ const DEFAULT_PAYMENT_METHODS: PaymentMethodOption[] = [
     name: 'Mobile Money',
     code: 'MOBILE_MONEY',
     icon: <Smartphone className="w-6 h-6" />,
-    description: 'MTN, Airtel, Tigo',
+    description: 'MTN, Airtel, M-Pesa',
     enabled: true,
     requiresDetails: true,
   },
@@ -250,7 +289,7 @@ export function PaymentSection({
     [customerLoyaltyPoints, total],
   );
 
-  // 1 point = 0.1 currency units (a $10 discount per 100 points).
+  // 1 point = 0.1 currency units (a 10-unit discount per 100 points).
   const loyaltyDiscount = useMemo(
     () => (loyaltyPointsToUse || 0) * 0.1,
     [loyaltyPointsToUse],
@@ -261,17 +300,18 @@ export function PaymentSection({
     [total, loyaltyDiscount],
   );
 
+  // Stable for the lifetime of this component instance.
+  const resolvedCurrency = resolveSectionCurrency(currency);
+
   /**
-   * Format an amount using the caller-supplied currency when one
-   * was provided. When omitted, `formatCurrency`'s own default
-   * applies.
+   * Format an amount in the resolved display currency. When the
+   * prop and env are both unset, `formatCurrency` receives an
+   * empty code and renders a bare number — never a fabricated
+   * symbol.
    */
   const fmt = useCallback(
-    (amount: number): string =>
-      currency
-        ? formatCurrency(amount, currency)
-        : formatCurrency(amount),
-    [currency],
+    (amount: number): string => formatCurrency(amount, resolvedCurrency),
+    [resolvedCurrency],
   );
 
   // Reset transient state when the user picks a different method.
@@ -660,11 +700,9 @@ export function PaymentSection({
           onChange={(e) => setProvider(e.target.value)}
           className={inputClass(false)}
         >
-          <option value="MPESA">M-Pesa</option>
           <option value="MTN">MTN Mobile Money</option>
           <option value="AIRTEL">Airtel Money</option>
-          <option value="TIGO">Tigo Pesa</option>
-          <option value="VODAFONE">Vodafone Cash</option>
+          <option value="MPESA">M-Pesa</option>
         </select>
       </div>
     </div>

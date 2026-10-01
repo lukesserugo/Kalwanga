@@ -2,7 +2,7 @@
 
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useMemo } from 'react';
 import { useRouter } from 'next/navigation';
 import { useUser } from '@clerk/nextjs';
 import { motion, AnimatePresence } from 'framer-motion';
@@ -36,18 +36,16 @@ import { useAuth } from '../../../../../hooks/useAuth';
 import { toast } from '../../../../../utils/toast-manager';
 import { api } from '../../../../../services/api';
 
-// ============================================
-// LOCAL SERVICE EXTENSIONS
-// ============================================
-//
-// The frontend `saleService` does not declare `processReturn`. The
-// backend exposes:
-//
-//   GET  /sales/returns           → saleController.getReturns
-//   POST /sales/:id/return        → saleController.processReturn
-//
-// Both return `{ success, data, message? }`. We call them via the
-// shared `api` client rather than mutating the shared service.
+const DEFAULT_CURRENCY = 'USD';
+
+function pickCurrency(...candidates: Array<unknown>): string {
+  for (const c of candidates) {
+    if (typeof c === 'string' && c.trim().length > 0) {
+      return c.trim().toUpperCase();
+    }
+  }
+  return DEFAULT_CURRENCY;
+}
 
 async function fetchReturnsRemote(params: {
   page?: number;
@@ -55,7 +53,12 @@ async function fetchReturnsRemote(params: {
   search?: string;
   startDate?: string;
   endDate?: string;
-}): Promise<{ data: any[]; total?: number; totalPages?: number }> {
+}): Promise<{
+  data: any[];
+  total?: number;
+  totalPages?: number;
+  currency?: string;
+}> {
   const response = await api.get<any>('/sales/returns', { params });
   const body =
     response && typeof response === 'object' && 'data' in response
@@ -69,11 +72,18 @@ async function fetchReturnsRemote(params: {
       : [];
   const pagination = body?.pagination ?? response?.pagination ?? {};
 
+  const envelopeCurrency =
+    response && typeof response === 'object' && 'currency' in response
+      ? (response as any).currency
+      : undefined;
+
   return {
     data,
-    total: typeof pagination.total === 'number' ? pagination.total : data.length,
+    total:
+      typeof pagination.total === 'number' ? pagination.total : data.length,
     totalPages:
       typeof pagination.totalPages === 'number' ? pagination.totalPages : 1,
+    currency: envelopeCurrency,
   };
 }
 
@@ -92,10 +102,6 @@ async function processReturnRemote(
   }
   return { success: true, data: body };
 }
-
-// ============================================
-// INTERFACES
-// ============================================
 
 type ReturnStatus =
   | 'PENDING'
@@ -147,6 +153,8 @@ interface SaleReturn {
   createdAt: string;
   processedAt?: string;
   processedBy?: string;
+  /** ISO 4217 ledger currency for this return. Optional. */
+  currency?: string;
 }
 
 interface ReturnFilters {
@@ -167,10 +175,6 @@ interface ReturnStats {
   cancelled: number;
   totalAmount: number;
 }
-
-// ============================================
-// HELPERS
-// ============================================
 
 function normalizeReturnStatus(
   raw: string | null | undefined,
@@ -209,7 +213,11 @@ function normalizeRefundMethod(
   }
 }
 
-function saleReturnToReturn(sale: any, ret: any): SaleReturn {
+function saleReturnToReturn(
+  sale: any,
+  ret: any,
+  fallbackCurrency: string,
+): SaleReturn {
   const customer = sale.customer || {};
 
   const items: ReturnItem[] = (ret.items || []).map((item: any) => ({
@@ -224,9 +232,19 @@ function saleReturnToReturn(sale: any, ret: any): SaleReturn {
     condition: item.condition || 'good',
   }));
 
+  const payment = Array.isArray(sale.payments) ? sale.payments[0] : undefined;
+  const currency = pickCurrency(
+    ret.currency,
+    sale.currency,
+    payment?.currency,
+    payment?.displayCurrency,
+    fallbackCurrency,
+  );
+
   return {
     id: ret.id,
-    returnNumber: ret.returnNumber || `RET-${ret.id?.slice(-6) || 'N/A'}`,
+    returnNumber:
+      ret.returnNumber || `RET-${ret.id?.slice(-6) || 'N/A'}`,
     saleId: sale.id,
     receiptNumber: sale.receiptNumber || 'N/A',
     customerName: sale.customerName
@@ -248,12 +266,9 @@ function saleReturnToReturn(sale: any, ret: any): SaleReturn {
     createdAt: ret.createdAt || sale.saleDate || sale.createdAt,
     processedAt: ret.processedAt,
     processedBy: ret.processedBy,
+    currency,
   };
 }
-
-// ============================================
-// STYLE HELPERS
-// ============================================
 
 const DEFAULT_RETURN_STATS: ReturnStats = {
   total: 0,
@@ -297,7 +312,7 @@ const getStatusIcon = (status: string): React.ElementType => {
 
 const StatusIcon = ({ status }: { status: string }) => {
   const Icon = getStatusIcon(status);
-  return <Icon className="w-4 h-4 inline mr-1" />;
+  return <Icon className="w-4 h-4 inline mr-1" aria-hidden="true" />;
 };
 
 const getConditionBadge = (condition: string): string => {
@@ -342,10 +357,6 @@ const titleCase = (value: string): string => {
   return lower.charAt(0).toUpperCase() + lower.slice(1);
 };
 
-// ============================================
-// STATS HELPER
-// ============================================
-
 function computeReturnStats(returns: SaleReturn[]): ReturnStats {
   const totalAmount = returns.reduce((sum, r) => sum + (r.total || 0), 0);
 
@@ -360,11 +371,11 @@ function computeReturnStats(returns: SaleReturn[]): ReturnStats {
   };
 }
 
-// ============================================
-// RETURN HTML
-// ============================================
-
 function generateReturnHTML(ret: SaleReturn): string {
+  const currency = pickCurrency(ret.currency, DEFAULT_CURRENCY);
+  const fmt = (amount: number | null | undefined): string =>
+    formatCurrency(amount ?? 0, currency);
+
   return `
     <!DOCTYPE html>
     <html>
@@ -420,7 +431,7 @@ function generateReturnHTML(ret: SaleReturn): string {
             <div class="item">
               <span class="name">${item.productName}</span>
               <span class="qty">x${item.quantity}</span>
-              <span class="price">$${item.total.toFixed(2)}</span>
+              <span class="price">${fmt(item.total)}</span>
             </div>
           `,
             )
@@ -428,9 +439,9 @@ function generateReturnHTML(ret: SaleReturn): string {
         </div>
 
         <div class="totals">
-          <div class="row"><span>Subtotal</span><span>$${ret.subtotal.toFixed(2)}</span></div>
-          <div class="row"><span>Tax</span><span>$${ret.tax.toFixed(2)}</span></div>
-          <div class="row grand"><span>Total</span><span>$${ret.total.toFixed(2)}</span></div>
+          <div class="row"><span>Subtotal</span><span>${fmt(ret.subtotal)}</span></div>
+          <div class="row"><span>Tax</span><span>${fmt(ret.tax)}</span></div>
+          <div class="row grand"><span>Total</span><span>${fmt(ret.total)}</span></div>
         </div>
 
         ${
@@ -446,10 +457,6 @@ function generateReturnHTML(ret: SaleReturn): string {
     </html>
   `;
 }
-
-// ============================================
-// SUB-COMPONENTS
-// ============================================
 
 interface StatCardProps {
   title: string;
@@ -480,10 +487,6 @@ function StatCard({ title, value, color }: StatCardProps) {
   );
 }
 
-// ============================================
-// DETAIL MODAL
-// ============================================
-
 interface DetailModalProps {
   returnData: SaleReturn;
   onClose: () => void;
@@ -501,6 +504,8 @@ function DetailModal({
   onPrint,
   canManage,
 }: DetailModalProps) {
+  const currency = pickCurrency(returnData.currency, DEFAULT_CURRENCY);
+
   return (
     <div
       className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-modal p-4"
@@ -524,7 +529,7 @@ function DetailModal({
             className="p-2 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-colors focus-ring"
             aria-label="Close"
           >
-            <XCircle className="w-6 h-6 text-gray-500" />
+            <XCircle className="w-6 h-6 text-gray-500" aria-hidden="true" />
           </button>
         </div>
 
@@ -539,7 +544,7 @@ function DetailModal({
               {titleCase(returnData.status)}
             </span>
             <span className="text-2xl font-bold text-gray-900 dark:text-white tabular-nums">
-              {formatCurrency(returnData.total)}
+              {formatCurrency(returnData.total, currency)}
             </span>
           </div>
 
@@ -556,7 +561,7 @@ function DetailModal({
               <p className="text-sm text-gray-500 dark:text-gray-400">
                 Email
               </p>
-              <p className="font-medium text-gray-900 dark:text-white">
+              <p className="font-medium text-gray-900 dark:text-white truncate">
                 {returnData.customerEmail}
               </p>
             </div>
@@ -636,7 +641,7 @@ function DetailModal({
                     )}
                   </div>
                   <span className="font-bold text-gray-900 dark:text-white tabular-nums flex-shrink-0">
-                    {formatCurrency(item.total)}
+                    {formatCurrency(item.total, currency)}
                   </span>
                 </div>
               ))}
@@ -650,19 +655,19 @@ function DetailModal({
                   Subtotal
                 </span>
                 <span className="text-gray-900 dark:text-white tabular-nums">
-                  {formatCurrency(returnData.subtotal)}
+                  {formatCurrency(returnData.subtotal, currency)}
                 </span>
               </div>
               <div className="flex justify-between text-sm">
                 <span className="text-gray-500 dark:text-gray-400">Tax</span>
                 <span className="text-gray-900 dark:text-white tabular-nums">
-                  {formatCurrency(returnData.tax)}
+                  {formatCurrency(returnData.tax, currency)}
                 </span>
               </div>
               <div className="flex justify-between font-bold text-lg pt-2 border-t border-gray-200 dark:border-gray-700">
                 <span className="text-gray-900 dark:text-white">Total</span>
                 <span className="text-brand-600 dark:text-brand-400 tabular-nums">
-                  {formatCurrency(returnData.total)}
+                  {formatCurrency(returnData.total, currency)}
                 </span>
               </div>
             </div>
@@ -673,7 +678,7 @@ function DetailModal({
               onClick={onPrint}
               className="px-4 py-2 bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-300 rounded-lg hover:bg-gray-300 dark:hover:bg-gray-600 flex items-center gap-2 focus-ring"
             >
-              <Printer className="w-4 h-4" />
+              <Printer className="w-4 h-4" aria-hidden="true" />
               Print
             </button>
             {canManage && returnData.status === 'PENDING' && (
@@ -682,14 +687,14 @@ function DetailModal({
                   onClick={onProcess}
                   className="px-4 py-2 bg-success-600 text-white rounded-lg hover:bg-success-700 flex items-center gap-2 focus-ring"
                 >
-                  <Check className="w-4 h-4" />
+                  <Check className="w-4 h-4" aria-hidden="true" />
                   Process Return
                 </button>
                 <button
                   onClick={onReject}
                   className="px-4 py-2 bg-danger-600 text-white rounded-lg hover:bg-danger-700 flex items-center gap-2 focus-ring"
                 >
-                  <X className="w-4 h-4" />
+                  <X className="w-4 h-4" aria-hidden="true" />
                   Reject Return
                 </button>
               </>
@@ -707,10 +712,6 @@ function DetailModal({
   );
 }
 
-// ============================================
-// PROCESS MODAL
-// ============================================
-
 interface ProcessModalProps {
   returnData: SaleReturn;
   onClose: () => void;
@@ -724,6 +725,8 @@ function ProcessModal({
   onConfirm,
   processing,
 }: ProcessModalProps) {
+  const currency = pickCurrency(returnData.currency, DEFAULT_CURRENCY);
+
   return (
     <div
       className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-modal p-4"
@@ -740,7 +743,7 @@ function ProcessModal({
           Are you sure you want to process return #{returnData.returnNumber}?
           <br />
           <span className="text-sm">
-            Total amount: {formatCurrency(returnData.total)}
+            Total amount: {formatCurrency(returnData.total, currency)}
           </span>
         </p>
         <div className="flex justify-end gap-3">
@@ -757,9 +760,9 @@ function ProcessModal({
             className="px-4 py-2 bg-success-600 text-white rounded-lg hover:bg-success-700 flex items-center gap-2 disabled:opacity-50 focus-ring"
           >
             {processing ? (
-              <Loader2 className="w-4 h-4 animate-spin" />
+              <Loader2 className="w-4 h-4 animate-spin" aria-hidden="true" />
             ) : (
-              <Check className="w-4 h-4" />
+              <Check className="w-4 h-4" aria-hidden="true" />
             )}
             {processing ? 'Processing...' : 'Confirm Process'}
           </button>
@@ -768,10 +771,6 @@ function ProcessModal({
     </div>
   );
 }
-
-// ============================================
-// REJECT MODAL
-// ============================================
 
 interface RejectModalProps {
   returnData: SaleReturn;
@@ -833,9 +832,9 @@ function RejectModal({
             className="px-4 py-2 bg-danger-600 text-white rounded-lg hover:bg-danger-700 flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed focus-ring"
           >
             {processing ? (
-              <Loader2 className="w-4 h-4 animate-spin" />
+              <Loader2 className="w-4 h-4 animate-spin" aria-hidden="true" />
             ) : (
-              <X className="w-4 h-4" />
+              <X className="w-4 h-4" aria-hidden="true" />
             )}
             {processing ? 'Rejecting...' : 'Confirm Reject'}
           </button>
@@ -844,10 +843,6 @@ function RejectModal({
     </div>
   );
 }
-
-// ============================================
-// LOADING SKELETON
-// ============================================
 
 function LoadingSkeleton() {
   return (
@@ -874,10 +869,6 @@ function LoadingSkeleton() {
   );
 }
 
-// ============================================
-// MAIN COMPONENT
-// ============================================
-
 export default function ReturnsPage() {
   const { isLoaded, isSignedIn } = useUser();
   const { user: authUser } = useAuth();
@@ -901,7 +892,10 @@ export default function ReturnsPage() {
 
   const [totalPages, setTotalPages] = useState(1);
   const [totalReturns, setTotalReturns] = useState(0);
-  const [selectedReturn, setSelectedReturn] = useState<SaleReturn | null>(null);
+  const [listCurrency, setListCurrency] = useState<string>(DEFAULT_CURRENCY);
+  const [selectedReturn, setSelectedReturn] = useState<SaleReturn | null>(
+    null,
+  );
   const [showDetailModal, setShowDetailModal] = useState(false);
   const [showProcessModal, setShowProcessModal] = useState(false);
   const [showRejectModal, setShowRejectModal] = useState(false);
@@ -921,6 +915,11 @@ export default function ReturnsPage() {
     'CASHIER',
   ].includes(userRole);
 
+  const displayCurrency = useMemo(
+    () => pickCurrency(listCurrency, DEFAULT_CURRENCY),
+    [listCurrency],
+  );
+
   useEffect(() => {
     if (isLoaded && !isSignedIn) {
       router.push('/login?redirect=/admin/sales/returns');
@@ -931,10 +930,6 @@ export default function ReturnsPage() {
       toast.error('You do not have permission to view returns');
     }
   }, [isLoaded, isSignedIn, router, canViewReturns]);
-
-  // ============================================
-  // FETCH
-  // ============================================
 
   const fetchReturns = useCallback(
     async (silent = false) => {
@@ -961,13 +956,19 @@ export default function ReturnsPage() {
           ? response.data
           : [];
 
+        const baseCurrency = pickCurrency(
+          response.currency,
+          listCurrency,
+          DEFAULT_CURRENCY,
+        );
+
         const flattened: SaleReturn[] = [];
         rawSales.forEach((sale: any) => {
           const saleReturns: any[] = Array.isArray(sale.returns)
             ? sale.returns
             : [];
           saleReturns.forEach((ret: any) => {
-            flattened.push(saleReturnToReturn(sale, ret));
+            flattened.push(saleReturnToReturn(sale, ret, baseCurrency));
           });
         });
 
@@ -986,6 +987,9 @@ export default function ReturnsPage() {
           typeof response.totalPages === 'number' ? response.totalPages : 1,
         );
         setStats(computeReturnStats(filtered));
+        if (response.currency) {
+          setListCurrency(response.currency);
+        }
       } catch (error: any) {
         console.error('Error fetching returns:', error);
         toast.error(
@@ -999,16 +1003,12 @@ export default function ReturnsPage() {
         setIsRefreshing(false);
       }
     },
-    [authUser, filters],
+    [authUser, filters, listCurrency],
   );
 
   useEffect(() => {
-    fetchReturns();
+    void fetchReturns();
   }, [fetchReturns]);
-
-  // ============================================
-  // FILTER HANDLERS
-  // ============================================
 
   const handleSearch = (e: React.ChangeEvent<HTMLInputElement>) => {
     setFilters((prev) => ({ ...prev, search: e.target.value, page: 1 }));
@@ -1029,10 +1029,6 @@ export default function ReturnsPage() {
     setFilters((prev) => ({ ...prev, page: newPage }));
   };
 
-  // ============================================
-  // ACTION HANDLERS
-  // ============================================
-
   const handleProcessReturn = async () => {
     if (!selectedReturn) return;
 
@@ -1043,7 +1039,7 @@ export default function ReturnsPage() {
       });
       toast.success('Return processed successfully');
       setShowProcessModal(false);
-      fetchReturns(true);
+      void fetchReturns(true);
     } catch (error: any) {
       console.error('Failed to process return:', error);
       toast.error(
@@ -1061,17 +1057,14 @@ export default function ReturnsPage() {
 
     try {
       setProcessing(true);
-      const existing = '';
-      const appended = existing
-        ? `${existing}\nReturn rejected: ${rejectReason.trim()}`
-        : `Return rejected: ${rejectReason.trim()}`;
+      const appended = `Return rejected: ${rejectReason.trim()}`;
       await saleService.updateSale(selectedReturn.saleId, {
         notes: appended,
       } as any);
       toast.success('Return rejected successfully');
       setShowRejectModal(false);
       setRejectReason('');
-      fetchReturns(true);
+      void fetchReturns(true);
     } catch (error: any) {
       console.error('Failed to reject return:', error);
       toast.error(
@@ -1109,6 +1102,7 @@ export default function ReturnsPage() {
         'Return #',
         'Date',
         'Customer',
+        'Currency',
         'Receipt',
         'Subtotal',
         'Tax',
@@ -1119,20 +1113,27 @@ export default function ReturnsPage() {
         'Reason',
         'Items',
       ];
-      const rows = returns.map((ret) => [
-        ret.returnNumber,
-        new Date(ret.createdAt).toISOString().split('T')[0],
-        ret.customerName,
-        ret.receiptNumber,
-        ret.subtotal.toFixed(2),
-        ret.tax.toFixed(2),
-        ret.total.toFixed(2),
-        ret.refundMethod,
-        ret.returnType,
-        ret.status,
-        `"${(ret.reason || '').replace(/"/g, '""')}"`,
-        ret.items.length,
-      ]);
+      const rows = returns.map((ret) => {
+        const rowCurrency = pickCurrency(
+          ret.currency,
+          displayCurrency,
+        );
+        return [
+          ret.returnNumber,
+          new Date(ret.createdAt).toISOString().split('T')[0],
+          ret.customerName,
+          rowCurrency,
+          ret.receiptNumber,
+          ret.subtotal.toFixed(2),
+          ret.tax.toFixed(2),
+          ret.total.toFixed(2),
+          ret.refundMethod,
+          ret.returnType,
+          ret.status,
+          `"${(ret.reason || '').replace(/"/g, '""')}"`,
+          ret.items.length,
+        ];
+      });
       const csv = [
         headers.join(','),
         ...rows.map((row: (string | number)[]) => row.join(',')),
@@ -1161,10 +1162,6 @@ export default function ReturnsPage() {
     }
   };
 
-  // ============================================
-  // RENDER GUARDS
-  // ============================================
-
   if (loading) {
     return <LoadingSkeleton />;
   }
@@ -1173,14 +1170,9 @@ export default function ReturnsPage() {
     return null;
   }
 
-  // ============================================
-  // RENDER
-  // ============================================
-
   return (
     <div className="min-h-screen bg-gray-50 dark:bg-gray-900 p-6">
       <div className="max-w-7xl mx-auto">
-        {/* Header */}
         <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 mb-6">
           <div>
             <div className="flex items-center gap-3">
@@ -1189,7 +1181,10 @@ export default function ReturnsPage() {
                 className="p-2 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-colors focus-ring"
                 aria-label="Back to Sales"
               >
-                <ArrowLeft className="w-5 h-5 text-gray-500" />
+                <ArrowLeft
+                  className="w-5 h-5 text-gray-500"
+                  aria-hidden="true"
+                />
               </button>
               <div>
                 <h1 className="text-3xl font-bold text-gray-900 dark:text-white">
@@ -1204,33 +1199,38 @@ export default function ReturnsPage() {
           </div>
           <div className="flex flex-wrap gap-3">
             <button
-              onClick={() => fetchReturns(true)}
+              onClick={() => void fetchReturns(true)}
               className="flex items-center gap-2 px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors focus-ring"
               disabled={isRefreshing}
             >
               {isRefreshing ? (
-                <Loader2 className="w-4 h-4 animate-spin" />
+                <Loader2
+                  className="w-4 h-4 animate-spin"
+                  aria-hidden="true"
+                />
               ) : (
-                <RefreshCw className="w-4 h-4" />
+                <RefreshCw className="w-4 h-4" aria-hidden="true" />
               )}
               Refresh
             </button>
             <button
-              onClick={handleExport}
+              onClick={() => void handleExport()}
               disabled={exporting || returns.length === 0}
               className="flex items-center gap-2 px-4 py-2 bg-brand-500 text-white rounded-lg hover:bg-brand-600 transition-colors disabled:opacity-50 focus-ring"
             >
               {exporting ? (
-                <Loader2 className="w-4 h-4 animate-spin" />
+                <Loader2
+                  className="w-4 h-4 animate-spin"
+                  aria-hidden="true"
+                />
               ) : (
-                <Download className="w-4 h-4" />
+                <Download className="w-4 h-4" aria-hidden="true" />
               )}
               Export
             </button>
           </div>
         </div>
 
-        {/* Stats Cards */}
         <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-7 gap-4 mb-6">
           <StatCard title="Total" value={stats.total} color="brand" />
           <StatCard title="Pending" value={stats.pending} color="warning" />
@@ -1240,16 +1240,18 @@ export default function ReturnsPage() {
           <StatCard title="Cancelled" value={stats.cancelled} color="gray" />
           <StatCard
             title="Total Amount"
-            value={formatCurrency(stats.totalAmount)}
+            value={formatCurrency(stats.totalAmount, displayCurrency)}
             color="brand"
           />
         </div>
 
-        {/* Filters */}
         <div className="card-brand p-4 mb-6">
           <div className="grid grid-cols-1 md:grid-cols-5 gap-4">
             <div className="relative">
-              <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-5 h-5" />
+              <Search
+                className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-5 h-5"
+                aria-hidden="true"
+              />
               <input
                 type="text"
                 placeholder="Search by return #, receipt, customer..."
@@ -1274,16 +1276,16 @@ export default function ReturnsPage() {
               type="date"
               value={filters.startDate}
               onChange={(e) => handleDateChange('startDate', e.target.value)}
-              className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-brand-500 focus:outline-none bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+              className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-brand-500 focus:outline-none bg-white dark:bg-gray-700 text-gray-900 dark:text-white tabular-nums"
             />
             <input
               type="date"
               value={filters.endDate}
               onChange={(e) => handleDateChange('endDate', e.target.value)}
-              className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-brand-500 focus:outline-none bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+              className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-brand-500 focus:outline-none bg-white dark:bg-gray-700 text-gray-900 dark:text-white tabular-nums"
             />
             <button
-              onClick={() => fetchReturns()}
+              onClick={() => void fetchReturns()}
               className="px-4 py-2 bg-brand-500 text-white rounded-lg hover:bg-brand-600 transition-colors focus-ring"
             >
               Apply Filters
@@ -1291,7 +1293,6 @@ export default function ReturnsPage() {
           </div>
         </div>
 
-        {/* Returns List */}
         {returns.length === 0 ? (
           <div className="card-brand p-12 text-center">
             <div className="text-6xl mb-4">🔄</div>
@@ -1308,122 +1309,147 @@ export default function ReturnsPage() {
           <>
             <div className="space-y-4">
               <AnimatePresence>
-                {returns.map((returnItem, index) => (
-                  <motion.div
-                    key={returnItem.id}
-                    initial={{ opacity: 0, y: 20 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    transition={{ delay: index * 0.05 }}
-                    className="card-brand p-0 overflow-hidden hover:shadow-card-hover transition-all"
-                  >
-                    <div className="px-6 py-4 border-b border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800/50 flex flex-wrap items-center justify-between gap-3">
-                      <div className="flex items-center gap-3">
-                        <span className="font-mono font-bold text-brand-600 dark:text-brand-400 tabular-nums">
-                          #{returnItem.returnNumber}
-                        </span>
-                        <span className="text-sm text-gray-500 dark:text-gray-400">
-                          {formatDate(returnItem.createdAt)}
-                        </span>
-                        <span className="px-2 py-0.5 bg-gray-200 dark:bg-gray-700 text-gray-600 dark:text-gray-400 rounded-full text-xs">
-                          {titleCase(returnItem.returnType)}
-                        </span>
-                      </div>
-                      <div className="flex items-center gap-3">
-                        <span
-                          className={`px-2.5 py-1 rounded-full text-xs font-medium ${getStatusColor(
-                            returnItem.status,
-                          )} flex items-center gap-1`}
-                        >
-                          <StatusIcon status={returnItem.status} />
-                          {titleCase(returnItem.status)}
-                        </span>
-                        <span className="font-bold text-gray-900 dark:text-white tabular-nums">
-                          {formatCurrency(returnItem.total)}
-                        </span>
-                      </div>
-                    </div>
+                {returns.map((returnItem, index) => {
+                  const rowCurrency = pickCurrency(
+                    returnItem.currency,
+                    displayCurrency,
+                  );
 
-                    <div className="p-6">
-                      <div className="flex flex-wrap items-start justify-between gap-4">
-                        <div className="space-y-2">
-                          <div className="flex items-center gap-4 text-sm text-gray-500 dark:text-gray-400">
-                            <span className="flex items-center gap-1">
-                              <Users className="w-4 h-4" />
-                              {returnItem.customerName || 'Guest'}
-                            </span>
-                            <span className="flex items-center gap-1">
-                              <FileText className="w-4 h-4" />
-                              Receipt: #{returnItem.receiptNumber}
-                            </span>
-                            <span className="flex items-center gap-1 tabular-nums">
-                              <Package className="w-4 h-4" />
-                              {returnItem.items.length} items
-                            </span>
-                          </div>
-                          <div className="flex flex-wrap gap-2">
-                            <span
-                              className={`px-2 py-1 rounded-full text-xs font-medium ${getRefundMethodColor(
-                                returnItem.refundMethod,
-                              )} flex items-center gap-1`}
-                            >
-                              {humanizeMethod(returnItem.refundMethod)}
-                            </span>
-                            {returnItem.notes && (
-                              <span className="px-2 py-1 bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-400 rounded-full text-xs">
-                                📝 {returnItem.notes}
-                              </span>
-                            )}
-                          </div>
+                  return (
+                    <motion.div
+                      key={returnItem.id}
+                      initial={{ opacity: 0, y: 20 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      transition={{ delay: index * 0.05 }}
+                      className="card-brand p-0 overflow-hidden hover:shadow-card-hover transition-all"
+                    >
+                      <div className="px-6 py-4 border-b border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800/50 flex flex-wrap items-center justify-between gap-3">
+                        <div className="flex items-center gap-3 flex-wrap">
+                          <span className="font-mono font-bold text-brand-600 dark:text-brand-400 tabular-nums">
+                            #{returnItem.returnNumber}
+                          </span>
+                          <span className="text-sm text-gray-500 dark:text-gray-400">
+                            {formatDate(returnItem.createdAt)}
+                          </span>
+                          <span className="px-2 py-0.5 bg-gray-200 dark:bg-gray-700 text-gray-600 dark:text-gray-400 rounded-full text-xs">
+                            {titleCase(returnItem.returnType)}
+                          </span>
                         </div>
-                        <div className="flex gap-2 flex-wrap">
-                          <button
-                            onClick={() => {
-                              setSelectedReturn(returnItem);
-                              setShowDetailModal(true);
-                            }}
-                            className="px-3 py-1.5 text-brand-600 dark:text-brand-400 hover:bg-brand-50 dark:hover:bg-brand-900/20 rounded-lg text-sm font-medium transition-colors flex items-center gap-1 focus-ring"
+                        <div className="flex items-center gap-3">
+                          <span
+                            className={`px-2.5 py-1 rounded-full text-xs font-medium ${getStatusColor(
+                              returnItem.status,
+                            )} flex items-center gap-1`}
                           >
-                            <Eye className="w-4 h-4" />
-                            Details
-                          </button>
-                          <button
-                            onClick={() => handlePrintReturn(returnItem)}
-                            className="px-3 py-1.5 text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg text-sm font-medium transition-colors flex items-center gap-1 focus-ring"
-                          >
-                            <Printer className="w-4 h-4" />
-                            Print
-                          </button>
-                          {canManageReturns &&
-                            returnItem.status === 'PENDING' && (
-                              <>
-                                <button
-                                  onClick={() => {
-                                    setSelectedReturn(returnItem);
-                                    setShowProcessModal(true);
-                                  }}
-                                  className="px-3 py-1.5 bg-success-600 text-white rounded-lg hover:bg-success-700 text-sm font-medium transition-colors flex items-center gap-1 focus-ring"
-                                >
-                                  <Check className="w-4 h-4" />
-                                  Process
-                                </button>
-                                <button
-                                  onClick={() => {
-                                    setSelectedReturn(returnItem);
-                                    setRejectReason('');
-                                    setShowRejectModal(true);
-                                  }}
-                                  className="px-3 py-1.5 bg-danger-600 text-white rounded-lg hover:bg-danger-700 text-sm font-medium transition-colors flex items-center gap-1 focus-ring"
-                                >
-                                  <X className="w-4 h-4" />
-                                  Reject
-                                </button>
-                              </>
-                            )}
+                            <StatusIcon status={returnItem.status} />
+                            {titleCase(returnItem.status)}
+                          </span>
+                          <span className="font-bold text-gray-900 dark:text-white tabular-nums">
+                            {formatCurrency(returnItem.total, rowCurrency)}
+                          </span>
                         </div>
                       </div>
-                    </div>
-                  </motion.div>
-                ))}
+
+                      <div className="p-6">
+                        <div className="flex flex-wrap items-start justify-between gap-4">
+                          <div className="space-y-2">
+                            <div className="flex items-center gap-4 text-sm text-gray-500 dark:text-gray-400 flex-wrap">
+                              <span className="flex items-center gap-1">
+                                <Users
+                                  className="w-4 h-4"
+                                  aria-hidden="true"
+                                />
+                                {returnItem.customerName || 'Guest'}
+                              </span>
+                              <span className="flex items-center gap-1">
+                                <FileText
+                                  className="w-4 h-4"
+                                  aria-hidden="true"
+                                />
+                                Receipt: #{returnItem.receiptNumber}
+                              </span>
+                              <span className="flex items-center gap-1 tabular-nums">
+                                <Package
+                                  className="w-4 h-4"
+                                  aria-hidden="true"
+                                />
+                                {returnItem.items.length} items
+                              </span>
+                            </div>
+                            <div className="flex flex-wrap gap-2">
+                              <span
+                                className={`px-2 py-1 rounded-full text-xs font-medium ${getRefundMethodColor(
+                                  returnItem.refundMethod,
+                                )} flex items-center gap-1`}
+                              >
+                                {humanizeMethod(returnItem.refundMethod)}
+                              </span>
+                              {returnItem.notes && (
+                                <span className="px-2 py-1 bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-400 rounded-full text-xs">
+                                  📝 {returnItem.notes}
+                                </span>
+                              )}
+                            </div>
+                          </div>
+                          <div className="flex gap-2 flex-wrap">
+                            <button
+                              onClick={() => {
+                                setSelectedReturn(returnItem);
+                                setShowDetailModal(true);
+                              }}
+                              className="px-3 py-1.5 text-brand-600 dark:text-brand-400 hover:bg-brand-50 dark:hover:bg-brand-900/20 rounded-lg text-sm font-medium transition-colors flex items-center gap-1 focus-ring"
+                            >
+                              <Eye className="w-4 h-4" aria-hidden="true" />
+                              Details
+                            </button>
+                            <button
+                              onClick={() => handlePrintReturn(returnItem)}
+                              className="px-3 py-1.5 text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg text-sm font-medium transition-colors flex items-center gap-1 focus-ring"
+                            >
+                              <Printer
+                                className="w-4 h-4"
+                                aria-hidden="true"
+                              />
+                              Print
+                            </button>
+                            {canManageReturns &&
+                              returnItem.status === 'PENDING' && (
+                                <>
+                                  <button
+                                    onClick={() => {
+                                      setSelectedReturn(returnItem);
+                                      setShowProcessModal(true);
+                                    }}
+                                    className="px-3 py-1.5 bg-success-600 text-white rounded-lg hover:bg-success-700 text-sm font-medium transition-colors flex items-center gap-1 focus-ring"
+                                  >
+                                    <Check
+                                      className="w-4 h-4"
+                                      aria-hidden="true"
+                                    />
+                                    Process
+                                  </button>
+                                  <button
+                                    onClick={() => {
+                                      setSelectedReturn(returnItem);
+                                      setRejectReason('');
+                                      setShowRejectModal(true);
+                                    }}
+                                    className="px-3 py-1.5 bg-danger-600 text-white rounded-lg hover:bg-danger-700 text-sm font-medium transition-colors flex items-center gap-1 focus-ring"
+                                  >
+                                    <X
+                                      className="w-4 h-4"
+                                      aria-hidden="true"
+                                    />
+                                    Reject
+                                  </button>
+                                </>
+                              )}
+                          </div>
+                        </div>
+                      </div>
+                    </motion.div>
+                  );
+                })}
               </AnimatePresence>
             </div>
 
@@ -1436,45 +1462,56 @@ export default function ReturnsPage() {
                   disabled={filters.page === 1}
                   className="px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg text-sm hover:bg-gray-50 dark:hover:bg-gray-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors text-gray-700 dark:text-gray-300 focus-ring"
                 >
-                  <ChevronLeft className="w-4 h-4 inline" />
+                  <ChevronLeft
+                    className="w-4 h-4 inline"
+                    aria-hidden="true"
+                  />
                   Previous
                 </button>
                 <div className="flex items-center gap-1">
-                  {Array.from({ length: Math.min(totalPages, 5) }, (_, i) => {
-                    let pageNum: number;
-                    if (totalPages <= 5) {
-                      pageNum = i + 1;
-                    } else if (filters.page <= 3) {
-                      pageNum = i + 1;
-                    } else if (filters.page >= totalPages - 2) {
-                      pageNum = totalPages - 4 + i;
-                    } else {
-                      pageNum = filters.page - 2 + i;
-                    }
-                    return (
-                      <button
-                        key={pageNum}
-                        onClick={() => handlePageChange(pageNum)}
-                        className={`w-9 h-9 rounded-lg text-sm transition-colors tabular-nums focus-ring ${
-                          filters.page === pageNum
-                            ? 'bg-brand-500 text-white'
-                            : 'border border-gray-300 dark:border-gray-600 hover:bg-gray-50 dark:hover:bg-gray-700 text-gray-700 dark:text-gray-300'
-                        }`}
-                      >
-                        {pageNum}
-                      </button>
-                    );
-                  })}
+                  {Array.from(
+                    { length: Math.min(totalPages, 5) },
+                    (_, i) => {
+                      let pageNum: number;
+                      if (totalPages <= 5) {
+                        pageNum = i + 1;
+                      } else if (filters.page <= 3) {
+                        pageNum = i + 1;
+                      } else if (filters.page >= totalPages - 2) {
+                        pageNum = totalPages - 4 + i;
+                      } else {
+                        pageNum = filters.page - 2 + i;
+                      }
+                      return (
+                        <button
+                          key={pageNum}
+                          onClick={() => handlePageChange(pageNum)}
+                          className={`w-9 h-9 rounded-lg text-sm transition-colors tabular-nums focus-ring ${
+                            filters.page === pageNum
+                              ? 'bg-brand-500 text-white'
+                              : 'border border-gray-300 dark:border-gray-600 hover:bg-gray-50 dark:hover:bg-gray-700 text-gray-700 dark:text-gray-300'
+                          }`}
+                        >
+                          {pageNum}
+                        </button>
+                      );
+                    },
+                  )}
                 </div>
                 <button
                   onClick={() =>
-                    handlePageChange(Math.min(totalPages, filters.page + 1))
+                    handlePageChange(
+                      Math.min(totalPages, filters.page + 1),
+                    )
                   }
                   disabled={filters.page === totalPages}
                   className="px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg text-sm hover:bg-gray-50 dark:hover:bg-gray-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors text-gray-700 dark:text-gray-300 focus-ring"
                 >
                   Next
-                  <ChevronRight className="w-4 h-4 inline" />
+                  <ChevronRight
+                    className="w-4 h-4 inline"
+                    aria-hidden="true"
+                  />
                 </button>
               </div>
             )}
@@ -1482,7 +1519,6 @@ export default function ReturnsPage() {
         )}
       </div>
 
-      {/* Detail Modal */}
       <AnimatePresence>
         {showDetailModal && selectedReturn && (
           <DetailModal
@@ -1503,25 +1539,23 @@ export default function ReturnsPage() {
         )}
       </AnimatePresence>
 
-      {/* Process Modal */}
       <AnimatePresence>
         {showProcessModal && selectedReturn && (
           <ProcessModal
             returnData={selectedReturn}
             onClose={() => setShowProcessModal(false)}
-            onConfirm={handleProcessReturn}
+            onConfirm={() => void handleProcessReturn()}
             processing={processing}
           />
         )}
       </AnimatePresence>
 
-      {/* Reject Modal */}
       <AnimatePresence>
         {showRejectModal && selectedReturn && (
           <RejectModal
             returnData={selectedReturn}
             onClose={() => setShowRejectModal(false)}
-            onConfirm={handleRejectReturn}
+            onConfirm={() => void handleRejectReturn()}
             reason={rejectReason}
             setReason={setRejectReason}
             processing={processing}

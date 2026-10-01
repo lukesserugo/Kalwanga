@@ -48,11 +48,10 @@ import { usePermission } from '../../../../../hooks/usePermission';
 import { PermissionResource } from '../../../../../types/enums';
 import { toast } from '../../../../../utils/toast-manager';
 
-// ============================================
-// TYPES
-// ============================================
+const DEFAULT_CURRENCY = 'USD';
 
 interface DashboardStats {
+  currency?: string;
   today: {
     totalSales: number;
     totalRevenue: number;
@@ -82,29 +81,25 @@ interface DashboardStats {
   salesByDay?: Array<{ day: string; sales: number; revenue: number }>;
 }
 
-// ============================================
-// CSV EXPORT HELPERS
-// ============================================
-//
-// ⚠ CSV export is now assembled **entirely client-side** from the
-//   sales list already loaded into the dashboard. The POS-oriented
-//   `saleService` in this codebase does NOT expose an `exportSales`
-//   method (see the TS2339 the previous version triggered). Fetching
-//   sales through the service's `getAllSales` — which the service
-//   *does* expose — and rendering the CSV here avoids depending on
-//   a method that doesn't exist.
-//
-//   This is also the correct architectural choice: the backend's
-//   `/sales/export` endpoint is a JSON dump, and the CSV/Excel/PDF
-//   variants are placeholders (`"Excel export would be generated
-//   here"`). Producing the file in the browser is the only path that
-//   actually delivers a downloadable artifact today.
+function pickCurrency(...candidates: Array<unknown>): string {
+  for (const c of candidates) {
+    if (typeof c === 'string' && c.trim().length > 0) {
+      return c.trim().toUpperCase();
+    }
+  }
+  return DEFAULT_CURRENCY;
+}
 
-/**
- * Escape a single CSV field per RFC 4180:
- *   - wrap in quotes when the value contains a comma, quote, CR, or LF
- *   - double any embedded quote
- */
+function resolveSaleCurrency(sale: any, fallback: string): string {
+  const payment = sale?.payments?.[0];
+  return pickCurrency(
+    sale?.currency,
+    payment?.displayCurrency,
+    payment?.currency,
+    fallback,
+  );
+}
+
 function csvEscape(value: unknown): string {
   if (value === null || value === undefined) return '';
   const str = String(value);
@@ -119,14 +114,6 @@ function csvEscape(value: unknown): string {
   return str;
 }
 
-/**
- * Normalise the `getAllSales` envelope into a flat array of sales.
- *
- * The service method returns `{ sales, total, page, limit, totalPages, stats }`
- * when the api client passes the backend envelope through unchanged.
- * Some middleware configurations unwrap to just the array, or to
- * `{ data: [...] }`. Accept all three.
- */
 function extractSalesArray(response: any): any[] {
   if (!response) return [];
   if (Array.isArray(response)) return response;
@@ -149,13 +136,6 @@ function extractSalesArray(response: any): any[] {
   return [];
 }
 
-/**
- * Trigger a browser file download from a string payload.
- *
- * Creates a temporary anchor, clicks it, and revokes the object URL.
- * The anchor is appended to the document because Firefox refuses to
- * honour `.click()` on a detached element.
- */
 function downloadTextFile(
   content: string,
   filename: string,
@@ -171,10 +151,6 @@ function downloadTextFile(
   document.body.removeChild(a);
   URL.revokeObjectURL(url);
 }
-
-// ============================================
-// SUB-COMPONENTS
-// ============================================
 
 const StatsCard: React.FC<{
   title: string;
@@ -329,7 +305,7 @@ const StatusBadge: React.FC<{ status: string }> = ({ status }) => {
     <span
       className={`px-2 py-1 rounded-full text-xs font-medium flex items-center gap-1 ${config.color}`}
     >
-      <Icon className="w-3 h-3" />
+      <Icon className="w-3 h-3" aria-hidden="true" />
       {config.label}
     </span>
   );
@@ -337,7 +313,8 @@ const StatusBadge: React.FC<{ status: string }> = ({ status }) => {
 
 const RevenueChart: React.FC<{
   data: Array<{ day: string; revenue: number; sales: number }>;
-}> = ({ data }) => {
+  currency: string;
+}> = ({ data, currency }) => {
   if (!data || data.length === 0) {
     return (
       <div className="flex items-center justify-center h-full text-gray-400 dark:text-gray-500">
@@ -360,9 +337,10 @@ const RevenueChart: React.FC<{
                 height: `${(item.revenue / maxRevenue) * 80}%`,
                 minHeight: '4px',
               }}
-              title={`${item.day}: ${formatCurrency(item.revenue)} (${
-                item.sales
-              } sales)`}
+              title={`${item.day}: ${formatCurrency(
+                item.revenue,
+                currency,
+              )} (${item.sales} sales)`}
             />
             <span className="text-xs text-gray-500 dark:text-gray-400 mt-1">
               {item.day.slice(0, 3)}
@@ -371,19 +349,16 @@ const RevenueChart: React.FC<{
         ))}
       </div>
       <div className="flex justify-between mt-2 text-xs text-gray-400 dark:text-gray-500 tabular-nums">
-        <span>${minRevenue.toFixed(0)}</span>
-        <span>${maxRevenue.toFixed(0)}</span>
+        <span>{formatCurrency(minRevenue, currency)}</span>
+        <span>{formatCurrency(maxRevenue, currency)}</span>
       </div>
     </div>
   );
 };
 
-/**
- * Compact inline hint showing the promotion / loyalty attribution of
- * a sale. Returns `null` when the sale has neither, so it can be
- * rendered unconditionally.
- */
-const BreakdownHint: React.FC<{ sale: any }> = ({ sale }) => {
+const BreakdownHint: React.FC<{ sale: any; currency: string }> = ({
+  sale,
+}) => {
   if (!saleService.hasBreakdown(sale)) return null;
 
   const breakdown = saleService.extractBreakdown(sale);
@@ -396,19 +371,24 @@ const BreakdownHint: React.FC<{ sale: any }> = ({ sale }) => {
       className="inline-flex items-center gap-1 text-xs text-gray-500 dark:text-gray-400 mt-1"
       title={label}
     >
-      {hasPromotion && <Tag className="w-3 h-3 text-brand-500 shrink-0" />}
+      {hasPromotion && (
+        <Tag className="w-3 h-3 text-brand-500 shrink-0" aria-hidden="true" />
+      )}
       {hasLoyalty && (
-        <Star className="w-3 h-3 text-warning-500 fill-current shrink-0" />
+        <Star
+          className="w-3 h-3 text-warning-500 fill-current shrink-0"
+          aria-hidden="true"
+        />
       )}
       <span className="truncate max-w-[200px]">{label}</span>
     </span>
   );
 };
 
-/**
- * Expanded breakdown block for the sale detail modal.
- */
-const BreakdownPanel: React.FC<{ sale: any }> = ({ sale }) => {
+const BreakdownPanel: React.FC<{ sale: any; currency: string }> = ({
+  sale,
+  currency,
+}) => {
   if (!saleService.hasBreakdown(sale)) return null;
 
   const breakdown = saleService.extractBreakdown(sale);
@@ -425,14 +405,17 @@ const BreakdownPanel: React.FC<{ sale: any }> = ({ sale }) => {
       aria-label="Discount breakdown"
     >
       <p className="text-xs font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400 flex items-center gap-1.5">
-        <Sparkles className="w-3 h-3 text-brand-500" />
+        <Sparkles className="w-3 h-3 text-brand-500" aria-hidden="true" />
         Discount Breakdown
       </p>
 
       {hasPromotion && (
         <div className="flex items-center justify-between text-sm">
           <span className="flex items-center gap-2 text-gray-600 dark:text-gray-400">
-            <Tag className="w-3.5 h-3.5 text-brand-500 shrink-0" />
+            <Tag
+              className="w-3.5 h-3.5 text-brand-500 shrink-0"
+              aria-hidden="true"
+            />
             <span>{promotionLabel}</span>
             {breakdown.promotionCode && (
               <code className="px-1.5 py-0.5 rounded bg-gray-200 dark:bg-gray-700 text-[10px] font-mono tabular-nums">
@@ -441,7 +424,7 @@ const BreakdownPanel: React.FC<{ sale: any }> = ({ sale }) => {
             )}
           </span>
           <span className="tabular-nums font-medium text-success-600 dark:text-success-400 shrink-0">
-            -{formatCurrency(breakdown.promotionDiscount ?? 0)}
+            -{formatCurrency(breakdown.promotionDiscount ?? 0, currency)}
           </span>
         </div>
       )}
@@ -449,23 +432,22 @@ const BreakdownPanel: React.FC<{ sale: any }> = ({ sale }) => {
       {hasLoyalty && (
         <div className="flex items-center justify-between text-sm">
           <span className="flex items-center gap-2 text-gray-600 dark:text-gray-400">
-            <Star className="w-3.5 h-3.5 text-warning-500 fill-current shrink-0" />
+            <Star
+              className="w-3.5 h-3.5 text-warning-500 fill-current shrink-0"
+              aria-hidden="true"
+            />
             <span className="tabular-nums">
               {breakdown.loyaltyPointsUsed} loyalty points
             </span>
           </span>
           <span className="tabular-nums font-medium text-success-600 dark:text-success-400 shrink-0">
-            -{formatCurrency(breakdown.loyaltyDiscount ?? 0)}
+            -{formatCurrency(breakdown.loyaltyDiscount ?? 0, currency)}
           </span>
         </div>
       )}
     </section>
   );
 };
-
-// ============================================
-// MAIN COMPONENT
-// ============================================
 
 export default function SalesDashboard() {
   const { user } = useAuth();
@@ -479,7 +461,7 @@ export default function SalesDashboard() {
   >('today');
   const [showExportModal, setShowExportModal] = useState(false);
   const [exportFormat, setExportFormat] = useState<'csv' | 'excel' | 'pdf'>(
-    'csv'
+    'csv',
   );
   const [exporting, setExporting] = useState(false);
   const [selectedSale, setSelectedSale] = useState<any>(null);
@@ -492,7 +474,6 @@ export default function SalesDashboard() {
     user?.role === 'MANAGER' ||
     false;
 
-  // Navigation handlers
   const goToSalesList = () => {
     router.push('/admin/sales');
   };
@@ -500,13 +481,6 @@ export default function SalesDashboard() {
   const goToPos = () => {
     router.push('/admin/sales/pos');
   };
-
-  useEffect(() => {
-    if (canViewStats) {
-      loadDashboardData();
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [timeRange, canViewStats]);
 
   const loadDashboardData = useCallback(
     async (silent = false) => {
@@ -521,6 +495,7 @@ export default function SalesDashboard() {
         });
 
         setStats({
+          currency: (data as any)?.currency,
           today: {
             totalSales: data?.today?.totalSales || 0,
             totalRevenue: data?.today?.totalRevenue || 0,
@@ -552,20 +527,23 @@ export default function SalesDashboard() {
         setRefreshing(false);
       }
     },
-    [user, canViewStats]
+    [user, canViewStats],
   );
 
-  /**
-   * Compute the [startDate, endDate] pair for the current `timeRange`.
-   * Both dates are `Date` instances; the caller converts to ISO.
-   */
+  useEffect(() => {
+    if (canViewStats) {
+      void loadDashboardData();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [timeRange, canViewStats]);
+
   const computeExportRange = useCallback((): {
     startDate: Date;
     endDate: Date;
   } => {
     const now = new Date();
     const endDate = new Date(now);
-    let startDate = new Date(now);
+    const startDate = new Date(now);
 
     switch (timeRange) {
       case 'today':
@@ -587,25 +565,6 @@ export default function SalesDashboard() {
     return { startDate, endDate };
   }, [timeRange]);
 
-  /**
-   * Export the current range's sales as a downloadable file.
-   *
-   * ⚠ The POS `saleService` in this codebase does NOT expose an
-   *   `exportSales` method — that was the source of the TS2339 this
-   *   rewrite addresses. Instead we call `saleService.getAllSales`,
-   *   which the service DOES expose, then assemble the CSV/JSON in
-   *   the browser. This is the only path that produces a genuinely
-   *   downloadable artifact today, because the backend's `/sales/export`
-   *   endpoint returns JSON regardless of the requested format and the
-   *   Excel/PDF variants are placeholders.
-   *
-   * Excel and PDF are downgraded to CSV: the browser cannot produce
-   * an xlsx or a PDF without pulling in a library (SheetJS, jsPDF)
-   * that this project doesn't currently ship. Emitting CSV with the
-   * requested extension would be worse than emitting CSV with the
-   * correct extension — a `.xlsx` file full of comma-separated text
-   * doesn't open, whereas a `.csv` file always does.
-   */
   const handleExport = useCallback(async () => {
     setExporting(true);
     try {
@@ -614,8 +573,6 @@ export default function SalesDashboard() {
       const businessUnitId =
         user?.businessUnits?.[0]?.businessUnitId ?? undefined;
 
-      // Fetch the sales for the requested range via the method that
-      // actually exists on the service.
       const response = await saleService.getAllSales({
         startDate: startDate.toISOString(),
         endDate: endDate.toISOString(),
@@ -630,10 +587,17 @@ export default function SalesDashboard() {
         return;
       }
 
+      const exportCurrency = pickCurrency(
+        (response as any)?.currency,
+        stats?.currency,
+        DEFAULT_CURRENCY,
+      );
+
       const headers = [
         'Receipt',
         'Date',
         'Customer',
+        'Currency',
         'Subtotal',
         'Tax',
         'Discount',
@@ -662,6 +626,7 @@ export default function SalesDashboard() {
             ? new Date(sale.saleDate).toISOString().split('T')[0]
             : sale.date || '',
           customerName,
+          resolveSaleCurrency(sale, exportCurrency),
           sale.subtotal ?? 0,
           sale.tax ?? 0,
           sale.discount ?? 0,
@@ -686,28 +651,18 @@ export default function SalesDashboard() {
         .toISOString()
         .split('T')[0]}-to-${endDate.toISOString().split('T')[0]}`;
 
-      // Only CSV is a first-class output. Excel and PDF fall back to
-      // CSV with a clear toast so the user isn't confused by a
-      // file that won't open.
-      const isCsvOrFallback =
-        exportFormat === 'csv' ||
-        exportFormat === 'excel' ||
-        exportFormat === 'pdf';
+      downloadTextFile(
+        csvContent,
+        `${baseName}.csv`,
+        'text/csv;charset=utf-8;',
+      );
 
-      if (isCsvOrFallback) {
-        downloadTextFile(
-          csvContent,
-          `${baseName}.csv`,
-          'text/csv;charset=utf-8;'
+      if (exportFormat !== 'csv') {
+        toast.success(
+          `Exported as CSV — ${exportFormat.toUpperCase()} generation is not available in the browser.`,
         );
-
-        if (exportFormat !== 'csv') {
-          toast.success(
-            `Exported as CSV — ${exportFormat.toUpperCase()} generation is not available in the browser.`,
-          );
-        } else {
-          toast.success('Sales report exported successfully');
-        }
+      } else {
+        toast.success('Sales report exported successfully');
       }
 
       setShowExportModal(false);
@@ -721,107 +676,125 @@ export default function SalesDashboard() {
     } finally {
       setExporting(false);
     }
-  }, [exportFormat, computeExportRange, user]);
+  }, [exportFormat, computeExportRange, user, stats?.currency]);
 
   const handleViewSale = (sale: any) => {
     setSelectedSale(sale);
     setShowDetailModal(true);
   };
 
-  const handlePrintReceipt = (sale: any) => {
-    const printWindow = window.open('', '_blank');
-    if (!printWindow) {
-      toast.error('Please allow popups to print receipts');
-      return;
-    }
+  const handlePrintReceipt = useCallback(
+    (sale: any) => {
+      const printWindow = window.open('', '_blank');
+      if (!printWindow) {
+        toast.error('Please allow popups to print receipts');
+        return;
+      }
 
-    const breakdown = saleService.extractBreakdown(sale);
-    const promotionDiscount = breakdown.promotionDiscount ?? 0;
-    const promotionCode = breakdown.promotionCode ?? null;
-    const loyaltyPointsUsed = breakdown.loyaltyPointsUsed ?? 0;
-    const loyaltyDiscount = breakdown.loyaltyDiscount ?? 0;
+      const currency = resolveSaleCurrency(
+        sale,
+        stats?.currency ?? DEFAULT_CURRENCY,
+      );
+      const fmt = (amount: number | null | undefined): string =>
+        formatCurrency(amount ?? 0, currency);
 
-    const promotionLine =
-      promotionDiscount > 0
-        ? `<div class="row"><span>Promotion${
-            promotionCode ? ` (${promotionCode})` : ''
-          }</span><span>-${formatCurrency(promotionDiscount)}</span></div>`
-        : '';
+      const breakdown = saleService.extractBreakdown(sale);
+      const promotionDiscount = breakdown.promotionDiscount ?? 0;
+      const promotionCode = breakdown.promotionCode ?? null;
+      const loyaltyPointsUsed = breakdown.loyaltyPointsUsed ?? 0;
+      const loyaltyDiscount = breakdown.loyaltyDiscount ?? 0;
 
-    const loyaltyLine =
-      loyaltyPointsUsed > 0
-        ? `<div class="row"><span>${loyaltyPointsUsed} loyalty points</span><span>-${formatCurrency(loyaltyDiscount)}</span></div>`
-        : '';
+      const promotionLine =
+        promotionDiscount > 0
+          ? `<div class="row"><span>Promotion${
+              promotionCode ? ` (${promotionCode})` : ''
+            }</span><span>-${fmt(promotionDiscount)}</span></div>`
+          : '';
 
-    const rawDiscountLine =
-      sale.discount > 0 && promotionDiscount === 0 && loyaltyDiscount === 0
-        ? `<div class="row"><span>Discount</span><span>-${formatCurrency(sale.discount)}</span></div>`
-        : '';
+      const loyaltyLine =
+        loyaltyPointsUsed > 0
+          ? `<div class="row"><span>${loyaltyPointsUsed} loyalty points</span><span>-${fmt(loyaltyDiscount)}</span></div>`
+          : '';
 
-    printWindow.document.write(`
-      <html>
-        <head>
-          <title>Receipt #${sale.receiptNumber}</title>
-          <style>
-            body { font-family: 'Courier New', monospace; padding: 20px; max-width: 320px; margin: 0 auto; }
-            .header { text-align: center; border-bottom: 2px dashed #333; padding-bottom: 10px; margin-bottom: 10px; }
-            .row { display: flex; justify-content: space-between; padding: 2px 0; font-size: 13px; }
-            .grand { font-weight: bold; font-size: 16px; border-top: 1px solid #333; padding-top: 8px; margin-top: 4px; }
-            .items { margin: 10px 0; }
-            .item { display: flex; justify-content: space-between; font-size: 13px; }
-          </style>
-        </head>
-        <body>
-          <div class="header">
-            <h3>Receipt #${sale.receiptNumber}</h3>
-            <p>${formatDate(sale.saleDate || sale.createdAt)}</p>
-            <p>Customer: ${
-              sale.customer
-                ? `${sale.customer.firstName ?? ''} ${
-                    sale.customer.lastName ?? ''
-                  }`.trim()
-                : 'Guest'
-            }</p>
-          </div>
-          <div class="items">
-            ${(sale.items || [])
-              .map(
-                (item: any) => `
-              <div class="item">
-                <span>${item.product?.name || 'Item'} × ${item.quantity}</span>
-                <span>${formatCurrency(item.total)}</span>
-              </div>
-            `
-              )
-              .join('')}
-          </div>
-          <div>
-            <div class="row"><span>Subtotal</span><span>${formatCurrency(sale.subtotal)}</span></div>
-            <div class="row"><span>Tax</span><span>${formatCurrency(sale.tax)}</span></div>
-            ${promotionLine}
-            ${loyaltyLine}
-            ${rawDiscountLine}
-            <div class="row grand"><span>Total</span><span>${formatCurrency(sale.total)}</span></div>
-          </div>
-        </body>
-      </html>
-    `);
-    printWindow.document.close();
-    printWindow.print();
-    toast.success('Receipt sent to printer');
-  };
+      const rawDiscountLine =
+        sale.discount > 0 && promotionDiscount === 0 && loyaltyDiscount === 0
+          ? `<div class="row"><span>Discount</span><span>-${fmt(sale.discount)}</span></div>`
+          : '';
+
+      printWindow.document.write(`
+        <html>
+          <head>
+            <title>Receipt #${sale.receiptNumber}</title>
+            <style>
+              body { font-family: 'Courier New', monospace; padding: 20px; max-width: 320px; margin: 0 auto; }
+              .header { text-align: center; border-bottom: 2px dashed #333; padding-bottom: 10px; margin-bottom: 10px; }
+              .row { display: flex; justify-content: space-between; padding: 2px 0; font-size: 13px; }
+              .grand { font-weight: bold; font-size: 16px; border-top: 1px solid #333; padding-top: 8px; margin-top: 4px; }
+              .items { margin: 10px 0; }
+              .item { display: flex; justify-content: space-between; font-size: 13px; }
+            </style>
+          </head>
+          <body>
+            <div class="header">
+              <h3>Receipt #${sale.receiptNumber}</h3>
+              <p>${formatDate(sale.saleDate || sale.createdAt)}</p>
+              <p>Customer: ${
+                sale.customer
+                  ? `${sale.customer.firstName ?? ''} ${
+                      sale.customer.lastName ?? ''
+                    }`.trim()
+                  : 'Guest'
+              }</p>
+            </div>
+            <div class="items">
+              ${(sale.items || [])
+                .map(
+                  (item: any) => `
+                <div class="item">
+                  <span>${item.product?.name || 'Item'} × ${
+                    item.quantity
+                  }</span>
+                  <span>${fmt(item.total)}</span>
+                </div>
+              `,
+                )
+                .join('')}
+            </div>
+            <div>
+              <div class="row"><span>Subtotal</span><span>${fmt(
+                sale.subtotal,
+              )}</span></div>
+              <div class="row"><span>Tax</span><span>${fmt(
+                sale.tax,
+              )}</span></div>
+              ${promotionLine}
+              ${loyaltyLine}
+              ${rawDiscountLine}
+              <div class="row grand"><span>Total</span><span>${fmt(
+                sale.total,
+              )}</span></div>
+            </div>
+          </body>
+        </html>
+      `);
+      printWindow.document.close();
+      printWindow.print();
+      toast.success('Receipt sent to printer');
+    },
+    [stats?.currency],
+  );
 
   if (!canViewStats) {
     return (
       <div className="flex flex-col items-center justify-center min-h-[60vh] p-8">
         <div className="w-24 h-24 bg-gray-100 dark:bg-gray-700 rounded-full flex items-center justify-center mx-auto mb-4">
-          <Lock className="w-12 h-12 text-gray-400" />
+          <Lock className="w-12 h-12 text-gray-400" aria-hidden="true" />
         </div>
         <h2 className="text-2xl font-bold text-gray-700 dark:text-gray-300">
           Access Restricted
         </h2>
         <p className="text-gray-500 dark:text-gray-400 mt-2 text-center max-w-md">
-          You don't have permission to view sales statistics.
+          You don&apos;t have permission to view sales statistics.
         </p>
         <button
           onClick={() => router.push('/admin/sales')}
@@ -836,6 +809,11 @@ export default function SalesDashboard() {
   if (loading) {
     return <LoadingSkeleton />;
   }
+
+  const displayCurrency = pickCurrency(
+    stats?.currency,
+    DEFAULT_CURRENCY,
+  );
 
   const getCurrentPeriodStats = () => {
     switch (timeRange) {
@@ -877,14 +855,13 @@ export default function SalesDashboard() {
 
   return (
     <div className="min-h-screen bg-gray-50 dark:bg-gray-900 p-4 sm:p-6">
-      {/* Navigation Bar */}
       <div className="card-brand p-3 mb-6 flex flex-wrap items-center justify-between gap-3">
         <div className="flex items-center gap-3">
           <button
             onClick={() => router.push('/admin/sales')}
             className="flex items-center gap-2 text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white transition-colors px-3 py-1.5 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700 focus-ring"
           >
-            <ArrowLeft className="w-4 h-4" />
+            <ArrowLeft className="w-4 h-4" aria-hidden="true" />
             <span className="hidden sm:inline">Back to Sales</span>
           </button>
           <div className="h-6 w-px bg-gray-300 dark:bg-gray-600 hidden sm:block"></div>
@@ -897,20 +874,19 @@ export default function SalesDashboard() {
             onClick={goToPos}
             className="px-3 py-1.5 text-sm bg-success-600 text-white hover:bg-success-700 rounded-lg transition-colors flex items-center gap-1.5 focus-ring"
           >
-            <ShoppingCart className="w-4 h-4" />
+            <ShoppingCart className="w-4 h-4" aria-hidden="true" />
             <span className="hidden sm:inline">POS</span>
           </button>
           <button
             onClick={goToSalesList}
             className="px-3 py-1.5 text-sm bg-gray-100 dark:bg-gray-700 hover:bg-gray-200 dark:hover:bg-gray-600 rounded-lg transition-colors flex items-center gap-1.5 text-gray-700 dark:text-gray-300 focus-ring"
           >
-            <List className="w-4 h-4" />
+            <List className="w-4 h-4" aria-hidden="true" />
             <span className="hidden sm:inline">Sales List</span>
           </button>
         </div>
       </div>
 
-      {/* Header */}
       <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 mb-8">
         <div>
           <h1 className="text-2xl font-bold text-gray-900 dark:text-white">
@@ -922,10 +898,10 @@ export default function SalesDashboard() {
         </div>
         <div className="flex flex-wrap gap-3">
           <div className="flex bg-white dark:bg-gray-800 rounded-lg shadow-sm p-1 border border-gray-200 dark:border-gray-700">
-            {['today', 'week', 'month', 'year'].map((range) => (
+            {(['today', 'week', 'month', 'year'] as const).map((range) => (
               <button
                 key={range}
-                onClick={() => setTimeRange(range as any)}
+                onClick={() => setTimeRange(range)}
                 className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors focus-ring ${
                   timeRange === range
                     ? 'bg-brand-500 text-white'
@@ -940,29 +916,34 @@ export default function SalesDashboard() {
             onClick={() => setShowExportModal(true)}
             className="px-4 py-2 bg-success-600 text-white rounded-lg hover:bg-success-700 flex items-center gap-2 transition-colors focus-ring"
           >
-            <Download className="w-4 h-4" />
+            <Download className="w-4 h-4" aria-hidden="true" />
             Export
           </button>
           <button
-            onClick={() => loadDashboardData(true)}
+            onClick={() => void loadDashboardData(true)}
             disabled={refreshing}
             className="px-4 py-2 bg-brand-500 text-white rounded-lg hover:bg-brand-600 flex items-center gap-2 transition-colors disabled:opacity-50 focus-ring"
           >
             {refreshing ? (
-              <Loader2 className="w-4 h-4 animate-spin" />
+              <Loader2
+                className="w-4 h-4 animate-spin"
+                aria-hidden="true"
+              />
             ) : (
-              <RefreshCw className="w-4 h-4" />
+              <RefreshCw className="w-4 h-4" aria-hidden="true" />
             )}
             Refresh
           </button>
         </div>
       </div>
 
-      {/* Stats Cards */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
         <StatsCard
           title="Revenue"
-          value={formatCurrency(periodStats.totalRevenue || 0)}
+          value={formatCurrency(
+            periodStats.totalRevenue || 0,
+            displayCurrency,
+          )}
           icon={DollarSign}
           color="success"
           subtext={`${periodStats.totalSales || 0} sales`}
@@ -975,14 +956,17 @@ export default function SalesDashboard() {
           subtext={`${
             periodStats.totalRevenue
               ? Math.round(
-                  periodStats.totalRevenue / (periodStats.totalSales || 1)
+                  periodStats.totalRevenue / (periodStats.totalSales || 1),
                 )
               : 0
           } avg per sale`}
         />
         <StatsCard
           title="Average Ticket"
-          value={formatCurrency((periodStats as any).averageTicket || 0)}
+          value={formatCurrency(
+            (periodStats as any).averageTicket || 0,
+            displayCurrency,
+          )}
           icon={BarChart3}
           color="secondary"
         />
@@ -994,9 +978,7 @@ export default function SalesDashboard() {
         />
       </div>
 
-      {/* Charts Section */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-8">
-        {/* Revenue Chart */}
         <div className="lg:col-span-2 card-brand p-6">
           <div className="flex justify-between items-center mb-4">
             <h3 className="font-semibold text-gray-900 dark:text-white">
@@ -1010,17 +992,20 @@ export default function SalesDashboard() {
             </button>
           </div>
           <div className="h-64">
-            <RevenueChart data={salesByDay} />
+            <RevenueChart data={salesByDay} currency={displayCurrency} />
           </div>
           <div className="flex justify-between mt-4 pt-4 border-t border-gray-200 dark:border-gray-700 text-sm text-gray-500 dark:text-gray-400 tabular-nums">
             <span>
-              Total Revenue: {formatCurrency(stats?.today?.totalRevenue || 0)}
+              Total Revenue:{' '}
+              {formatCurrency(
+                stats?.today?.totalRevenue || 0,
+                displayCurrency,
+              )}
             </span>
             <span>Total Sales: {stats?.today?.totalSales || 0}</span>
           </div>
         </div>
 
-        {/* Top Products */}
         <div className="card-brand p-6">
           <h3 className="font-semibold text-gray-900 dark:text-white mb-4">
             Top Products
@@ -1041,13 +1026,16 @@ export default function SalesDashboard() {
                     </p>
                   </div>
                   <span className="text-sm font-semibold text-gray-900 dark:text-white tabular-nums">
-                    {formatCurrency(product.revenue)}
+                    {formatCurrency(product.revenue, displayCurrency)}
                   </span>
                 </div>
               ))
             ) : (
               <div className="text-center py-8 text-gray-500 dark:text-gray-400">
-                <Package className="w-12 h-12 mx-auto mb-2 opacity-50" />
+                <Package
+                  className="w-12 h-12 mx-auto mb-2 opacity-50"
+                  aria-hidden="true"
+                />
                 <p>No product data available</p>
               </div>
             )}
@@ -1063,7 +1051,6 @@ export default function SalesDashboard() {
         </div>
       </div>
 
-      {/* Recent Sales */}
       <div className="card-brand p-0 overflow-hidden">
         <div className="p-6 border-b border-gray-200 dark:border-gray-700 flex flex-wrap justify-between items-center gap-2">
           <h3 className="font-semibold text-gray-900 dark:text-white">
@@ -1104,61 +1091,72 @@ export default function SalesDashboard() {
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-200 dark:divide-gray-700">
-              {recentSales.slice(0, 10).map((sale) => (
-                <tr
-                  key={sale.id}
-                  className="hover:bg-gray-50 dark:hover:bg-gray-700/50 transition-colors cursor-pointer"
-                  onClick={() => handleViewSale(sale)}
-                >
-                  <td className="px-4 sm:px-6 py-4 whitespace-nowrap">
-                    <span className="font-mono font-medium text-brand-600 dark:text-brand-400 tabular-nums">
-                      #{sale.receiptNumber}
-                    </span>
-                  </td>
-                  <td className="px-4 sm:px-6 py-4 whitespace-nowrap">
-                    <span className="text-gray-900 dark:text-white">
-                      {sale.customer?.firstName || 'Guest'}{' '}
-                      {sale.customer?.lastName || ''}
-                    </span>
-                  </td>
-                  <td className="px-4 sm:px-6 py-4 whitespace-nowrap text-gray-600 dark:text-gray-400 hidden sm:table-cell tabular-nums">
-                    {sale.items?.length || 0}
-                  </td>
-                  <td className="px-4 sm:px-6 py-4 whitespace-nowrap font-semibold text-gray-900 dark:text-white tabular-nums">
-                    {formatCurrency(sale.total)}
-                  </td>
-                  <td className="px-4 sm:px-6 py-4 whitespace-nowrap hidden md:table-cell">
-                    <StatusBadge status={sale.status} />
-                  </td>
-                  <td className="px-4 sm:px-6 py-4 whitespace-nowrap text-sm text-gray-500 dark:text-gray-400 hidden lg:table-cell">
-                    {formatDate(sale.saleDate || sale.createdAt)}
-                  </td>
-                  <td
-                    className="px-4 sm:px-6 py-4 whitespace-nowrap text-right"
-                    onClick={(e) => e.stopPropagation()}
+              {recentSales.slice(0, 10).map((sale) => {
+                const rowCurrency = resolveSaleCurrency(
+                  sale,
+                  displayCurrency,
+                );
+                return (
+                  <tr
+                    key={sale.id}
+                    className="hover:bg-gray-50 dark:hover:bg-gray-700/50 transition-colors cursor-pointer"
+                    onClick={() => handleViewSale(sale)}
                   >
-                    <button
-                      onClick={() => handleViewSale(sale)}
-                      className="p-1 hover:bg-gray-100 dark:hover:bg-gray-700 rounded transition-colors focus-ring"
+                    <td className="px-4 sm:px-6 py-4 whitespace-nowrap">
+                      <span className="font-mono font-medium text-brand-600 dark:text-brand-400 tabular-nums">
+                        #{sale.receiptNumber}
+                      </span>
+                    </td>
+                    <td className="px-4 sm:px-6 py-4 whitespace-nowrap">
+                      <span className="text-gray-900 dark:text-white">
+                        {sale.customer?.firstName || 'Guest'}{' '}
+                        {sale.customer?.lastName || ''}
+                      </span>
+                    </td>
+                    <td className="px-4 sm:px-6 py-4 whitespace-nowrap text-gray-600 dark:text-gray-400 hidden sm:table-cell tabular-nums">
+                      {sale.items?.length || 0}
+                    </td>
+                    <td className="px-4 sm:px-6 py-4 whitespace-nowrap font-semibold text-gray-900 dark:text-white tabular-nums">
+                      {formatCurrency(sale.total, rowCurrency)}
+                    </td>
+                    <td className="px-4 sm:px-6 py-4 whitespace-nowrap hidden md:table-cell">
+                      <StatusBadge status={sale.status} />
+                    </td>
+                    <td className="px-4 sm:px-6 py-4 whitespace-nowrap text-sm text-gray-500 dark:text-gray-400 hidden lg:table-cell">
+                      {formatDate(sale.saleDate || sale.createdAt)}
+                    </td>
+                    <td
+                      className="px-4 sm:px-6 py-4 whitespace-nowrap text-right"
+                      onClick={(e) => e.stopPropagation()}
                     >
-                      <Eye className="w-4 h-4 text-gray-500" />
-                    </button>
-                    <button
-                      onClick={() => handlePrintReceipt(sale)}
-                      className="p-1 hover:bg-gray-100 dark:hover:bg-gray-700 rounded transition-colors ml-2 focus-ring"
-                    >
-                      <Printer className="w-4 h-4 text-gray-500" />
-                    </button>
-                  </td>
-                </tr>
-              ))}
+                      <button
+                        onClick={() => handleViewSale(sale)}
+                        className="p-1 hover:bg-gray-100 dark:hover:bg-gray-700 rounded transition-colors focus-ring"
+                        aria-label="View sale"
+                      >
+                        <Eye className="w-4 h-4 text-gray-500" />
+                      </button>
+                      <button
+                        onClick={() => handlePrintReceipt(sale)}
+                        className="p-1 hover:bg-gray-100 dark:hover:bg-gray-700 rounded transition-colors ml-2 focus-ring"
+                        aria-label="Print receipt"
+                      >
+                        <Printer className="w-4 h-4 text-gray-500" />
+                      </button>
+                    </td>
+                  </tr>
+                );
+              })}
               {recentSales.length === 0 && (
                 <tr>
                   <td
                     colSpan={7}
                     className="px-6 py-12 text-center text-gray-500 dark:text-gray-400"
                   >
-                    <ShoppingBag className="w-12 h-12 mx-auto mb-2 opacity-50" />
+                    <ShoppingBag
+                      className="w-12 h-12 mx-auto mb-2 opacity-50"
+                      aria-hidden="true"
+                    />
                     <p>No recent sales</p>
                   </td>
                 </tr>
@@ -1168,7 +1166,6 @@ export default function SalesDashboard() {
         </div>
       </div>
 
-      {/* Export Modal */}
       <AnimatePresence>
         {showExportModal && (
           <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-modal p-4">
@@ -1186,6 +1183,7 @@ export default function SalesDashboard() {
                   onClick={() => setShowExportModal(false)}
                   disabled={exporting}
                   className="p-1 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-colors focus-ring disabled:opacity-50"
+                  aria-label="Close"
                 >
                   <X className="w-5 h-5 text-gray-500" />
                 </button>
@@ -1196,10 +1194,10 @@ export default function SalesDashboard() {
                     Format
                   </label>
                   <div className="grid grid-cols-3 gap-2">
-                    {['csv', 'excel', 'pdf'].map((f) => (
+                    {(['csv', 'excel', 'pdf'] as const).map((f) => (
                       <button
                         key={f}
-                        onClick={() => setExportFormat(f as any)}
+                        onClick={() => setExportFormat(f)}
                         disabled={exporting}
                         className={`px-4 py-2 rounded-lg border text-sm font-medium transition-colors focus-ring disabled:opacity-50 ${
                           exportFormat === f
@@ -1213,8 +1211,9 @@ export default function SalesDashboard() {
                   </div>
                   {exportFormat !== 'csv' && (
                     <p className="mt-2 text-xs text-warning-600 dark:text-warning-400">
-                      {exportFormat.toUpperCase()} generation runs in-browser
-                      only for CSV. The file will be downloaded as CSV.
+                      {exportFormat.toUpperCase()} generation runs
+                      in-browser only for CSV. The file will be downloaded
+                      as CSV.
                     </p>
                   )}
                 </div>
@@ -1227,14 +1226,17 @@ export default function SalesDashboard() {
                     Cancel
                   </button>
                   <button
-                    onClick={handleExport}
+                    onClick={() => void handleExport()}
                     disabled={exporting}
                     className="px-4 py-2 bg-brand-500 text-white rounded-lg hover:bg-brand-600 transition-colors flex items-center gap-2 focus-ring disabled:opacity-50 disabled:cursor-not-allowed"
                   >
                     {exporting ? (
-                      <Loader2 className="w-4 h-4 animate-spin" />
+                      <Loader2
+                        className="w-4 h-4 animate-spin"
+                        aria-hidden="true"
+                      />
                     ) : (
-                      <Download className="w-4 h-4" />
+                      <Download className="w-4 h-4" aria-hidden="true" />
                     )}
                     {exporting ? 'Exporting…' : 'Export'}
                   </button>
@@ -1245,7 +1247,6 @@ export default function SalesDashboard() {
         )}
       </AnimatePresence>
 
-      {/* Sale Detail Modal */}
       <AnimatePresence>
         {showDetailModal && selectedSale && (
           <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-modal p-4">
@@ -1256,176 +1257,237 @@ export default function SalesDashboard() {
               className="bg-white dark:bg-gray-800 rounded-xl w-full max-w-2xl max-h-[90vh] overflow-y-auto shadow-2xl sidebar-scroll"
               onClick={(e) => e.stopPropagation()}
             >
-              <div className="sticky top-0 bg-white dark:bg-gray-800 p-6 border-b border-gray-200 dark:border-gray-700 flex justify-between items-center">
-                <div>
-                  <h3 className="text-lg font-bold text-gray-900 dark:text-white tabular-nums">
-                    Sale #{selectedSale.receiptNumber}
-                  </h3>
-                  <p className="text-sm text-gray-500 dark:text-gray-400">
-                    {formatDate(selectedSale.saleDate || selectedSale.createdAt)}{' '}
-                    at{' '}
-                    {formatTime(
-                      selectedSale.saleDate || selectedSale.createdAt
-                    )}
-                  </p>
-                </div>
-                <button
-                  onClick={() => setShowDetailModal(false)}
-                  className="p-1 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-colors focus-ring"
-                >
-                  <X className="w-5 h-5 text-gray-500" />
-                </button>
-              </div>
-              <div className="p-6 space-y-4">
-                <div className="flex justify-between items-center">
-                  <StatusBadge status={selectedSale.status} />
-                  <span className="text-2xl font-bold text-gray-900 dark:text-white tabular-nums">
-                    {formatCurrency(selectedSale.total)}
-                  </span>
-                </div>
-
-                {/* Breakdown hint */}
-                <BreakdownHint sale={selectedSale} />
-
-                <div className="grid grid-cols-2 gap-4 p-4 bg-gray-50 dark:bg-gray-700/50 rounded-lg">
-                  <div>
-                    <p className="text-sm text-gray-500 dark:text-gray-400">
-                      Customer
-                    </p>
-                    <p className="font-medium text-gray-900 dark:text-white">
-                      {selectedSale.customer
-                        ? `${selectedSale.customer.firstName} ${selectedSale.customer.lastName}`
-                        : 'Guest'}
-                    </p>
-                  </div>
-                  <div>
-                    <p className="text-sm text-gray-500 dark:text-gray-400">
-                      Payment
-                    </p>
-                    <p className="font-medium text-gray-900 dark:text-white">
-                      {selectedSale.payments?.[0]?.paymentMethod || 'N/A'}
-                    </p>
-                  </div>
-                </div>
-                <div>
-                  <h4 className="font-medium text-gray-900 dark:text-white mb-2">
-                    Items
-                  </h4>
-                  <div className="space-y-2">
-                    {selectedSale.items?.map((item: any) => (
-                      <div
-                        key={item.id}
-                        className="flex justify-between items-center p-2 border border-gray-200 dark:border-gray-700 rounded-lg"
+              {(() => {
+                const detailCurrency = resolveSaleCurrency(
+                  selectedSale,
+                  displayCurrency,
+                );
+                return (
+                  <>
+                    <div className="sticky top-0 bg-white dark:bg-gray-800 p-6 border-b border-gray-200 dark:border-gray-700 flex justify-between items-center">
+                      <div>
+                        <h3 className="text-lg font-bold text-gray-900 dark:text-white tabular-nums">
+                          Sale #{selectedSale.receiptNumber}
+                        </h3>
+                        <p className="text-sm text-gray-500 dark:text-gray-400">
+                          {formatDate(
+                            selectedSale.saleDate ||
+                              selectedSale.createdAt,
+                          )}{' '}
+                          at{' '}
+                          {formatTime(
+                            selectedSale.saleDate ||
+                              selectedSale.createdAt,
+                          )}
+                        </p>
+                      </div>
+                      <button
+                        onClick={() => setShowDetailModal(false)}
+                        className="p-1 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-colors focus-ring"
+                        aria-label="Close"
                       >
-                        <div>
-                          <p className="font-medium text-gray-900 dark:text-white">
-                            {item.product?.name || 'Product'}
-                          </p>
-                          <p className="text-sm text-gray-500 dark:text-gray-400 tabular-nums">
-                            × {item.quantity}
-                          </p>
-                        </div>
-                        <span className="font-bold text-gray-900 dark:text-white tabular-nums">
-                          {formatCurrency(item.total)}
+                        <X className="w-5 h-5 text-gray-500" />
+                      </button>
+                    </div>
+                    <div className="p-6 space-y-4">
+                      <div className="flex justify-between items-center">
+                        <StatusBadge status={selectedSale.status} />
+                        <span className="text-2xl font-bold text-gray-900 dark:text-white tabular-nums">
+                          {formatCurrency(
+                            selectedSale.total,
+                            detailCurrency,
+                          )}
                         </span>
                       </div>
-                    ))}
-                  </div>
-                </div>
 
-                {/* Discount Breakdown */}
-                <BreakdownPanel sale={selectedSale} />
+                      <BreakdownHint sale={selectedSale} currency={detailCurrency} />
 
-                <div className="border-t border-gray-200 dark:border-gray-700 pt-4">
-                  <div className="space-y-1 max-w-xs ml-auto">
-                    <div className="flex justify-between text-sm">
-                      <span className="text-gray-500 dark:text-gray-400">
-                        Subtotal
-                      </span>
-                      <span className="tabular-nums">
-                        {formatCurrency(selectedSale.subtotal)}
-                      </span>
-                    </div>
-                    <div className="flex justify-between text-sm">
-                      <span className="text-gray-500 dark:text-gray-400">
-                        Tax
-                      </span>
-                      <span className="tabular-nums">
-                        {formatCurrency(selectedSale.tax)}
-                      </span>
-                    </div>
-
-                    {(() => {
-                      const b = saleService.extractBreakdown(selectedSale);
-                      const hasPromotion = (b.promotionDiscount ?? 0) > 0;
-                      const hasLoyalty = (b.loyaltyPointsUsed ?? 0) > 0;
-                      const hasBreakdown = hasPromotion || hasLoyalty;
-                      return (
-                        <>
-                          {hasPromotion && (
-                            <div className="flex justify-between text-sm text-success-600 dark:text-success-400">
-                              <span className="flex items-center gap-1.5">
-                                <Tag className="w-3.5 h-3.5" />
-                                Promotion
-                                {b.promotionCode && (
-                                  <code className="px-1.5 py-0.5 rounded bg-success-100 dark:bg-success-950/40 text-[10px] font-mono">
-                                    {b.promotionCode}
-                                  </code>
+                      <div className="grid grid-cols-2 gap-4 p-4 bg-gray-50 dark:bg-gray-700/50 rounded-lg">
+                        <div>
+                          <p className="text-sm text-gray-500 dark:text-gray-400">
+                            Customer
+                          </p>
+                          <p className="font-medium text-gray-900 dark:text-white">
+                            {selectedSale.customer
+                              ? `${selectedSale.customer.firstName} ${selectedSale.customer.lastName}`
+                              : 'Guest'}
+                          </p>
+                        </div>
+                        <div>
+                          <p className="text-sm text-gray-500 dark:text-gray-400">
+                            Payment
+                          </p>
+                          <p className="font-medium text-gray-900 dark:text-white">
+                            {selectedSale.payments?.[0]?.paymentMethod ||
+                              'N/A'}
+                          </p>
+                        </div>
+                      </div>
+                      <div>
+                        <h4 className="font-medium text-gray-900 dark:text-white mb-2">
+                          Items
+                        </h4>
+                        <div className="space-y-2">
+                          {selectedSale.items?.map((item: any) => (
+                            <div
+                              key={item.id}
+                              className="flex justify-between items-center p-2 border border-gray-200 dark:border-gray-700 rounded-lg"
+                            >
+                              <div>
+                                <p className="font-medium text-gray-900 dark:text-white">
+                                  {item.product?.name || 'Product'}
+                                </p>
+                                <p className="text-sm text-gray-500 dark:text-gray-400 tabular-nums">
+                                  × {item.quantity}
+                                </p>
+                              </div>
+                              <span className="font-bold text-gray-900 dark:text-white tabular-nums">
+                                {formatCurrency(
+                                  item.total,
+                                  detailCurrency,
                                 )}
                               </span>
-                              <span className="tabular-nums">
-                                -{formatCurrency(b.promotionDiscount ?? 0)}
-                              </span>
                             </div>
-                          )}
-                          {hasLoyalty && (
-                            <div className="flex justify-between text-sm text-success-600 dark:text-success-400">
-                              <span className="flex items-center gap-1.5">
-                                <Star className="w-3.5 h-3.5 fill-current" />
-                                <span className="tabular-nums">
-                                  {b.loyaltyPointsUsed} loyalty points
-                                </span>
-                              </span>
-                              <span className="tabular-nums">
-                                -{formatCurrency(b.loyaltyDiscount ?? 0)}
-                              </span>
-                            </div>
-                          )}
-                          {selectedSale.discount > 0 && !hasBreakdown && (
-                            <div className="flex justify-between text-sm text-success-600 dark:text-success-400">
-                              <span>Discount</span>
-                              <span className="tabular-nums">
-                                -{formatCurrency(selectedSale.discount)}
-                              </span>
-                            </div>
-                          )}
-                        </>
-                      );
-                    })()}
+                          ))}
+                        </div>
+                      </div>
 
-                    <div className="flex justify-between font-bold text-lg pt-2 border-t border-gray-200 dark:border-gray-700">
-                      <span>Total</span>
-                      <span className="text-brand-600 tabular-nums">
-                        {formatCurrency(selectedSale.total)}
-                      </span>
+                      <BreakdownPanel
+                        sale={selectedSale}
+                        currency={detailCurrency}
+                      />
+
+                      <div className="border-t border-gray-200 dark:border-gray-700 pt-4">
+                        <div className="space-y-1 max-w-xs ml-auto">
+                          <div className="flex justify-between text-sm">
+                            <span className="text-gray-500 dark:text-gray-400">
+                              Subtotal
+                            </span>
+                            <span className="tabular-nums">
+                              {formatCurrency(
+                                selectedSale.subtotal,
+                                detailCurrency,
+                              )}
+                            </span>
+                          </div>
+                          <div className="flex justify-between text-sm">
+                            <span className="text-gray-500 dark:text-gray-400">
+                              Tax
+                            </span>
+                            <span className="tabular-nums">
+                              {formatCurrency(
+                                selectedSale.tax,
+                                detailCurrency,
+                              )}
+                            </span>
+                          </div>
+
+                          {(() => {
+                            const b = saleService.extractBreakdown(
+                              selectedSale,
+                            );
+                            const hasPromotion =
+                              (b.promotionDiscount ?? 0) > 0;
+                            const hasLoyalty =
+                              (b.loyaltyPointsUsed ?? 0) > 0;
+                            const hasBreakdown =
+                              hasPromotion || hasLoyalty;
+                            return (
+                              <>
+                                {hasPromotion && (
+                                  <div className="flex justify-between text-sm text-success-600 dark:text-success-400">
+                                    <span className="flex items-center gap-1.5">
+                                      <Tag
+                                        className="w-3.5 h-3.5"
+                                        aria-hidden="true"
+                                      />
+                                      Promotion
+                                      {b.promotionCode && (
+                                        <code className="px-1.5 py-0.5 rounded bg-success-100 dark:bg-success-950/40 text-[10px] font-mono">
+                                          {b.promotionCode}
+                                        </code>
+                                      )}
+                                    </span>
+                                    <span className="tabular-nums">
+                                      -
+                                      {formatCurrency(
+                                        b.promotionDiscount ?? 0,
+                                        detailCurrency,
+                                      )}
+                                    </span>
+                                  </div>
+                                )}
+                                {hasLoyalty && (
+                                  <div className="flex justify-between text-sm text-success-600 dark:text-success-400">
+                                    <span className="flex items-center gap-1.5">
+                                      <Star
+                                        className="w-3.5 h-3.5 fill-current"
+                                        aria-hidden="true"
+                                      />
+                                      <span className="tabular-nums">
+                                        {b.loyaltyPointsUsed} loyalty
+                                        points
+                                      </span>
+                                    </span>
+                                    <span className="tabular-nums">
+                                      -
+                                      {formatCurrency(
+                                        b.loyaltyDiscount ?? 0,
+                                        detailCurrency,
+                                      )}
+                                    </span>
+                                  </div>
+                                )}
+                                {selectedSale.discount > 0 &&
+                                  !hasBreakdown && (
+                                    <div className="flex justify-between text-sm text-success-600 dark:text-success-400">
+                                      <span>Discount</span>
+                                      <span className="tabular-nums">
+                                        -
+                                        {formatCurrency(
+                                          selectedSale.discount,
+                                          detailCurrency,
+                                        )}
+                                      </span>
+                                    </div>
+                                  )}
+                              </>
+                            );
+                          })()}
+
+                          <div className="flex justify-between font-bold text-lg pt-2 border-t border-gray-200 dark:border-gray-700">
+                            <span>Total</span>
+                            <span className="text-brand-600 tabular-nums">
+                              {formatCurrency(
+                                selectedSale.total,
+                                detailCurrency,
+                              )}
+                            </span>
+                          </div>
+                        </div>
+                      </div>
+                      <div className="flex gap-3 pt-4 border-t border-gray-200 dark:border-gray-700">
+                        <button
+                          onClick={() => handlePrintReceipt(selectedSale)}
+                          className="px-4 py-2 bg-brand-500 text-white rounded-lg hover:bg-brand-600 flex items-center gap-2 focus-ring"
+                        >
+                          <Printer
+                            className="w-4 h-4"
+                            aria-hidden="true"
+                          />
+                          Print
+                        </button>
+                        <button
+                          onClick={() => setShowDetailModal(false)}
+                          className="px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 focus-ring"
+                        >
+                          Close
+                        </button>
+                      </div>
                     </div>
-                  </div>
-                </div>
-                <div className="flex gap-3 pt-4 border-t border-gray-200 dark:border-gray-700">
-                  <button
-                    onClick={() => handlePrintReceipt(selectedSale)}
-                    className="px-4 py-2 bg-brand-500 text-white rounded-lg hover:bg-brand-600 flex items-center gap-2 focus-ring"
-                  >
-                    <Printer className="w-4 h-4" /> Print
-                  </button>
-                  <button
-                    onClick={() => setShowDetailModal(false)}
-                    className="px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 focus-ring"
-                  >
-                    Close
-                  </button>
-                </div>
-              </div>
+                  </>
+                );
+              })()}
             </motion.div>
           </div>
         )}
@@ -1433,10 +1495,6 @@ export default function SalesDashboard() {
     </div>
   );
 }
-
-// ============================================
-// LOADING SKELETON
-// ============================================
 
 function LoadingSkeleton() {
   return (

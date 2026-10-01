@@ -15,6 +15,9 @@ import type {
   CheckoutSaleStatus,
   CheckoutPaymentStatus,
 
+  ChargePreviewRequest,
+  ChargePreviewResponse,
+
   CheckoutData,
   AddCheckoutItemRequest,
   UpdateCheckoutItemRequest,
@@ -58,6 +61,10 @@ export type {
   CanonicalPaymentMethod,
   CheckoutSaleStatus,
   CheckoutPaymentStatus,
+
+  ChargePreviewRequest,
+  ChargePreviewResponse,
+
   CheckoutData,
   AddCheckoutItemRequest,
   UpdateCheckoutItemRequest,
@@ -98,15 +105,25 @@ export type {
 // MOBILE MONEY PROVIDER (backend routing hint)
 // ============================================
 //
-// The backend supports three mobile-money providers, all of which
-// arrive as `paymentMethod: 'MOBILE_MONEY'`:
+// The backend supports three mobile-money providers:
 //
-//   MPESA   → mpesaService (Safaricom STK push)
+//   MPESA   → mpesaService (Safaricom STK push), selected via
+//             `paymentMethod: 'MPESA'`
 //   MTN     → mobileMoneyService.initiatePayment('MTN', ...)
+//             selected via `paymentMethod: 'MTN'` or via
+//             `paymentMethod: 'MOBILE_MONEY'` + this field set
 //   AIRTEL  → mobileMoneyService.initiatePayment('AIRTEL', ...)
+//             selected the same way
 //
-// The frontend uses this field to tell the backend which provider
-// the user picked. Without it, the backend defaults to MPESA.
+// The frontend uses this field to tell the backend which of the
+// MTN/AIRTEL sub-providers the user picked when the umbrella
+// `MOBILE_MONEY` method is chosen.
+//
+// ⚠ Only MTN and AIRTEL are routed through this field. `MPESA`
+//   is a distinct `paymentMethod` — sending
+//   `{ paymentMethod: 'MOBILE_MONEY', mobileMoneyProvider: 'MPESA' }`
+//   routes to the MTN/AIRTEL handler family, which has no MPESA
+//   branch and will reject. Use `paymentMethod: 'MPESA'` instead.
 //
 // ⚠ This field is opt-in. If the backend deployment hasn't been
 //   updated to accept it, it's silently ignored (Zod strips
@@ -126,6 +143,24 @@ export interface OnlineCheckoutRequest {
   discount?: number;
   notes?: string;
   applyLoyaltyPoints?: boolean;
+
+    /**
+   * Manual card data for CREDIT_CARD / DEBIT_CARD.
+   *
+   * The raw PAN, expiry, CVC, and cardholder name. `checkoutService`
+   * does NOT send these to the backend — before any network request
+   * leaves the browser, `paymentService.createCardPaymentMethod()`
+   * converts them to a Stripe PaymentMethod id (`pm_xxx`), and only
+   * that id is forwarded as `paymentMethodId`. The backend never
+   * sees the card number.
+   */
+  manualCard?: {
+    number: string;
+    expMonth: number;
+    expYear: number;
+    cvc: string;
+    holder: string;
+  };
   /**
    * Business unit override.
    *
@@ -192,16 +227,39 @@ export interface OnlineCheckoutRequest {
    * Mobile-money provider selector.
    *
    * Only meaningful when `paymentMethod === 'MOBILE_MONEY'`. Tells
-   * the backend whether to route to M-Pesa, MTN, or Airtel.
+   * the backend whether to route to MTN or Airtel.
    *
-   * When omitted, the backend defaults to `'MPESA'` (the historical
-   * behaviour).
+   * ⚠ Do NOT send `'MPESA'` here. The backend's MOBILE_MONEY
+   *   handler family covers MTN and Airtel only. To route to
+   *   M-Pesa, set `paymentMethod: 'MPESA'` instead.
+   *
+   * When omitted, the backend defaults to `'MTN'`.
    */
   mobileMoneyProvider?: MobileMoneyProvider;
 
   discountType?: DiscountType | null;
   promotionCode?: string | null;
   promotionDiscount?: number;
+
+  // ── Phase D1: charge-currency acknowledgement ────────────
+  /**
+   * The payer's affirmative acceptance of the converted charge
+   * amount, shown on the pre-payment screen.
+   *
+   * ⚠ Send `true` ONLY when the payer has seen the conversion
+   *   preview (via `checkoutService.chargePreview(...)`) and
+   *   ticked the confirm box. The backend rejects the checkout
+   *   with a 409 and `code: 'CHARGE_CONTEXT_REQUIRED'` when a
+   *   conversion is required and this field is absent or `false`.
+   *
+   *   When the charge currency equals the ledger currency (the
+   *   common case), this field is ignored.
+   *
+   *   Get the preview first. If
+   *   `preview.charge.currency === preview.ledger.currency`,
+   *   no conversion is happening and this field is unnecessary.
+   */
+  chargeContextAcknowledged?: boolean;
 }
 
 /**
@@ -320,7 +378,7 @@ export { NotImplementedError };
 // ============================================
 //
 // The backend can reject an online checkout for several reasons.
-// Two of them require the frontend to react differently from the
+// Three of them require the frontend to react differently from the
 // generic "show the error message" path:
 //
 //   409 IDEMPOTENCY_CANCELLED
@@ -328,6 +386,16 @@ export { NotImplementedError };
 //     cancelled. The caller should clear its cached key and retry.
 //     Showing the raw 409 body to the user is confusing; the UX
 //     should be a "please retry" prompt.
+//
+//   409 CHARGE_CONTEXT_REQUIRED (Phase D1)
+//     The resolved charge currency differs from the ledger
+//     currency and the payer has not acknowledged the converted
+//     amount. The caller should re-fetch the charge preview via
+//     `chargePreview(...)`, render it, and require the payer to
+//     tick the confirm box before retrying. Do NOT retry with
+//     `chargeContextAcknowledged: true` on the client's own
+//     initiative — the payer must see the (possibly changed)
+//     amount before agreeing to it.
 //
 //   503 (any message)
 //     The server is missing credentials for the chosen provider.
@@ -355,6 +423,32 @@ export function isIdempotencyConflict(error: unknown): boolean {
   return (
     anyErr?.response?.status === 409 &&
     anyErr?.response?.data?.code === 'IDEMPOTENCY_CANCELLED'
+  );
+}
+
+/**
+ * True if the thrown error is the "converted charge not
+ * acknowledged" 409 from the backend.
+ *
+ * The payload carries `code: 'CHARGE_CONTEXT_REQUIRED'`. The
+ * caller should re-fetch the charge preview via
+ * `checkoutService.chargePreview(...)`, re-render the confirm
+ * screen with the fresh rate, and require the payer to
+ * acknowledge again. Do NOT auto-retry with
+ * `chargeContextAcknowledged: true` — the payer must see the
+ * new amount before agreeing to it.
+ */
+export function isChargeContextRequired(error: unknown): boolean {
+  const anyErr = error as {
+    response?: {
+      status?: number;
+      data?: { code?: string };
+    };
+  };
+
+  return (
+    anyErr?.response?.status === 409 &&
+    anyErr?.response?.data?.code === 'CHARGE_CONTEXT_REQUIRED'
   );
 }
 
@@ -400,9 +494,14 @@ export const checkoutService = {
    * Process an OFFLINE checkout (cash / bank transfer / check).
    * POST /checkout
    *
-   * Card / PayPal / Flutterwave / Paystack / Square / Mobile Money
-   * are rejected by the backend with a 400 pointing at
+   * Card / PayPal / Flutterwave / Square / Mobile Money are
+   * rejected by the backend with a 400 pointing at
    * `POST /checkout/online`. Use `processOnlineCheckout` for those.
+   *
+   * ⚠ Offline methods never convert — the ledger currency is the
+   *   charge currency by construction. `chargeContextAcknowledged`
+   *   is forwarded for parity with the online path in case a
+   *   future offline method does convert.
    */
   async processCheckout(
     data: CheckoutData,
@@ -443,6 +542,13 @@ export const checkoutService = {
       payload.promotionDiscount = data.promotionDiscount;
 
     if (data.cardNonce !== undefined) payload.cardNonce = data.cardNonce;
+
+    // ── Phase D1: charge-currency acknowledgement ────────
+    // Offline methods never convert, but forwarded for parity
+    // with the online path in case a future method does.
+    if (data.chargeContextAcknowledged !== undefined)
+      payload.chargeContextAcknowledged = data.chargeContextAcknowledged;
+
     if (data.giftCardCode !== undefined) {
       payload.giftCardCode = data.giftCardCode;
       if (payload.gatewayId === undefined) {
@@ -457,7 +563,7 @@ export const checkoutService = {
 
   /**
    * Process an ONLINE checkout (card / PayPal / Flutterwave /
-   * Paystack / Square / Mobile Money / M-Pesa / Gift card).
+   * Square / Mobile Money / M-Pesa / Gift card).
    * POST /checkout/online
    *
    * ⚠ `paidAmount` is NOT sent. The backend computes the total from
@@ -468,6 +574,14 @@ export const checkoutService = {
    *   `idempotencyKey` is present. Prefer `newIdempotencyKey()`
    *   from `cartService` and store it alongside the in-flight
    *   attempt so retries reuse it.
+   *
+   * ⚠ Phase D1: when the resolved charge currency differs from
+   *   the ledger currency, the backend rejects the checkout with
+   *   a 409 `CHARGE_CONTEXT_REQUIRED` unless
+   *   `chargeContextAcknowledged: true` is on the body. Call
+   *   `chargePreview(...)` first, render the disclosure and the
+   *   converted amount, and set the flag only after the payer
+   *   ticks the confirm box.
    */
   async processOnlineCheckout(
     data: OnlineCheckoutRequest,
@@ -532,9 +646,67 @@ export const checkoutService = {
     if (data.promotionDiscount !== undefined)
       payload.promotionDiscount = data.promotionDiscount;
 
+    // ── Phase D1: charge-currency acknowledgement ────────
+    // Only sent when the caller has explicitly acknowledged.
+    // The backend rejects a converted charge without it.
+    if (data.chargeContextAcknowledged !== undefined) {
+      payload.chargeContextAcknowledged = data.chargeContextAcknowledged;
+    }
+
     console.log('🌐 processOnlineCheckout payload:', payload);
 
     return api.post<OnlineCheckoutResponse>('/checkout/online', payload);
+  },
+
+  /**
+   * Resolve the charge preview for a cart + payment method.
+   * POST /checkout/charge-preview
+   *
+   * ⚠ Call this BEFORE `processOnlineCheckout`. When the cart's
+   *   ledger currency is not accepted by the chosen gateway, the
+   *   response carries:
+   *     • `charge.total`  — the amount the gateway will bill, in
+   *                         `charge.currency`
+   *     • `rate.value`    — the rate applied
+   *     • `disclosure`    — the sentence the payer must read
+   *     • `requiresPayerConfirmation: true`
+   *
+   *   Render all four. Do NOT paraphrase the disclosure. When
+   *   `requiresPayerConfirmation` is true, block the confirm
+   *   button until the payer ticks a checkbox, then send
+   *   `chargeContextAcknowledged: true` on
+   *   `processOnlineCheckout`.
+   *
+   * ⚠ `available: false` is NOT an error. The response has no
+   *   `charge` block and a `reason` string. Render the reason and
+   *   disable the payment method — there is no FX rate for this
+   *   pair, so the charge cannot proceed. Do not call
+   *   `processOnlineCheckout` in this state.
+   *
+   * ⚠ Read-only. Nothing is written server-side. Calling this
+   *   for every method the payer hovers over is safe and cheap.
+   *   Rates can move between preview and checkout; when they do,
+   *   the checkout returns 409 `CHARGE_CONTEXT_REQUIRED` and the
+   *   frontend must re-fetch the preview via
+   *   `isChargeContextRequired(err)`.
+   */
+  async chargePreview(
+    data: ChargePreviewRequest,
+  ): Promise<ChargePreviewResponse> {
+    const payload: Record<string, unknown> = {
+      cartId: data.cartId,
+      paymentMethod: data.paymentMethod,
+    };
+
+    if (data.mobileMoneyProvider !== undefined) {
+      payload.mobileMoneyProvider = data.mobileMoneyProvider;
+    }
+
+    const response = await api.post<
+      CheckoutSingleResponse<ChargePreviewResponse>
+    >('/checkout/charge-preview', payload);
+
+    return response.data;
   },
 
   /**
@@ -721,8 +893,8 @@ export const checkoutService = {
    * (split / partial tender).
    *
    * ⚠ This is NOT the gateway-call entry point. The initial card /
-   *   PayPal / Flutterwave / Paystack / Mobile Money charge happens
-   *   on `POST /checkout/online`. Use this route only to record a
+   *   PayPal / Flutterwave / Mobile Money charge happens on
+   *   `POST /checkout/online`. Use this route only to record a
    *   second tender against the same sale.
    */
   async processPayment(

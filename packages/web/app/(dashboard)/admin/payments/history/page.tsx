@@ -45,12 +45,59 @@ import { useThemeStore } from '../../../../stores/themeStore';
 import { PaymentReceipt } from '../../../../../components/payments/PaymentReceipt';
 
 // ============================================
+// CURRENCY RESOLUTION
+// ============================================
+//
+// `formatCurrency` requires a currency code by design — the platform
+// invariant is that every amount is rendered in a code that came
+// from the backend at request time. Each Payment row carries its own
+// `currency` column (the ledger code the backend resolved and wrote).
+//
+// Priority:
+//   1. The Payment row's own `currency`.
+//   2. The joined Sale's `currency`.
+//   3. The joined BusinessUnit's `currency`.
+//   4. `NEXT_PUBLIC_DEFAULT_CURRENCY` — the deployment default.
+//   5. `''` — an empty string, which `formatCurrency` renders as a
+//      bare number (honest about the missing code).
+//
+// No hardcoded symbol anywhere. When the deployment env is unset,
+// rows without their own currency render as unlabelled numbers.
+
+/**
+ * Resolve the currency code for a single payment row.
+ */
+function resolvePaymentCurrency(
+  payment:
+    | {
+        currency?: string | null;
+        sale?: { currency?: string | null } | null;
+        businessUnit?: { currency?: string | null } | null;
+      }
+    | null
+    | undefined,
+): string {
+  return (
+    payment?.currency ||
+    payment?.sale?.currency ||
+    payment?.businessUnit?.currency ||
+    process.env.NEXT_PUBLIC_DEFAULT_CURRENCY ||
+    ''
+  );
+}
+
+// ============================================
 // TYPES
 // ============================================
 
 interface Payment {
   id: string;
   amount: number;
+  /**
+   * Ledger currency code for `amount`. Required column on the
+   * backend's Payment row; read via `resolvePaymentCurrency`.
+   */
+  currency?: string | null;
   paymentMethod: string;
   status: string;
   reference?: string;
@@ -64,12 +111,14 @@ interface Payment {
     id: string;
     receiptNumber: string;
     total: number;
+    currency?: string | null;
   };
   orderId?: string;
   order?: {
     id: string;
     orderNumber: string;
     total: number;
+    currency?: string | null;
   };
   userId: string;
   user?: {
@@ -86,6 +135,7 @@ interface Payment {
   businessUnit?: {
     id: string;
     name: string;
+    currency?: string | null;
     address?: string;
     phone?: string;
     email?: string;
@@ -211,48 +261,35 @@ function resolveDateRange(range: DateRange): {
 // ============================================
 // CONSTANTS
 // ============================================
+//
+// ⚠ All provider logos are LOCAL asset paths under
+//   `packages/web/public/`. No external CDN dependency — every
+//   request stays on the deployment's own origin. Add one SVG per
+//   code to restore the images; until then `<ProviderLogo>`
+//   renders the generic emoji.
 
 const PROVIDER_IMAGE_URLS: Record<string, string> = {
-  STRIPE: 'https://stripe.com/img/v3/home/social.png',
-  PAYPAL:
-    'https://www.paypalobjects.com/webstatic/mktg/logo/pp_cc_mark_111x69.jpg',
-  FLUTTERWAVE: 'https://flutterwave.com/images/logo/flyer.png',
-  SQUARE: 'https://squareup.com/icons/square_logo.svg',
-  MTN: 'https://www.mtn.co.ug/wp-content/uploads/2023/05/mtn-logo.png',
-  AIRTEL:
-    'https://www.airtel.in/static-assets/new-home/img/airtel-red-logo.svg',
-  TIGO: 'https://www.tigo.com.tz/sites/default/files/tigo-logo.png',
-  VODAFONE:
-    'https://www.vodafone.com/content/dam/vodcom/Images/Logo/vodafone_logo_red.png',
-  CASH: 'https://cdn-icons-png.flaticon.com/512/2331/2331970.png',
-  MOBILE_MONEY: 'https://cdn-icons-png.flaticon.com/512/545/545245.png',
-  BANK_TRANSFER:
-    'https://cdn-icons-png.flaticon.com/512/2845/2845813.png',
-  GIFT_CARD: 'https://cdn-icons-png.flaticon.com/512/3144/3144456.png',
-  LOYALTY_POINTS:
-    'https://cdn-icons-png.flaticon.com/512/1828/1828665.png',
+  STRIPE: '/icons/payments/stripe.svg',
+  PAYPAL: '/icons/payments/paypal.svg',
+  FLUTTERWAVE: '/icons/payments/flutterwave.svg',
+  SQUARE: '/icons/payments/square.svg',
+  MPESA: '/icons/payments/mpesa.svg',
+  MTN: '/icons/payments/mtn.svg',
+  AIRTEL: '/icons/payments/airtel.svg',
+  CASH: '/icons/payments/cash.svg',
+  MOBILE_MONEY: '/icons/payments/mobile-money.svg',
+  BANK_TRANSFER: '/icons/payments/bank-transfer.svg',
+  GIFT_CARD: '/icons/payments/gift-card.svg',
+  LOYALTY_POINTS: '/icons/payments/loyalty-points.svg',
 };
 
-const PROVIDER_DARK_IMAGE_URLS: Record<string, string> = {
-  STRIPE: 'https://stripe.com/img/v3/home/social.png',
-  PAYPAL:
-    'https://www.paypalobjects.com/webstatic/mktg/logo/pp_cc_mark_111x69.jpg',
-  FLUTTERWAVE: 'https://flutterwave.com/images/logo/flyer.png',
-  SQUARE: 'https://squareup.com/icons/square_logo.svg',
-  MTN: 'https://www.mtn.co.ug/wp-content/uploads/2023/05/mtn-logo.png',
-  AIRTEL:
-    'https://www.airtel.in/static-assets/new-home/img/airtel-red-logo.svg',
-  TIGO: 'https://www.tigo.com.tz/sites/default/files/tigo-logo.png',
-  VODAFONE:
-    'https://www.vodafone.com/content/dam/vodcom/Images/Logo/vodafone_logo_red.png',
-  CASH: 'https://cdn-icons-png.flaticon.com/512/2331/2331970.png',
-  MOBILE_MONEY: 'https://cdn-icons-png.flaticon.com/512/545/545245.png',
-  BANK_TRANSFER:
-    'https://cdn-icons-png.flaticon.com/512/2845/2845813.png',
-  GIFT_CARD: 'https://cdn-icons-png.flaticon.com/512/3144/3144456.png',
-  LOYALTY_POINTS:
-    'https://cdn-icons-png.flaticon.com/512/1828/1828665.png',
-};
+/**
+ * @deprecated The dark-mode image map is intentionally empty. If
+ *   you later add dark-mode-specific logos, add them here — the
+ *   lookup helper falls through to `PROVIDER_IMAGE_URLS` for any
+ *   code not present in this map.
+ */
+const PROVIDER_DARK_IMAGE_URLS: Record<string, string> = {};
 
 const PAYMENT_STATUS_COLORS: Record<string, string> = {
   PAID: 'bg-success-100 text-success-700 dark:bg-success-900/30 dark:text-success-300',
@@ -288,6 +325,9 @@ const PAYMENT_METHOD_ICONS: Record<string, any> = {
   PAYPAL: Globe,
   FLUTTERWAVE: Globe,
   SQUARE: CreditCard,
+  MPESA: Smartphone,
+  MTN: Smartphone,
+  AIRTEL: Smartphone,
 };
 
 const PROVIDER_NAMES: Record<string, string> = {
@@ -300,10 +340,9 @@ const PROVIDER_NAMES: Record<string, string> = {
   PAYPAL: 'PayPal',
   FLUTTERWAVE: 'Flutterwave',
   SQUARE: 'Square',
+  MPESA: 'M-Pesa',
   MTN: 'MTN Mobile Money',
   AIRTEL: 'Airtel Money',
-  TIGO: 'Tigo Pesa',
-  VODAFONE: 'Vodafone Cash',
 };
 
 const EMPTY_FILTERS: PaymentFiltersState = {
@@ -586,6 +625,18 @@ export default function AdminPaymentHistoryPage() {
     [],
   );
 
+  /**
+   * Format a payment amount in the row's own ledger currency. When
+   * the row carries no code, `resolvePaymentCurrency` falls back to
+   * the deployment env; if that is also unset, `formatCurrency`
+   * renders a bare number — never a fabricated symbol.
+   */
+  const fmtPaymentAmount = useCallback(
+    (payment: Payment): string =>
+      formatCurrency(payment.amount, resolvePaymentCurrency(payment)),
+    [],
+  );
+
   // ── Render gates ─────────────────────────────────────────────
 
   if (permissionLoading) {
@@ -861,6 +912,9 @@ export default function AdminPaymentHistoryPage() {
                     <option value="PAYPAL">PayPal</option>
                     <option value="FLUTTERWAVE">Flutterwave</option>
                     <option value="SQUARE">Square</option>
+                    <option value="MPESA">M-Pesa</option>
+                    <option value="MTN">MTN</option>
+                    <option value="AIRTEL">Airtel</option>
                   </select>
                 </div>
                 <div className="grid grid-cols-2 gap-2">
@@ -1070,7 +1124,7 @@ export default function AdminPaymentHistoryPage() {
                                 isDark ? 'text-white' : 'text-gray-900'
                               }`}
                             >
-                              {formatCurrency(payment.amount)}
+                              {fmtPaymentAmount(payment)}
                             </p>
                           </td>
                           <td className="px-4 py-3">
@@ -1252,6 +1306,7 @@ export default function AdminPaymentHistoryPage() {
                   reference:
                     selectedPayment.reference || selectedPayment.id,
                   amount: selectedPayment.amount,
+                  currency: resolvePaymentCurrency(selectedPayment),
                   paymentMethod: selectedPayment.paymentMethod,
                   status: selectedPayment.status,
                   processedAt: selectedPayment.processedAt,

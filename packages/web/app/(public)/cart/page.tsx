@@ -1,9 +1,10 @@
-// D:\Projects\Kalwanga\packages\web\app\cart\page.tsx
+// D:\Projects\Kalwanga\packages\web\app\(public)\cart\page.tsx
 
 'use client';
 
 import { useState, useEffect, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
+import Image from 'next/image';
 import {
   ShoppingCart,
   RefreshCw,
@@ -50,12 +51,6 @@ interface LoyaltyResponse {
   totalEarned: number;
 }
 
-/**
- * The page's cart shape. Structurally a superset of `cartService.Cart`
- * and `guestCartService.GuestCart`. Every required field from both
- * services is present, plus a couple of display-only fields this page
- * uses locally.
- */
 interface CartItem {
   id: string;
   productId: string;
@@ -116,6 +111,59 @@ interface Cart {
   loyaltyPointsUsed?: number;
   loyaltyDiscount?: number;
 
+  /**
+   * ── Phase 2: ISO 4217 currency code, resolved server-side ─────
+   */
+  currency?: string;
+
+  /**
+   * ── Phase 2: display symbol for `currency` ────────────────────
+   */
+  currencySymbol?: string;
+
+  // ────────────────────────────────────────────────────────────
+  // Phase 3a — Tier 2 display currency fields
+  // ────────────────────────────────────────────────────────────
+  //
+  // Populated by the backend when the payer has chosen a display
+  // currency via the `X-Display-Currency` header AND an FX rate is
+  // available. Absent otherwise — every field is optional.
+  //
+  // ⚠ These are views, not ledger amounts. Every value here is
+  //   `ledgerAmount * displayRate`, rounded to the display
+  //   currency's decimal precision. The ledger fields
+  //   (`subtotal`, `total`, `items[].unitPrice`, …) are unchanged.
+
+  /** The payer's chosen display currency, or null/undefined. */
+  displayCurrency?: string | null;
+
+  /** The FX rate applied (`ledger → display`). */
+  displayRate?: number | null;
+
+  /** Provenance of the rate: 'identity' | 'direct' | 'inverse' | 'pivot:*' | 'override:*'. */
+  displayRateSource?: string | null;
+
+  /** Subtotal converted to `displayCurrency`. */
+  displaySubtotal?: number;
+
+  /** Tax converted to `displayCurrency`. */
+  displayTax?: number;
+
+  /** Cart-level discount converted to `displayCurrency`. */
+  displayDiscount?: number;
+
+  /** Promotion discount converted to `displayCurrency`. */
+  displayPromotionDiscount?: number;
+
+  /** Loyalty discount converted to `displayCurrency`. */
+  displayLoyaltyDiscount?: number;
+
+  /** Total converted to `displayCurrency`. */
+  displayTotal?: number;
+
+  /** Per-line display amounts, in the same order as `items`. */
+  displayItems?: Array<{ unitPrice: number; total: number }>;
+
   createdAt: string;
   updatedAt: string;
 }
@@ -124,11 +172,6 @@ interface Cart {
 // ERROR HELPERS
 // ============================================
 
-/**
- * Walk the error chain for an HTTP status code. axios, the backend's
- * `AppError`, and wrapped errors all surface the status in different
- * places; this returns the first finite number it finds.
- */
 function getErrorStatus(error: any): number | undefined {
   if (!error || typeof error !== 'object') return undefined;
 
@@ -160,9 +203,6 @@ function getErrorStatus(error: any): number | undefined {
   return undefined;
 }
 
-/**
- * True when the status + body suggest the session expired.
- */
 function isSessionExpired(error: any): boolean {
   const status = getErrorStatus(error);
   if (status === 401) return true;
@@ -270,6 +310,27 @@ function normalizeCartItem(item: any): CartItem {
   };
 }
 
+const DEFAULT_GUEST_CURRENCY = 'UGX';
+
+/**
+ * ── Phase 3a: shape-preserving cart normalizer. ───────────────────
+ *
+ * Builds a new object by SPREADING the source, then overriding the
+ * fields that need normalization (items, customer, status, currency
+ * fallbacks). Every other field on the source — including the
+ * Phase 3a `display*` fields — is carried through unchanged.
+ *
+ * ⚠ Do NOT revert to the previous enumerate-every-field approach.
+ *   That style silently dropped `displayTotal`, `displayCurrency`,
+ *   `displayItems`, etc., which broke the CartSummary display
+ *   fallback: the picker stored 'EUR' in localStorage, the backend
+ *   returned display amounts, the normalizer stripped them, and the
+ *   summary rendered ledger amounts with no error to explain why.
+ *
+ * If you need to drop a field the backend sends, delete it from the
+ * spread explicitly rather than reconstructing the object from a
+ * whitelist.
+ */
 function normalizeCart(
   source: AuthCart | GuestCart | null,
 ): Cart | null {
@@ -307,7 +368,26 @@ function normalizeCart(
 
   const now = new Date().toISOString();
 
+  // Currency fallback chain — prefer the source value; fall back to
+  // the registry default only when the guest path hasn't supplied one.
+  const currency =
+    typeof anySource.currency === 'string' &&
+    anySource.currency.length > 0
+      ? anySource.currency
+      : DEFAULT_GUEST_CURRENCY;
+  const currencySymbol =
+    typeof anySource.currencySymbol === 'string' &&
+    anySource.currencySymbol.length > 0
+      ? anySource.currencySymbol
+      : currency;
+
+  // ── Spread the source first, then override the normalized fields.
+  //   This is the critical line for Phase 3a: it preserves
+  //   `displayTotal`, `displaySubtotal`, `displayCurrency`,
+  //   `displayRate`, `displayItems`, and every other `display*` field
+  //   the backend sends, so CartSummary's `useDisplay` guard passes.
   return {
+    ...(anySource as Record<string, unknown>),
     id: anySource.id ?? '',
     items,
     subtotal: anySource.subtotal ?? 0,
@@ -330,16 +410,15 @@ function normalizeCart(
       anySource.discountType === 'FIXED'
         ? anySource.discountType
         : undefined,
+    currency,
+    currencySymbol,
     createdAt:
       typeof anySource.createdAt === 'string' ? anySource.createdAt : now,
     updatedAt:
       typeof anySource.updatedAt === 'string' ? anySource.updatedAt : now,
-  };
+  } as Cart;
 }
 
-/**
- * The `api` wrapper may or may not unwrap `response.data`. Accept both.
- */
 function unwrapApiResponse<T>(response: unknown): T | null {
   if (response == null) return null;
   if (typeof response === 'object' && 'data' in (response as any)) {
@@ -353,12 +432,6 @@ function unwrapApiResponse<T>(response: unknown): T | null {
 // CONSTANTS
 // ============================================
 
-/**
- * Default free-shipping threshold. Ideally this comes from
- * `CartSettings.freeShippingThreshold` on the backend — the banner on
- * this page is a UX cue, not a contract. Fetching settings on every
- * cart view is expensive, so we use a static fallback.
- */
 const DEFAULT_FREE_SHIPPING_THRESHOLD = 50;
 
 // ============================================
@@ -403,8 +476,6 @@ export default function CartPage() {
 
       if (cartData.customerId) {
         setCustomerId(cartData.customerId);
-        // Prefer the loyalty balance from the cart's customer when the
-        // backend includes it; otherwise fall back to a dedicated fetch.
         const cartLoyalty = (cartData.customer as any)?.loyaltyPoints;
         if (typeof cartLoyalty === 'number') {
           setLoyaltyPoints(cartLoyalty);
@@ -561,12 +632,6 @@ export default function CartPage() {
     }
   }, [isAuthenticated]);
 
-  /**
-   * Apply a numeric discount. The caller must know whether the value
-   * is a percentage or a fixed amount — this replaces the previous
-   * `parseFloat(code)` heuristic that misclassified promo codes like
-   * `"1234"` as fixed discounts.
-   */
   const applyDiscountValue = useCallback(
     async (value: number, type: 'PERCENTAGE' | 'FIXED') => {
       if (!isAuthenticated) {
@@ -587,9 +652,6 @@ export default function CartPage() {
     [isAuthenticated],
   );
 
-  /**
-   * Apply a promotion by code. The backend resolves the code.
-   */
   const applyPromotionCode = useCallback(
     async (code: string) => {
       if (!isAuthenticated) {
@@ -628,8 +690,6 @@ export default function CartPage() {
         const updated = normalizeCart(raw);
         setCart(updated);
 
-        // Prefer the authoritative balance from the cart payload; fall
-        // back to an optimistic decrement only when it's absent.
         const serverBalance = (updated?.customer as any)?.loyaltyPoints;
         if (typeof serverBalance === 'number') {
           setLoyaltyPoints(serverBalance);
@@ -800,6 +860,9 @@ export default function CartPage() {
     0,
   );
 
+  const currency = cart.currency ?? DEFAULT_GUEST_CURRENCY;
+  const currencySymbol = cart.currencySymbol ?? currency;
+
   const shippingThreshold = DEFAULT_FREE_SHIPPING_THRESHOLD;
   const amountToFreeShipping = Math.max(
     0,
@@ -901,97 +964,116 @@ export default function CartPage() {
           <div className="lg:col-span-2 space-y-4">
             <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 overflow-hidden">
               <div className="divide-y divide-gray-200 dark:divide-gray-700">
-                {cart.items.map((item) => (
-                  <div
-                    key={item.id}
-                    className="p-4 sm:p-6 flex flex-col sm:flex-row items-start sm:items-center gap-4"
-                  >
-                    <div className="w-20 h-20 bg-gray-100 dark:bg-gray-700 rounded-lg flex-shrink-0 overflow-hidden">
-                      {item.product.images?.[0] ? (
-                        <img
-                          src={item.product.images[0]}
-                          alt={item.product.name}
-                          loading="lazy"
-                          className="w-full h-full object-cover"
-                        />
-                      ) : (
-                        <div className="w-full h-full flex items-center justify-center text-gray-400">
-                          <Package className="w-6 h-6" />
-                        </div>
-                      )}
-                    </div>
+                {cart.items.map((item, index) => {
+                  // ── Phase 3a: prefer per-line display amounts ──
+                  // `cart.displayItems` is a parallel array; when the
+                  // backend supplies it, use the display value for the
+                  // line total. Fall back to the ledger amount when
+                  // either the array is missing or the index is out
+                  // of bounds (item added after the display snapshot).
+                  const displayItem = cart.displayItems?.[index];
+                  const lineUnitPrice =
+                    displayItem?.unitPrice ?? item.unitPrice;
+                  const lineTotal = displayItem?.total ?? item.total;
+                  const lineCurrency =
+                    cart.displayCurrency &&
+                    typeof displayItem?.total === 'number'
+                      ? cart.displayCurrency
+                      : currency;
 
-                    <div className="flex-1 min-w-0">
-                      <h3 className="font-medium text-gray-900 dark:text-white truncate">
-                        {item.product.name}
-                      </h3>
-                      <p className="text-sm text-gray-500 dark:text-gray-400 truncate">
-                        SKU: {item.product.sku}
-                      </p>
-                      {item.variant && (
-                        <p className="text-xs text-gray-400 dark:text-gray-500">
-                          Variant: {item.variant.name}
+                  return (
+                    <div
+                      key={item.id}
+                      className="p-4 sm:p-6 flex flex-col sm:flex-row items-start sm:items-center gap-4"
+                    >
+                      <div className="w-20 h-20 bg-gray-100 dark:bg-gray-700 rounded-lg flex-shrink-0 overflow-hidden">
+                        {item.product.images?.[0] ? (
+                          <Image
+                            src={item.product.images[0]}
+                            alt={item.product.name}
+                            width={80}
+                            height={80}
+                            unoptimized
+                            className="w-full h-full object-cover"
+                          />
+                        ) : (
+                          <div className="w-full h-full flex items-center justify-center text-gray-400">
+                            <Package className="w-6 h-6" />
+                          </div>
+                        )}
+                      </div>
+
+                      <div className="flex-1 min-w-0">
+                        <h3 className="font-medium text-gray-900 dark:text-white truncate">
+                          {item.product.name}
+                        </h3>
+                        <p className="text-sm text-gray-500 dark:text-gray-400 truncate">
+                          SKU: {item.product.sku}
                         </p>
-                      )}
-                      <p className="text-sm font-medium text-orange-600 dark:text-orange-400 tabular-nums">
-                        {formatCurrency(item.unitPrice)}
-                      </p>
-                    </div>
+                        {item.variant && (
+                          <p className="text-xs text-gray-400 dark:text-gray-500">
+                            Variant: {item.variant.name}
+                          </p>
+                        )}
+                        <p className="text-sm font-medium text-orange-600 dark:text-orange-400 tabular-nums">
+                          {formatCurrency(lineUnitPrice, lineCurrency)}
+                        </p>
+                      </div>
 
-                    <div className="flex items-center gap-2">
-                      <button
-                        type="button"
-                        onClick={() =>
-                          updateQuantity(item.id, item.quantity - 1)
-                        }
-                        disabled={
-                          updating === item.id || item.quantity <= 1
-                        }
-                        className="w-8 h-8 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors focus-ring"
-                        aria-label="Decrease quantity"
-                      >
-                        -
-                      </button>
-                      <span className="w-8 text-center text-gray-900 dark:text-white tabular-nums">
-                        {updating === item.id ? '...' : item.quantity}
-                      </span>
-                      <button
-                        type="button"
-                        onClick={() =>
-                          updateQuantity(item.id, item.quantity + 1)
-                        }
-                        disabled={
-                          updating === item.id ||
-                          (item.availableStock > 0 &&
-                            item.quantity >= item.availableStock)
-                        }
-                        className="w-8 h-8 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors focus-ring"
-                        aria-label="Increase quantity"
-                      >
-                        +
-                      </button>
-                    </div>
+                      <div className="flex items-center gap-2">
+                        <button
+                          type="button"
+                          onClick={() =>
+                            updateQuantity(item.id, item.quantity - 1)
+                          }
+                          disabled={
+                            updating === item.id || item.quantity <= 1
+                          }
+                          className="w-8 h-8 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors focus-ring"
+                          aria-label="Decrease quantity"
+                        >
+                          -
+                        </button>
+                        <span className="w-8 text-center text-gray-900 dark:text-white tabular-nums">
+                          {updating === item.id ? '...' : item.quantity}
+                        </span>
+                        <button
+                          type="button"
+                          onClick={() =>
+                            updateQuantity(item.id, item.quantity + 1)
+                          }
+                          disabled={
+                            updating === item.id ||
+                            (item.availableStock > 0 &&
+                              item.quantity >= item.availableStock)
+                          }
+                          className="w-8 h-8 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors focus-ring"
+                          aria-label="Increase quantity"
+                        >
+                          +
+                        </button>
+                      </div>
 
-                    <div className="text-right min-w-[80px]">
-                      <p className="font-medium text-gray-900 dark:text-white tabular-nums">
-                        {formatCurrency(item.total)}
-                      </p>
-                      <button
-                        type="button"
-                        onClick={() => removeItem(item.id)}
-                        disabled={updating === item.id}
-                        className="text-red-500 hover:text-red-700 dark:text-red-400 dark:hover:text-red-300 text-xs transition-colors focus-ring rounded"
-                      >
-                        Remove
-                      </button>
+                      <div className="text-right min-w-[80px]">
+                        <p className="font-medium text-gray-900 dark:text-white tabular-nums">
+                          {formatCurrency(lineTotal, lineCurrency)}
+                        </p>
+                        <button
+                          type="button"
+                          onClick={() => removeItem(item.id)}
+                          disabled={updating === item.id}
+                          className="text-red-500 hover:text-red-700 dark:text-red-400 dark:hover:text-red-300 text-xs transition-colors focus-ring rounded"
+                        >
+                          Remove
+                        </button>
+                      </div>
                     </div>
-                  </div>
-                ))}
+                  );
+                })}
               </div>
             </div>
 
-            {/* Cart Extras — the individual components return null for
-                guests, so this outer gate is cosmetic. */}
+            {/* Cart Extras */}
             {isAuthenticated && (
               <div className="space-y-4">
                 <CartCustomerSelector
@@ -1011,6 +1093,8 @@ export default function CartPage() {
                       void fetchCart();
                     }}
                     disabled={loading}
+                    currency={currency}
+                    currencySymbol={currencySymbol}
                   />
                 )}
               </div>
@@ -1022,6 +1106,8 @@ export default function CartPage() {
                   void fetchCart();
                 }}
                 disabled={loading}
+                currency={currency}
+                currencySymbol={currencySymbol}
               />
 
               <CartPromotionInput
@@ -1061,11 +1147,11 @@ export default function CartPage() {
             <span className="text-orange-700 dark:text-orange-300 flex items-center gap-2">
               <Truck className="w-5 h-5" />
               Free shipping on orders over{' '}
-              {formatCurrency(shippingThreshold)}
+              {formatCurrency(shippingThreshold, currency)}
             </span>
             <span className="font-medium text-orange-700 dark:text-orange-300 tabular-nums">
               {amountToFreeShipping > 0
-                ? `${formatCurrency(amountToFreeShipping)} away`
+                ? `${formatCurrency(amountToFreeShipping, currency)} away`
                 : 'Free shipping unlocked'}
             </span>
           </div>

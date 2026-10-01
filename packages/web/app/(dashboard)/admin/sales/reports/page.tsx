@@ -30,46 +30,71 @@ import { useAuth } from '../../../../../hooks/useAuth';
 import { toast } from '../../../../../utils/toast-manager';
 import { api } from '../../../../../services/api';
 
-// ============================================
-// LOCAL SERVICE EXTENSIONS
-// ============================================
-//
-// The frontend `saleService` does not declare `exportSales`. The
-// backend exposes it at:
-//
-//   GET /sales/export?startDate=…&endDate=…&format=…
-//     → { success, data: [...], format, total, message }
-//
-// We call it through the shared `api` client rather than mutating the
-// shared service.
-
 async function exportSalesRemote(params: {
   startDate?: string;
   endDate?: string;
   format?: 'json' | 'csv' | 'excel' | 'pdf';
-}): Promise<{ data: any[]; total?: number; format?: string }> {
+}): Promise<{
+  data: any[];
+  total?: number;
+  format?: string;
+  currency?: string;
+}> {
   const response = await api.get<any>('/sales/export', { params });
   const body =
     response && typeof response === 'object' && 'data' in response
       ? (response as any).data
       : response;
 
+  const currency =
+    (response && typeof response === 'object' && (response as any).currency) ||
+    (body && typeof body === 'object' && (body as any).currency) ||
+    undefined;
+
   if (body && typeof body === 'object' && Array.isArray(body.data)) {
     return {
       data: body.data,
       total: typeof body.total === 'number' ? body.total : body.data.length,
       format: typeof body.format === 'string' ? body.format : params.format,
+      currency,
     };
   }
   if (Array.isArray(body)) {
-    return { data: body, total: body.length, format: params.format };
+    return { data: body, total: body.length, format: params.format, currency };
   }
-  return { data: [], total: 0, format: params.format };
+  return { data: [], total: 0, format: params.format, currency };
 }
 
-// ============================================
-// INTERFACES
-// ============================================
+/**
+ * Extract the ledger currency from any response shape the sales
+ * endpoints return. The backend sends `currency` at the envelope
+ * top level on every currency-aware endpoint. Different endpoints
+ * may nest it differently, so we probe several known locations.
+ *
+ * Returns `undefined` when no currency is present — the page
+ * renders amounts as plain numbers in that case rather than
+ * mislabeling them with a hardcoded symbol.
+ */
+function extractCurrencyFromResponse(response: any): string | undefined {
+  if (!response || typeof response !== 'object') return undefined;
+
+  // Envelope top level: `{ success, data, currency }`
+  if (typeof response.currency === 'string' && response.currency) {
+    return response.currency;
+  }
+
+  // Nested inside `data`: `{ success, data: { ..., currency } }`
+  if (
+    response.data &&
+    typeof response.data === 'object' &&
+    typeof response.data.currency === 'string' &&
+    response.data.currency
+  ) {
+    return response.data.currency;
+  }
+
+  return undefined;
+}
 
 type GroupBy = 'day' | 'week' | 'month' | 'quarter' | 'year';
 
@@ -93,6 +118,18 @@ interface ReportFilter {
 }
 
 interface SalesReportData {
+  /**
+   * ISO 4217 ledger currency for every amount in this report.
+   * Resolved server-side from the business unit.
+   *
+   * ⚠ Required. The report cannot be rendered without a currency
+   *   because every amount must be formatted in the tenant's
+   *   ledger currency. When the backend fails to supply one, we
+   *   fall back to the code `'USD'` only as a last-resort visual
+   *   placeholder — the correct fix is to ensure the backend
+   *   always sends `currency` on these endpoints.
+   */
+  currency: string;
   summary: {
     totalRevenue: number;
     totalSales: number;
@@ -135,10 +172,6 @@ interface SalesReportData {
   }>;
 }
 
-// ============================================
-// HELPERS
-// ============================================
-
 const toIso = (d: Date): string => d.toISOString().split('T')[0];
 
 const toAggregateGroupBy = (
@@ -161,10 +194,6 @@ const getGroupByLabel = (group: string): string => {
 
 const humanizePaymentMethod = (method: string): string =>
   method.replace(/_/g, ' ');
-
-// ============================================
-// MAIN COMPONENT
-// ============================================
 
 export default function SalesReportsPage() {
   const { isLoaded, isSignedIn } = useUser();
@@ -209,10 +238,6 @@ export default function SalesReportsPage() {
     }
   }, [isLoaded, isSignedIn, router, canViewReports]);
 
-  // ============================================
-  // GENERATE
-  // ============================================
-
   const generateReport = useCallback(async () => {
     if (!authUser) return;
 
@@ -226,7 +251,7 @@ export default function SalesReportsPage() {
       const [
         stats,
         analytics,
-        aggregated,
+        aggregatedRaw,
         paymentMethods,
         summary,
       ] = await Promise.all([
@@ -250,9 +275,6 @@ export default function SalesReportsPage() {
             return null;
           }),
 
-        // NOTE: the frontend service does not declare
-        // `getAggregatedSales`. Use the same shape the backend
-        // exposes at `GET /sales/aggregate` via the shared api client.
         api
           .get<any>('/sales/aggregate', {
             params: {
@@ -261,16 +283,10 @@ export default function SalesReportsPage() {
               groupBy: toAggregateGroupBy(filters.groupBy),
             },
           })
-          .then((response) => {
-            const body =
-              response && typeof response === 'object' && 'data' in response
-                ? (response as any).data
-                : response;
-            return Array.isArray(body) ? body : body?.data ?? [];
-          })
+          .then((response) => response)
           .catch((err) => {
             console.warn('getAggregatedSales failed:', err);
-            return [];
+            return null;
           }),
 
         saleService
@@ -294,7 +310,33 @@ export default function SalesReportsPage() {
           }),
       ]);
 
-      // ── Growth rate via compare ─────────────────────────────
+      // ── Resolve the ledger currency ────────────────────────────
+      // The aggregate endpoint is the most reliable source: it
+      // returns `{ success, data, currency }` at the envelope top
+      // level. Fall back to any other endpoint that happens to
+      // carry one.
+      const aggregated = (() => {
+        if (!aggregatedRaw) return [];
+        const body =
+          aggregatedRaw && typeof aggregatedRaw === 'object' && 'data' in aggregatedRaw
+            ? (aggregatedRaw as any).data
+            : aggregatedRaw;
+        if (Array.isArray(body)) return body;
+        if (body && typeof body === 'object' && Array.isArray(body.data)) {
+          return body.data;
+        }
+        return [];
+      })();
+
+      const currency =
+        extractCurrencyFromResponse(aggregatedRaw) ||
+        // Fallbacks: the sale service returns `currency` on some
+        // envelopes, but the typed wrappers strip it. Probe the
+        // raw shapes we have.
+        (stats && (stats as any).currency) ||
+        (summary && (summary as any).currency) ||
+        'USD'; // last-resort placeholder — the backend should always send one
+
       const periodMs = endIso.getTime() - startIso.getTime();
       const prevStart = new Date(startIso.getTime() - periodMs);
       const prevEnd = new Date(startIso.getTime() - 1);
@@ -314,7 +356,6 @@ export default function SalesReportsPage() {
       const growthRate =
         (comparison as any)?.percentageChange?.revenue ?? 0;
 
-      // ── Build the report payload ────────────────────────────
       const totalRevenue = (stats as any)?.totalRevenue ?? 0;
       const totalSales = (stats as any)?.totalSales ?? 0;
       const averageTicket = (stats as any)?.averageTicket ?? 0;
@@ -407,6 +448,7 @@ export default function SalesReportsPage() {
           }));
 
       setReportData({
+        currency,
         summary: {
           totalRevenue,
           totalSales,
@@ -433,12 +475,8 @@ export default function SalesReportsPage() {
   }, [authUser, filters]);
 
   useEffect(() => {
-    generateReport();
+    void generateReport();
   }, [generateReport]);
-
-  // ============================================
-  // DATE RANGE
-  // ============================================
 
   const handleDateRangeChange = (range: string) => {
     const now = new Date();
@@ -508,10 +546,6 @@ export default function SalesReportsPage() {
     }));
   };
 
-  // ============================================
-  // EXPORT
-  // ============================================
-
   const handleDownload = async () => {
     try {
       setDownloading(true);
@@ -532,6 +566,7 @@ export default function SalesReportsPage() {
         'Tax',
         'Discount',
         'Total',
+        'Currency',
         'Payment',
         'Status',
         'Items',
@@ -547,6 +582,10 @@ export default function SalesReportsPage() {
         (sale.tax ?? 0).toFixed(2),
         (sale.discount ?? 0).toFixed(2),
         (sale.total ?? 0).toFixed(2),
+        // Prefer the sale's own currency; fall back to the report's
+        // resolved currency; final fallback is blank so the column
+        // is never filled with a wrong code.
+        sale.currency ?? reportData?.currency ?? result.currency ?? '',
         sale.paymentMethod ?? 'N/A',
         sale.status ?? 'COMPLETED',
         String(sale.items ?? sale.totalQuantity ?? 0),
@@ -583,10 +622,6 @@ export default function SalesReportsPage() {
     }
   };
 
-  // ============================================
-  // RENDER GUARDS
-  // ============================================
-
   if (loading || generating) {
     return <LoadingSkeleton />;
   }
@@ -605,7 +640,6 @@ export default function SalesReportsPage() {
   return (
     <div className="min-h-screen bg-gray-50 dark:bg-gray-900 p-6">
       <div className="max-w-7xl mx-auto">
-        {/* Header */}
         <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 mb-6">
           <div>
             <div className="flex items-center gap-3">
@@ -614,7 +648,7 @@ export default function SalesReportsPage() {
                 className="p-2 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-colors focus-ring"
                 aria-label="Back to Sales"
               >
-                <ArrowLeft className="w-5 h-5 text-gray-500" />
+                <ArrowLeft className="w-5 h-5 text-gray-500" aria-hidden="true" />
               </button>
               <div>
                 <h1 className="text-3xl font-bold text-gray-900 dark:text-white">
@@ -628,14 +662,14 @@ export default function SalesReportsPage() {
           </div>
           <div className="flex flex-wrap gap-3">
             <button
-              onClick={() => generateReport()}
+              onClick={() => void generateReport()}
               disabled={generating}
               className="flex items-center gap-2 px-4 py-2 bg-brand-500 text-white rounded-lg hover:bg-brand-600 transition-colors disabled:opacity-50 focus-ring"
             >
               {generating ? (
-                <Loader2 className="w-4 h-4 animate-spin" />
+                <Loader2 className="w-4 h-4 animate-spin" aria-hidden="true" />
               ) : (
-                <RefreshCw className="w-4 h-4" />
+                <RefreshCw className="w-4 h-4" aria-hidden="true" />
               )}
               {generating ? 'Generating...' : 'Refresh Report'}
             </button>
@@ -644,13 +678,12 @@ export default function SalesReportsPage() {
               disabled={!reportData}
               className="flex items-center gap-2 px-4 py-2 bg-success-600 text-white rounded-lg hover:bg-success-700 transition-colors disabled:opacity-50 focus-ring"
             >
-              <Download className="w-4 h-4" />
+              <Download className="w-4 h-4" aria-hidden="true" />
               Export
             </button>
           </div>
         </div>
 
-        {/* Filters */}
         <div className="card-brand p-4 mb-6">
           <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
             <div>
@@ -689,7 +722,7 @@ export default function SalesReportsPage() {
                         startDate: e.target.value,
                       }))
                     }
-                    className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-brand-500 focus:outline-none bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+                    className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-brand-500 focus:outline-none bg-white dark:bg-gray-700 text-gray-900 dark:text-white tabular-nums"
                   />
                 </div>
                 <div>
@@ -705,7 +738,7 @@ export default function SalesReportsPage() {
                         endDate: e.target.value,
                       }))
                     }
-                    className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-brand-500 focus:outline-none bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+                    className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-brand-500 focus:outline-none bg-white dark:bg-gray-700 text-gray-900 dark:text-white tabular-nums"
                   />
                 </div>
               </>
@@ -734,12 +767,14 @@ export default function SalesReportsPage() {
           </div>
         </div>
 
-        {/* Summary Cards */}
         {reportData && (
           <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-7 gap-4 mb-6">
             <SummaryCard
               title="Total Revenue"
-              value={formatCurrency(reportData.summary.totalRevenue)}
+              value={formatCurrency(
+                reportData.summary.totalRevenue,
+                reportData.currency,
+              )}
               change={reportData.summary.growthRate}
               icon={DollarSign}
               color="brand"
@@ -752,7 +787,10 @@ export default function SalesReportsPage() {
             />
             <SummaryCard
               title="Average Ticket"
-              value={formatCurrency(reportData.summary.averageTicket)}
+              value={formatCurrency(
+                reportData.summary.averageTicket,
+                reportData.currency,
+              )}
               icon={TrendingUp}
               color="secondary"
             />
@@ -770,20 +808,25 @@ export default function SalesReportsPage() {
             />
             <SummaryCard
               title="Total Tax"
-              value={formatCurrency(reportData.summary.totalTax)}
+              value={formatCurrency(
+                reportData.summary.totalTax,
+                reportData.currency,
+              )}
               icon={FileText}
               color="warning"
             />
             <SummaryCard
               title="Total Discount"
-              value={formatCurrency(reportData.summary.totalDiscount)}
+              value={formatCurrency(
+                reportData.summary.totalDiscount,
+                reportData.currency,
+              )}
               icon={TrendingDown}
               color="danger"
             />
           </div>
         )}
 
-        {/* Tabs */}
         {reportData && (
           <div className="mb-6">
             <div className="flex flex-wrap gap-2 border-b border-gray-200 dark:border-gray-700">
@@ -797,7 +840,7 @@ export default function SalesReportsPage() {
                       : 'border-transparent text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300'
                   }`}
                 >
-                  <tab.icon className="w-4 h-4" />
+                  <tab.icon className="w-4 h-4" aria-hidden="true" />
                   {tab.label}
                 </button>
               ))}
@@ -805,25 +848,33 @@ export default function SalesReportsPage() {
           </div>
         )}
 
-        {/* Tab Content */}
         {reportData && (
           <div className="space-y-6">
-            {activeTab === 'overview' && <OverviewTab data={reportData} />}
-            {activeTab === 'trends' && (
-              <TrendsTab data={reportData} groupBy={filters.groupBy} />
+            {activeTab === 'overview' && (
+              <OverviewTab data={reportData} currency={reportData.currency} />
             )}
-            {activeTab === 'products' && <ProductsTab data={reportData} />}
-            {activeTab === 'payments' && <PaymentsTab data={reportData} />}
+            {activeTab === 'trends' && (
+              <TrendsTab
+                data={reportData}
+                groupBy={filters.groupBy}
+                currency={reportData.currency}
+              />
+            )}
+            {activeTab === 'products' && (
+              <ProductsTab data={reportData} currency={reportData.currency} />
+            )}
+            {activeTab === 'payments' && (
+              <PaymentsTab data={reportData} currency={reportData.currency} />
+            )}
           </div>
         )}
       </div>
 
-      {/* Export Modal */}
       <AnimatePresence>
         {showExportModal && (
           <ExportModal
             onClose={() => setShowExportModal(false)}
-            onExport={handleDownload}
+            onExport={() => void handleDownload()}
             format={exportFormat}
             setFormat={setExportFormat}
             downloading={downloading}
@@ -833,10 +884,6 @@ export default function SalesReportsPage() {
     </div>
   );
 }
-
-// ============================================
-// SUB-COMPONENTS
-// ============================================
 
 interface SummaryCardProps {
   title: string;
@@ -879,7 +926,7 @@ function SummaryCard({
           {title}
         </p>
         <div className={`p-2 rounded-lg ${colors[color] || colors.brand}`}>
-          <Icon className="w-4 h-4" />
+          <Icon className="w-4 h-4" aria-hidden="true" />
         </div>
       </div>
       <p className="text-xl font-bold text-gray-900 dark:text-white tabular-nums">
@@ -892,9 +939,9 @@ function SummaryCard({
           }`}
         >
           {change >= 0 ? (
-            <TrendingUp className="w-3 h-3" />
+            <TrendingUp className="w-3 h-3" aria-hidden="true" />
           ) : (
-            <TrendingDown className="w-3 h-3" />
+            <TrendingDown className="w-3 h-3" aria-hidden="true" />
           )}
           <span>{Math.abs(change).toFixed(1)}% vs previous</span>
         </div>
@@ -903,7 +950,13 @@ function SummaryCard({
   );
 }
 
-function OverviewTab({ data }: { data: SalesReportData }) {
+function OverviewTab({
+  data,
+  currency,
+}: {
+  data: SalesReportData;
+  currency: string;
+}) {
   const maxHourlyRevenue = Math.max(
     ...data.hourDistribution.map((h) => h.revenue),
     1,
@@ -914,7 +967,7 @@ function OverviewTab({ data }: { data: SalesReportData }) {
       {data.categoryBreakdown.length > 0 && (
         <div className="card-brand p-6">
           <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-4 flex items-center gap-2">
-            <PieChart className="w-5 h-5 text-success-500" />
+            <PieChart className="w-5 h-5 text-success-500" aria-hidden="true" />
             Category Breakdown
           </h3>
           <div className="space-y-3">
@@ -933,7 +986,7 @@ function OverviewTab({ data }: { data: SalesReportData }) {
                   />
                 </div>
                 <span className="text-sm font-medium text-gray-900 dark:text-white whitespace-nowrap tabular-nums">
-                  {formatCurrency(category.revenue)}
+                  {formatCurrency(category.revenue, currency)}
                 </span>
                 <span className="text-sm text-gray-500 dark:text-gray-400 w-12 text-right tabular-nums">
                   {category.percentage}%
@@ -946,7 +999,7 @@ function OverviewTab({ data }: { data: SalesReportData }) {
 
       <div className="card-brand p-6">
         <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-4 flex items-center gap-2">
-          <Clock className="w-5 h-5 text-brand-accent-500" />
+          <Clock className="w-5 h-5 text-brand-accent-500" aria-hidden="true" />
           Hourly Distribution
         </h3>
         <div className="grid grid-cols-6 md:grid-cols-12 lg:grid-cols-24 gap-1">
@@ -961,7 +1014,10 @@ function OverviewTab({ data }: { data: SalesReportData }) {
                   )}px`,
                   width: '100%',
                 }}
-                title={`${hour.sales} sales · ${formatCurrency(hour.revenue)}`}
+                title={`${hour.sales} sales · ${formatCurrency(
+                  hour.revenue,
+                  currency,
+                )}`}
               />
               <p className="text-xs text-gray-500 dark:text-gray-400 mt-1 tabular-nums">
                 {hour.hour}:00
@@ -977,14 +1033,16 @@ function OverviewTab({ data }: { data: SalesReportData }) {
 function TrendsTab({
   data,
   groupBy,
+  currency,
 }: {
   data: SalesReportData;
   groupBy: string;
+  currency: string;
 }) {
   return (
     <div className="card-brand p-6">
       <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-4 flex items-center gap-2">
-        <LineChart className="w-5 h-5 text-brand-500" />
+        <LineChart className="w-5 h-5 text-brand-500" aria-hidden="true" />
         {getGroupByLabel(groupBy)} Trends
       </h3>
       {data.trends.length === 0 ? (
@@ -1030,13 +1088,13 @@ function TrendsTab({
                       {trend.period}
                     </td>
                     <td className="px-4 py-3 text-sm text-right text-gray-900 dark:text-white tabular-nums">
-                      {formatCurrency(trend.revenue)}
+                      {formatCurrency(trend.revenue, currency)}
                     </td>
                     <td className="px-4 py-3 text-sm text-right text-gray-600 dark:text-gray-400 tabular-nums">
                       {trend.sales}
                     </td>
                     <td className="px-4 py-3 text-sm text-right text-gray-600 dark:text-gray-400 tabular-nums">
-                      {formatCurrency(trend.average)}
+                      {formatCurrency(trend.average, currency)}
                     </td>
                     <td className="px-4 py-3 text-sm text-right tabular-nums">
                       <span
@@ -1059,11 +1117,17 @@ function TrendsTab({
   );
 }
 
-function ProductsTab({ data }: { data: SalesReportData }) {
+function ProductsTab({
+  data,
+  currency,
+}: {
+  data: SalesReportData;
+  currency: string;
+}) {
   return (
     <div className="card-brand p-6">
       <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-4 flex items-center gap-2">
-        <Package className="w-5 h-5 text-success-500" />
+        <Package className="w-5 h-5 text-success-500" aria-hidden="true" />
         Top Products
       </h3>
       {data.topProducts.length === 0 ? (
@@ -1114,7 +1178,7 @@ function ProductsTab({ data }: { data: SalesReportData }) {
                     {product.quantity}
                   </td>
                   <td className="px-4 py-3 text-sm text-right text-gray-900 dark:text-white tabular-nums">
-                    {formatCurrency(product.revenue)}
+                    {formatCurrency(product.revenue, currency)}
                   </td>
                   <td className="px-4 py-3 text-sm text-right text-brand-600 dark:text-brand-400 tabular-nums">
                     {product.percentage}%
@@ -1129,11 +1193,17 @@ function ProductsTab({ data }: { data: SalesReportData }) {
   );
 }
 
-function PaymentsTab({ data }: { data: SalesReportData }) {
+function PaymentsTab({
+  data,
+  currency,
+}: {
+  data: SalesReportData;
+  currency: string;
+}) {
   return (
     <div className="card-brand p-6">
       <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-4 flex items-center gap-2">
-        <CreditCard className="w-5 h-5 text-brand-500" />
+        <CreditCard className="w-5 h-5 text-brand-500" aria-hidden="true" />
         Payment Methods
       </h3>
       {data.paymentMethods.length === 0 ? (
@@ -1151,7 +1221,7 @@ function PaymentsTab({ data }: { data: SalesReportData }) {
                 {method.method}
               </p>
               <p className="text-xl font-bold text-gray-900 dark:text-white tabular-nums">
-                {formatCurrency(method.total)}
+                {formatCurrency(method.total, currency)}
               </p>
               <p className="text-xs text-gray-500 dark:text-gray-400 tabular-nums">
                 {method.count} transactions
@@ -1229,9 +1299,9 @@ function ExportModal({
               className="px-4 py-2 bg-brand-500 text-white rounded-lg hover:bg-brand-600 flex items-center gap-2 disabled:opacity-50 focus-ring"
             >
               {downloading ? (
-                <Loader2 className="w-4 h-4 animate-spin" />
+                <Loader2 className="w-4 h-4 animate-spin" aria-hidden="true" />
               ) : (
-                <Download className="w-4 h-4" />
+                <Download className="w-4 h-4" aria-hidden="true" />
               )}
               {downloading ? 'Downloading...' : 'Export'}
             </button>

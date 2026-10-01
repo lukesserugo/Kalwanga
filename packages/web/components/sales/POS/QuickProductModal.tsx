@@ -1,169 +1,132 @@
-// packages/web/components/pos/QuickProductModal.tsx
+// packages/web/components/sales/POS/QuickProductModal.tsx
 'use client';
 
 import React, {
   useCallback,
   useEffect,
+  useMemo,
   useRef,
   useState,
 } from 'react';
 import {
   X,
   Search,
-  Loader2,
   Package,
+  Loader2,
   Plus,
-  ShoppingBag,
   AlertCircle,
+  RefreshCw,
 } from 'lucide-react';
 
 import { productService } from '../../../services/productService';
+import { categoryService } from '../../../services/categoryService';
 import { toast } from '../../../utils/toast-manager';
-import { formatCurrency } from '../../../utils/formatters';
+import { formatPosCurrency, getPosImageSource } from './posDisplay';
 
 // ============================================
-// TYPES
+// PUBLIC TYPES
 // ============================================
 
-/**
- * Wire shape returned by `productService.searchProducts` (which
- * hits `GET /products/search` → `ProductService.searchProducts` on
- * the backend). The backend returns normalized `Product` rows; the
- * `inventory` relation is SINGULAR (`Inventory | null`), not an
- * array — see the backend's `normalizeProduct`.
- */
-interface ProductSearchRow {
-  id: string;
-  name: string;
-  sku: string;
-  unitPrice: number;
-  images?: string[];
-  /** Singular — matches the backend's canonical shape. */
-  inventory?: {
-    quantity?: number;
-    reserved?: number;
-    available?: number;
-  } | null;
-}
-
-/**
- * The subset of fields this modal renders and passes to
- * `onSelectProduct`. Derived from the search row, with the
- * inventory flattened to a plain available count.
- */
 export interface QuickProduct {
   id: string;
   name: string;
   sku: string;
   unitPrice: number;
-  images: string[];
-  availableStock: number;
-  /** Optional. Set by the modal when the operator selects a quantity. */
-  quantity?: number;
+  barcode?: string | null;
+  images?: string[];
+  category?: { id: string; name: string } | null;
+  inventory?: {
+    quantity: number;
+    reserved: number;
+    available: number;
+  } | null;
 }
 
 export interface QuickProductModalProps {
   isOpen: boolean;
   onClose: () => void;
+
+  /**
+   * Fired when the cashier clicks a product. The POS owns the
+   * cart mutation, the toast, and the close-on-success.
+   */
   onSelectProduct: (product: QuickProduct) => void;
+
+  /**
+  * ISO 4217 ledger currency supplied by the POS parent. When it
+  * has not resolved yet, prices show a neutral placeholder.
+   */
+  currency?: string;
+
+  /**
+   * Category filter mirrored from the POS's main search bar. When
+   * set and not `'all'` / `undefined` / empty, the modal's product
+   * query passes `category: filterCategory` to
+   * `productService.searchProducts`.
+   */
+  filterCategory?: string;
+
+  /**
+   * Cap on the number of products returned per query. Defaults to
+   * 24 — three rows of eight on a desktop viewport.
+   */
+  limit?: number;
+
+  /**
+   * Whether a shift is currently open. When false, the modal
+   * renders read-only: the query still runs and the grid is
+   * visible, but every card is disabled and a banner offers to
+   * open the shift manager.
+   */
+  shiftOpen?: boolean;
+
+  /**
+   * Optional. Called when the cashier clicks "Open Shift" in the
+   * disabled banner.
+   */
+  onOpenShiftManager?: () => void;
+
+  /**
+   * Debounce delay in milliseconds for the query box. Defaults to
+   * 250ms — short enough that typing feels instant, long enough
+   * that a fast typist doesn't fire one request per character.
+   */
+  debounceMs?: number;
 }
-
-// ============================================
-// CONSTANTS
-// ============================================
-
-const MIN_QUERY_LENGTH = 2;
-const SEARCH_DEBOUNCE_MS = 300;
-const MAX_QUANTITY = 99;
-const LOW_STOCK_THRESHOLD = 5;
 
 // ============================================
 // HELPERS
 // ============================================
 
-function extractErrorMessage(error: unknown, fallback: string): string {
-  if (!error) return fallback;
-  const anyErr = error as any;
-  const data = anyErr?.response?.data;
-
-  if (data) {
-    if (typeof data.error === 'string') return data.error;
-    if (data.error?.message) return String(data.error.message);
-    if (data.message) return String(data.message);
-    if (Array.isArray(data.errors) && data.errors.length > 0) {
-      return data.errors
-        .map((e: any) => `${e.field ?? 'field'}: ${e.message ?? 'invalid'}`)
-        .join(', ');
-    }
-  }
-
-  if (anyErr?.message) return String(anyErr.message);
-  return fallback;
+function isActiveFilter(filterCategory?: string): boolean {
+  if (!filterCategory) return false;
+  const trimmed = filterCategory.trim();
+  if (!trimmed) return false;
+  if (trimmed === 'all') return false;
+  return true;
 }
 
-/**
- * Compute available stock from a product's inventory relation.
- *
- * The backend's `normalizeProduct` returns `inventory` as a singular
- * object (or `null`). The value of `available` is already computed
- * server-side as `quantity - reserved`. Prefer it; fall back to
- * recomputing from the raw fields when `available` is missing.
- *
- * ⚠ The previous version read `p.inventory?.[0]` — an array access
- *   on a singular field. That silently returns `undefined` and
- *   always reports zero stock. This is the fix.
- */
-function readAvailableStock(
-  inventory: ProductSearchRow['inventory'],
-): number {
-  if (!inventory) return 0;
-  if (typeof inventory.available === 'number') {
-    return Math.max(0, inventory.available);
-  }
-  const quantity = inventory.quantity ?? 0;
-  const reserved = inventory.reserved ?? 0;
-  return Math.max(0, quantity - reserved);
-}
-
-/**
- * Normalize a raw search row into the modal's internal shape.
- * Returns `null` for rows without a usable id/name — the caller
- * filters them out.
- */
-function normalizeSearchRow(raw: unknown): QuickProduct | null {
-  if (!raw || typeof raw !== 'object') return null;
-
-  const r = raw as Record<string, unknown>;
-  const id = typeof r.id === 'string' ? r.id : null;
-  const name = typeof r.name === 'string' ? r.name : null;
-
-  if (!id || !name) return null;
-
-  const sku = typeof r.sku === 'string' ? r.sku : '';
-
-  const unitPrice =
-    typeof r.unitPrice === 'number' && Number.isFinite(r.unitPrice)
-      ? r.unitPrice
-      : 0;
-
-  const images = Array.isArray(r.images)
-    ? (r.images as unknown[]).filter(
-        (x): x is string => typeof x === 'string',
-      )
-    : [];
-
-  const inventory =
-    r.inventory && typeof r.inventory === 'object'
-      ? (r.inventory as ProductSearchRow['inventory'])
-      : null;
-
+function normalizeProduct(raw: any): QuickProduct {
   return {
-    id,
-    name,
-    sku,
-    unitPrice,
-    images,
-    availableStock: readAvailableStock(inventory),
+    id: String(raw?.id ?? ''),
+    name: String(raw?.name ?? 'Unnamed product'),
+    sku: String(raw?.sku ?? 'N/A'),
+    unitPrice: Number(raw?.unitPrice ?? raw?.price ?? 0),
+    barcode: raw?.barcode ?? null,
+    images: Array.isArray(raw?.images) ? raw.images : [],
+    category: raw?.category
+      ? {
+          id: String(raw.category.id ?? ''),
+          name: String(raw.category.name ?? ''),
+        }
+      : null,
+    inventory: raw?.inventory
+      ? {
+          quantity: Number(raw.inventory.quantity ?? 0),
+          reserved: Number(raw.inventory.reserved ?? 0),
+          available: Number(raw.inventory.available ?? 0),
+        }
+      : null,
   };
 }
 
@@ -175,436 +138,507 @@ export function QuickProductModal({
   isOpen,
   onClose,
   onSelectProduct,
+  currency,
+  filterCategory,
+  limit = 24,
+  shiftOpen = true,
+  onOpenShiftManager,
+  debounceMs = 250,
 }: QuickProductModalProps) {
-  const [searchQuery, setSearchQuery] = useState('');
+  // ---------- State ----------
   const [products, setProducts] = useState<QuickProduct[]>([]);
-  const [searching, setSearching] = useState(false);
-  const [searchError, setSearchError] = useState<string | null>(null);
-  const [selectedProduct, setSelectedProduct] = useState<QuickProduct | null>(
-    null,
+  const [categories, setCategories] = useState<
+    Array<{ id: string; name: string }>
+  >([]);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  // The text the cashier has typed.
+  const [queryInput, setQueryInput] = useState('');
+  // The text that was actually sent to the server (after debounce).
+  // Used only for display, so we can show "showing results for X"
+  // in the footer if we ever want to.
+  const [debouncedQuery, setDebouncedQuery] = useState('');
+  // Bumping this re-fires the query. Used by the Reload button.
+  const [reloadTick, setReloadTick] = useState(0);
+
+  // In-flight request cancellation.
+  const inFlightRef = useRef<AbortController | null>(null);
+  // Request sequence number. Latest write wins — if two responses
+  // arrive out of order, we only apply the newer one.
+  const requestIdRef = useRef(0);
+
+  // ---------- Format helper ----------
+  const fmt = useCallback(
+    (amount: number): string => formatPosCurrency(amount, currency),
+    [currency],
   );
-  const [quantity, setQuantity] = useState(1);
 
-  const mountedRef = useRef(true);
-  const searchRequestIdRef = useRef(0);
-  const searchInputRef = useRef<HTMLInputElement | null>(null);
-
+  // ---------- Reset local state on close ----------
   useEffect(() => {
-    mountedRef.current = true;
+    if (isOpen) return;
+    setQueryInput('');
+    setDebouncedQuery('');
+    setError(null);
+  }, [isOpen]);
+
+  // ---------- Debounce the query input ----------
+  //
+  // `queryInput` updates on every keystroke. `debouncedQuery`
+  // updates only after the cashier pauses for `debounceMs`. The
+  // query effect below depends on `debouncedQuery`, so it fires
+  // once per pause, not once per character.
+  useEffect(() => {
+    if (!isOpen) return;
+    const trimmed = queryInput.trim();
+    const handle = setTimeout(() => {
+      setDebouncedQuery(trimmed);
+    }, debounceMs);
+    return () => clearTimeout(handle);
+  }, [queryInput, isOpen, debounceMs]);
+
+  // ---------- Fetch categories (once per session) ----------
+  useEffect(() => {
+    if (!isOpen) return;
+    if (categories.length > 0) return;
+
+    let cancelled = false;
+    (async () => {
+      try {
+        const data = await categoryService.getAllCategories({
+          limit: 100,
+          isActive: true,
+        });
+        if (cancelled) return;
+        const normalized = (data ?? []).map((c: any) => ({
+          id: String(c.id),
+          name: String(c.name),
+        }));
+        setCategories(normalized);
+      } catch (err) {
+        // Non-fatal. The query grid still renders.
+        console.warn(
+          '[QuickProductModal] failed to load categories:',
+          err,
+        );
+      }
+    })();
+
     return () => {
-      mountedRef.current = false;
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isOpen]);
+
+  // ---------- The query effect ----------
+  //
+  // This is the heart of the "query for products" behaviour. It
+  // fires when:
+  //   • the modal opens
+  //   • `debouncedQuery` changes (cashier typed and paused)
+  //   • `filterCategory` changes (POS category chip changed)
+  //   • `reloadTick` changes (cashier clicked Reload)
+  //
+  // It cancels any in-flight request before starting a new one, so
+  // an earlier slow response can never overwrite a newer one.
+  useEffect(() => {
+    if (!isOpen) return;
+
+    // Cancel the previous request.
+    if (inFlightRef.current) {
+      inFlightRef.current.abort();
+    }
+    const controller = new AbortController();
+    inFlightRef.current = controller;
+
+    // Sequence number for this request. When the response lands, we
+    // only commit it if we are still the latest request.
+    const requestId = ++requestIdRef.current;
+
+    setLoading(true);
+    setError(null);
+
+    (async () => {
+      try {
+        const category = isActiveFilter(filterCategory)
+          ? filterCategory
+          : undefined;
+
+        const results = await productService.searchProducts({
+          // The service accepts `query`, `category`, `limit`. An
+          // empty query returns the top products for the given
+          // category (or the top overall when category is
+          // undefined).
+          query: debouncedQuery,
+          category,
+          limit,
+        });
+
+        // Only the latest request may commit state.
+        if (requestId !== requestIdRef.current) return;
+
+        const normalized = (results ?? [])
+          .map(normalizeProduct)
+          .filter((p) => p.id);
+        setProducts(normalized);
+      } catch (err: any) {
+        if (requestId !== requestIdRef.current) return;
+
+        // AbortError from a superseded request — not a real error.
+        const name = String(err?.name ?? '');
+        const message = String(err?.message ?? '');
+        if (name === 'AbortError' || name === 'CanceledError') return;
+        if (message.toLowerCase().includes('canceled')) return;
+
+        console.error(
+          '[QuickProductModal] product query failed:',
+          err,
+        );
+        setError(
+          err?.response?.data?.message ??
+            err?.message ??
+            'Failed to load products',
+        );
+        setProducts([]);
+      } finally {
+        if (requestId === requestIdRef.current) {
+          setLoading(false);
+        }
+      }
+    })();
+
+    return () => {
+      controller.abort();
+    };
+  }, [isOpen, debouncedQuery, filterCategory, limit, reloadTick]);
+
+  // ---------- Cleanup on unmount ----------
+  useEffect(() => {
+    return () => {
+      if (inFlightRef.current) inFlightRef.current.abort();
     };
   }, []);
 
-  // ── Reset on open transition ─────────────────────────────
-  //
-  // State persists across open/close cycles unless we clear it.
-  // Resetting on the false → true transition gives the operator a
-  // fresh modal every time.
+  // ---------- Derived ----------
+  const hasActiveQuery =
+    debouncedQuery.length > 0 || isActiveFilter(filterCategory);
 
-  const wasOpenRef = useRef(false);
-  useEffect(() => {
-    const wasOpen = wasOpenRef.current;
-    wasOpenRef.current = isOpen;
-
-    if (isOpen && !wasOpen) {
-      setSearchQuery('');
-      setProducts([]);
-      setSearching(false);
-      setSearchError(null);
-      setSelectedProduct(null);
-      setQuantity(1);
-    }
-  }, [isOpen]);
-
-  // Focus the search input when the modal opens.
-  useEffect(() => {
-    if (!isOpen) return;
-    const t = setTimeout(() => searchInputRef.current?.focus(), 0);
-    return () => clearTimeout(t);
-  }, [isOpen]);
-
-  // ── Search ───────────────────────────────────────────────
-
-  useEffect(() => {
-    if (!isOpen) return;
-
-    const trimmed = searchQuery.trim();
-
-    if (trimmed.length < MIN_QUERY_LENGTH) {
-      setProducts([]);
-      setSearchError(null);
-      setSearching(false);
-      return;
-    }
-
-    const requestId = ++searchRequestIdRef.current;
-    setSearching(true);
-    setSearchError(null);
-
-    const timer = setTimeout(async () => {
-      try {
-        const results = await productService.searchProducts({
-          query: trimmed,
-        });
-
-        // Drop stale responses — a faster subsequent search may
-        // already have resolved.
-        if (requestId !== searchRequestIdRef.current) return;
-        if (!mountedRef.current) return;
-
-        const normalized: QuickProduct[] = (Array.isArray(results)
-          ? results
-          : []
-        )
-          .map(normalizeSearchRow)
-          .filter((x): x is QuickProduct => x !== null);
-
-        setProducts(normalized);
-        setSearching(false);
-      } catch (error) {
-        if (requestId !== searchRequestIdRef.current) return;
-        if (!mountedRef.current) return;
-
-        const message = extractErrorMessage(
-          error,
-          'Failed to search products',
+  // ---------- Handlers ----------
+  const handleSelect = useCallback(
+    (product: QuickProduct) => {
+      if (!shiftOpen) {
+        toast.warning(
+          'Please open a shift before adding products to the cart.',
         );
-        console.error('[QuickProductModal] search failed:', message);
-        setSearchError(message);
-        setProducts([]);
-        setSearching(false);
-      }
-    }, SEARCH_DEBOUNCE_MS);
-
-    return () => clearTimeout(timer);
-  }, [searchQuery, isOpen]);
-
-  // ── Handlers ─────────────────────────────────────────────
-
-  const handleSelectProduct = useCallback((product: QuickProduct) => {
-    setSelectedProduct(product);
-    setQuantity(1);
-  }, []);
-
-  const handleClearSearch = useCallback(() => {
-    setSearchQuery('');
-    searchInputRef.current?.focus();
-  }, []);
-
-  const handleQuantityChange = useCallback(
-    (e: React.ChangeEvent<HTMLInputElement>) => {
-      const parsed = parseInt(e.target.value, 10);
-      if (!Number.isFinite(parsed)) {
-        setQuantity(1);
         return;
       }
-      setQuantity(Math.max(1, Math.min(MAX_QUANTITY, parsed)));
+      onSelectProduct(product);
     },
-    [],
+    [onSelectProduct, shiftOpen],
   );
 
-  const handleAddProduct = useCallback(() => {
-    if (!selectedProduct) return;
+  const handleReload = useCallback(() => {
+    setReloadTick((n) => n + 1);
+  }, []);
 
-    if (selectedProduct.availableStock <= 0) {
-      toast.warning('This product is out of stock');
-      return;
-    }
+  const handleClearQuery = useCallback(() => {
+    setQueryInput('');
+    // No need to set `debouncedQuery` here — the debounce effect
+    // will run and update it on the next tick. This avoids a
+    // double-fetch: one from the explicit clear, one from the
+    // debounce.
+  }, []);
 
-    if (quantity > selectedProduct.availableStock) {
-      toast.warning(
-        `Only ${selectedProduct.availableStock} available`,
-      );
-      return;
-    }
-
-    onSelectProduct({ ...selectedProduct, quantity });
-    // Parent owns what happens next; close the modal for consistency
-    // with the other modals in this folder.
-    onClose();
-  }, [selectedProduct, quantity, onSelectProduct, onClose]);
-
-  // ── Render ───────────────────────────────────────────────
+  const handleKeyDown = useCallback(
+    (e: React.KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        e.preventDefault();
+        onClose();
+      }
+      if (e.key === 'Enter' && products.length === 1 && shiftOpen) {
+        e.preventDefault();
+        handleSelect(products[0]);
+      }
+    },
+    [onClose, handleSelect, products, shiftOpen],
+  );
 
   if (!isOpen) return null;
 
-  const trimmedQuery = searchQuery.trim();
-  const showEmptySearch = trimmedQuery.length < MIN_QUERY_LENGTH;
-  const showNoResults =
-    !showEmptySearch && !searching && products.length === 0 && !searchError;
-
+  // ---------- Render ----------
   return (
     <div
       className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4"
       role="dialog"
       aria-modal="true"
-      aria-labelledby="quick-product-title"
-      onClick={onClose}
+      aria-labelledby="quick-product-modal-title"
+      onKeyDown={handleKeyDown}
     >
-      <div
-        className="bg-white dark:bg-gray-800 rounded-xl w-full max-w-lg max-h-[80vh] flex flex-col shadow-2xl"
-        onClick={(e) => e.stopPropagation()}
-      >
+      <div className="bg-white dark:bg-gray-800 rounded-xl w-full max-w-3xl max-h-[90vh] flex flex-col shadow-2xl border border-gray-200 dark:border-gray-700">
         {/* Header */}
-        <div className="p-6 border-b border-gray-200 dark:border-gray-700 flex items-center justify-between flex-shrink-0">
-          <div>
+        <div className="flex items-center justify-between p-4 border-b border-gray-200 dark:border-gray-700 flex-shrink-0">
+          <div className="min-w-0">
             <h2
-              id="quick-product-title"
-              className="text-xl font-bold text-gray-900 dark:text-white flex items-center gap-2"
+              id="quick-product-modal-title"
+              className="text-lg font-bold text-gray-900 dark:text-white flex items-center gap-2"
             >
-              <Package className="w-5 h-5 text-green-500" aria-hidden="true" />
+              <Package
+                className="w-5 h-5 text-green-500"
+                aria-hidden="true"
+              />
               Quick Product
             </h2>
             <p className="text-sm text-gray-500 dark:text-gray-400">
-              Search and add products quickly
+              {shiftOpen
+                ? 'Search the catalog and add a product to the sale.'
+                : 'Open a shift to add products.'}
             </p>
           </div>
-          <button
-            type="button"
-            onClick={onClose}
-            aria-label="Close"
-            className="p-2 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-colors focus-ring"
-          >
-            <X className="w-5 h-5 text-gray-500" aria-hidden="true" />
-          </button>
+          <div className="flex items-center gap-1">
+            <button
+              type="button"
+              onClick={handleReload}
+              disabled={loading}
+              className="p-2 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-colors disabled:opacity-50"
+              title="Refresh results"
+              aria-label="Refresh results"
+            >
+              <RefreshCw
+                className={`w-4 h-4 text-gray-500 ${
+                  loading ? 'animate-spin' : ''
+                }`}
+              />
+            </button>
+            <button
+              type="button"
+              onClick={onClose}
+              className="p-2 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-colors"
+              aria-label="Close"
+            >
+              <X className="w-5 h-5 text-gray-500" />
+            </button>
+          </div>
         </div>
 
-        {/* Search */}
-        <div className="p-6 border-b border-gray-200 dark:border-gray-700 flex-shrink-0">
-          <div className="relative">
-            <Search
-              className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 w-5 h-5 pointer-events-none"
+        {/* Shift banner */}
+        {!shiftOpen && (
+          <div
+            role="alert"
+            className="mx-4 mt-4 p-3 rounded-lg bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-800 text-sm text-yellow-800 dark:text-yellow-300 flex items-start gap-2 flex-shrink-0"
+          >
+            <AlertCircle
+              className="w-4 h-4 flex-shrink-0 mt-0.5"
               aria-hidden="true"
             />
-            <input
-              ref={searchInputRef}
-              type="search"
-              placeholder="Search by name or SKU…"
-              aria-label="Search products"
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              autoComplete="off"
-              className="w-full pl-10 pr-10 py-2.5 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white dark:bg-gray-700 text-gray-900 dark:text-white placeholder-gray-400 dark:placeholder-gray-500 focus:outline-none"
-              autoFocus
-            />
-            {searchQuery && (
+            <div className="flex-1">
+              <p className="font-medium">No shift is open.</p>
+              <p className="mt-0.5 text-yellow-700 dark:text-yellow-400">
+                Sales can&apos;t be recorded until you open a shift.
+              </p>
+            </div>
+            {onOpenShiftManager && (
               <button
                 type="button"
-                onClick={handleClearSearch}
-                aria-label="Clear search"
-                className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 focus-ring rounded"
+                onClick={() => {
+                  onClose();
+                  onOpenShiftManager();
+                }}
+                className="px-3 py-1 rounded bg-yellow-200 dark:bg-yellow-800 hover:bg-yellow-300 dark:hover:bg-yellow-700 font-medium transition-colors whitespace-nowrap"
               >
-                <X className="w-4 h-4" aria-hidden="true" />
+                Open Shift
               </button>
             )}
           </div>
+        )}
+
+        {/* Query bar */}
+        <div className="p-4 border-b border-gray-200 dark:border-gray-700 flex-shrink-0">
+          <div className="relative">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400 pointer-events-none" />
+            <input
+              type="text"
+              value={queryInput}
+              onChange={(e) => setQueryInput(e.target.value)}
+              placeholder="Search products by name, SKU, or barcode…"
+              autoFocus
+              autoComplete="off"
+              className="w-full pl-9 pr-20 py-2.5 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white dark:bg-gray-700 text-gray-900 dark:text-white text-sm"
+            />
+            {loading && (
+              <div className="absolute right-10 top-1/2 -translate-y-1/2">
+                <Loader2
+                  className="w-4 h-4 text-blue-500 animate-spin"
+                  aria-hidden="true"
+                />
+              </div>
+            )}
+            {queryInput && (
+              <button
+                type="button"
+                onClick={handleClearQuery}
+                className="absolute right-2 top-1/2 -translate-y-1/2 p-1.5 hover:bg-gray-100 dark:hover:bg-gray-600 rounded"
+                aria-label="Clear search"
+              >
+                <X className="w-4 h-4 text-gray-400" />
+              </button>
+            )}
+          </div>
+          {isActiveFilter(filterCategory) && (
+            <p className="mt-2 text-xs text-gray-500 dark:text-gray-400">
+              Filtered by category. Clear the category chip in the POS
+              to see all products.
+            </p>
+          )}
         </div>
 
-        {/* Results — `min-h-0` so the flex item shrinks when the
-            selected-product footer appears. */}
-        <div className="flex-1 min-h-0 overflow-y-auto p-6">
-          {searching ? (
-            <div className="flex items-center justify-center py-12">
-              <Loader2
-                className="w-8 h-8 text-blue-500 animate-spin"
-                aria-hidden="true"
-              />
-              <span className="ml-2 text-gray-500 dark:text-gray-400">
-                Searching…
-              </span>
+        {/* Results */}
+        <div className="flex-1 overflow-y-auto p-4">
+          {loading && products.length === 0 ? (
+            <div className="flex flex-col items-center justify-center py-12 text-gray-500">
+              <Loader2 className="w-8 h-8 animate-spin" />
+              <p className="mt-2 text-sm">Searching products…</p>
             </div>
-          ) : searchError ? (
+          ) : error ? (
             <div
               role="alert"
-              className="flex items-start gap-2 rounded-lg bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 p-3 text-sm text-red-700 dark:text-red-300"
+              className="flex items-start gap-2 text-sm text-red-700 dark:text-red-300 bg-red-50 dark:bg-red-900/20 rounded-lg px-3 py-2"
             >
               <AlertCircle
                 className="w-4 h-4 flex-shrink-0 mt-0.5"
                 aria-hidden="true"
               />
-              <p className="flex-1">{searchError}</p>
-            </div>
-          ) : products.length > 0 ? (
-            <div className="space-y-2" role="list">
-              {products.map((product) => (
-                <ProductResultItem
-                  key={product.id}
-                  product={product}
-                  isSelected={selectedProduct?.id === product.id}
-                  onSelect={() => handleSelectProduct(product)}
-                />
-              ))}
-            </div>
-          ) : showNoResults ? (
-            <div className="text-center py-12">
-              <Package
-                className="w-12 h-12 text-gray-300 dark:text-gray-600 mx-auto mb-2"
-                aria-hidden="true"
-              />
-              <p className="text-gray-500 dark:text-gray-400">
-                No products found
-              </p>
-            </div>
-          ) : showEmptySearch ? (
-            <div className="text-center py-12 text-gray-400 dark:text-gray-500">
-              <ShoppingBag
-                className="w-12 h-12 mx-auto mb-2 opacity-50"
-                aria-hidden="true"
-              />
-              <p>
-                Type at least {MIN_QUERY_LENGTH} characters to search
-              </p>
-            </div>
-          ) : null}
-        </div>
-
-        {/* Selected product actions */}
-        {selectedProduct && (
-          <div className="p-6 border-t border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800/50 flex-shrink-0">
-            <div className="flex items-center gap-4 flex-wrap">
-              <div className="flex-1 min-w-0">
-                <p className="font-medium text-gray-900 dark:text-white truncate">
-                  {selectedProduct.name}
-                </p>
-                <p className="text-sm text-gray-500 dark:text-gray-400 tabular-nums">
-                  {formatCurrency(selectedProduct.unitPrice)} · SKU:{' '}
-                  {selectedProduct.sku || '—'}
-                </p>
-                <p className="text-xs text-gray-500 dark:text-gray-400 tabular-nums">
-                  Available: {selectedProduct.availableStock}
-                </p>
-              </div>
-              <div className="flex items-center gap-2">
-                <label
-                  htmlFor="quick-product-quantity"
-                  className="text-sm text-gray-600 dark:text-gray-400"
+              <div className="flex-1">
+                <p>{error}</p>
+                <button
+                  type="button"
+                  onClick={handleReload}
+                  className="mt-2 underline text-xs"
                 >
-                  Qty:
-                </label>
-                <input
-                  id="quick-product-quantity"
-                  type="number"
-                  min={1}
-                  max={Math.min(
-                    MAX_QUANTITY,
-                    Math.max(1, selectedProduct.availableStock),
-                  )}
-                  value={quantity}
-                  onChange={handleQuantityChange}
-                  className="w-16 px-2 py-1 border border-gray-300 dark:border-gray-600 rounded-lg text-center focus:ring-2 focus:ring-blue-500 focus:outline-none bg-white dark:bg-gray-700 text-gray-900 dark:text-white tabular-nums"
-                />
+                  Try again
+                </button>
               </div>
-              <button
-                type="button"
-                onClick={handleAddProduct}
-                disabled={selectedProduct.availableStock <= 0}
-                className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed focus-ring"
-              >
-                <Plus className="w-4 h-4" aria-hidden="true" />
-                Add
-              </button>
             </div>
-          </div>
-        )}
-      </div>
-    </div>
-  );
-}
-
-// ============================================
-// PRODUCT RESULT ITEM
-// ============================================
-
-interface ProductResultItemProps {
-  product: QuickProduct;
-  isSelected: boolean;
-  onSelect: () => void;
-}
-
-function ProductResultItem({
-  product,
-  isSelected,
-  onSelect,
-}: ProductResultItemProps) {
-  const availableStock = product.availableStock;
-  const isOutOfStock = availableStock === 0;
-  const isLowStock = !isOutOfStock && availableStock <= LOW_STOCK_THRESHOLD;
-
-  const stockLabel = isOutOfStock
-    ? 'Out of Stock'
-    : isLowStock
-    ? `${availableStock} left`
-    : `${availableStock} in stock`;
-
-  const stockClass = isOutOfStock
-    ? 'text-red-500'
-    : isLowStock
-    ? 'text-yellow-500'
-    : 'text-green-500';
-
-  return (
-    <button
-      type="button"
-      role="listitem"
-      onClick={onSelect}
-      aria-pressed={isSelected}
-      className={`w-full p-3 border rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 cursor-pointer transition-colors flex items-center justify-between text-left focus-ring ${
-        isSelected
-          ? 'bg-blue-50 dark:bg-blue-900/20 border-blue-400 dark:border-blue-600'
-          : 'border-gray-200 dark:border-gray-700'
-      }`}
-    >
-      <div className="flex items-center gap-3 min-w-0">
-        <div className="w-10 h-10 bg-gray-100 dark:bg-gray-700 rounded-lg flex items-center justify-center flex-shrink-0">
-          {product.images[0] ? (
-            <img
-              src={product.images[0]}
-              alt=""
-              aria-hidden="true"
-              className="w-full h-full object-cover rounded-lg"
-              loading="lazy"
-              onError={(e) => {
-                // Hide the broken image so the placeholder icon
-                // underneath shows through.
-                e.currentTarget.style.display = 'none';
-              }}
-            />
+          ) : products.length === 0 ? (
+            <div className="text-center py-12 text-gray-500 dark:text-gray-400">
+              <Package className="w-12 h-12 mx-auto mb-2 text-gray-300" />
+              <p className="text-sm font-medium">
+                {hasActiveQuery
+                  ? 'No products match your search.'
+                  : 'No products available.'}
+              </p>
+              {hasActiveQuery && (
+                <p className="mt-1 text-xs text-gray-400">
+                  Try a different term, or clear the filters.
+                </p>
+              )}
+            </div>
           ) : (
-            <Package
-              className="w-5 h-5 text-gray-500 dark:text-gray-400"
-              aria-hidden="true"
-            />
+            <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+              {products.map((product) => {
+                const available =
+                  product.inventory?.available ??
+                  product.inventory?.quantity ??
+                  null;
+                const outOfStock = available !== null && available <= 0;
+                const cardDisabled = !shiftOpen || outOfStock;
+                const imageSource = getPosImageSource(product.images?.[0]);
+
+                return (
+                  <button
+                    key={product.id}
+                    type="button"
+                    onClick={() => handleSelect(product)}
+                    disabled={cardDisabled}
+                    title={
+                      !shiftOpen
+                        ? 'Open a shift first'
+                        : outOfStock
+                          ? 'Out of stock'
+                          : undefined
+                    }
+                    className="text-left p-3 border border-gray-200 dark:border-gray-700 rounded-lg hover:border-blue-400 hover:shadow-md transition-all disabled:opacity-50 disabled:cursor-not-allowed group"
+                  >
+                    <div className="w-full h-20 bg-gray-100 dark:bg-gray-700 rounded flex items-center justify-center overflow-hidden mb-2">
+                      {imageSource ? (
+                        // eslint-disable-next-line @next/next/no-img-element
+                        <img
+                          src={imageSource}
+                          alt={product.name}
+                          className="w-full h-full object-cover"
+                        />
+                      ) : (
+                        <Package
+                          className="w-8 h-8 text-gray-400"
+                          aria-hidden="true"
+                        />
+                      )}
+                    </div>
+                    <p className="text-sm font-medium text-gray-900 dark:text-white truncate">
+                      {product.name}
+                    </p>
+                    <p className="text-xs text-gray-500 dark:text-gray-400 truncate">
+                      SKU: {product.sku}
+                    </p>
+                    <p
+                      className="text-xs text-gray-500 dark:text-gray-400 truncate"
+                      title={product.barcode ? `Barcode: ${product.barcode}` : 'No barcode assigned'}
+                    >
+                      Barcode: {product.barcode || 'Not assigned'}
+                    </p>
+                    <div className="flex items-center justify-between mt-2">
+                      <span className="text-sm font-bold text-gray-900 dark:text-white tabular-nums">
+                        {fmt(product.unitPrice)}
+                      </span>
+                      {available !== null && (
+                        <span
+                          className={`text-[10px] px-1.5 py-0.5 rounded ${
+                            outOfStock
+                              ? 'bg-red-100 dark:bg-red-900/40 text-red-700 dark:text-red-300'
+                              : available <= 10
+                                ? 'bg-yellow-100 dark:bg-yellow-900/40 text-yellow-700 dark:text-yellow-300'
+                                : 'bg-green-100 dark:bg-green-900/40 text-green-700 dark:text-green-300'
+                          }`}
+                        >
+                          {available}
+                        </span>
+                      )}
+                    </div>
+                    {!cardDisabled && (
+                      <div className="mt-2 flex items-center justify-center gap-1 text-xs text-blue-600 dark:text-blue-400 opacity-0 group-hover:opacity-100 transition-opacity">
+                        <Plus className="w-3 h-3" aria-hidden="true" />
+                        <span>Add to cart</span>
+                      </div>
+                    )}
+                  </button>
+                );
+              })}
+            </div>
           )}
         </div>
-        <div className="min-w-0">
-          <p className="font-medium text-gray-900 dark:text-white truncate">
-            {product.name}
-          </p>
-          <div className="flex flex-wrap items-center gap-2 text-sm text-gray-500 dark:text-gray-400">
-            <span className="truncate">
-              SKU: {product.sku || '—'}
-            </span>
-            <span className="text-xs text-gray-400" aria-hidden="true">
-              |
-            </span>
-            <span className={`tabular-nums ${stockClass}`}>
-              {stockLabel}
-            </span>
-          </div>
+
+        {/* Footer */}
+        <div className="p-4 border-t border-gray-200 dark:border-gray-700 flex justify-between items-center flex-shrink-0">
+          <span className="text-xs text-gray-500 dark:text-gray-400">
+            {loading
+              ? 'Searching…'
+              : `${products.length} product${
+                  products.length === 1 ? '' : 's'
+                }`}
+            {debouncedQuery && !loading && (
+              <> · for “{debouncedQuery}”</>
+            )}
+            {!shiftOpen && ' · read-only until a shift is open'}
+          </span>
+          <button
+            type="button"
+            onClick={onClose}
+            className="px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors text-sm"
+          >
+            Close
+          </button>
         </div>
       </div>
-      <div className="text-right flex-shrink-0 ml-3">
-        <p className="font-bold text-gray-900 dark:text-white tabular-nums">
-          {formatCurrency(product.unitPrice)}
-        </p>
-        {isSelected && (
-          <span className="text-xs text-blue-600 dark:text-blue-400">
-            Selected
-          </span>
-        )}
-      </div>
-    </button>
+    </div>
   );
 }
 

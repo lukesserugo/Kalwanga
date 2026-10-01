@@ -14,7 +14,6 @@ import {
   Loader2,
   Receipt as ReceiptIcon,
   Calendar,
-  DollarSign,
   User,
   Check,
   AlertCircle,
@@ -25,17 +24,9 @@ import {
 import { saleService } from '../../../services/saleService';
 import type { Sale } from '../../../types/sale';
 import { toast } from '../../../utils/toast-manager';
-import { formatCurrency, formatDate } from '../../../utils/formatters';
+import { formatDate } from '../../../utils/formatters';
+import { formatPosCurrency, pickPosCurrency } from './posDisplay';
 
-// ============================================
-// TYPES
-// ============================================
-
-/**
- * What this modal displays for each search result. Derived from the
- * canonical `Sale` (or whatever `saleService.getSaleByReceiptNumber`
- * and `saleService.getAllSales` return) via `normalizeReceiptRow`.
- */
 interface ReceiptRow {
   id: string;
   receiptNumber: string;
@@ -43,31 +34,25 @@ interface ReceiptRow {
   customerName: string;
   total: number;
   createdAt: string;
-  /** Derived from the sale status. */
   status: 'issued' | 'printed' | 'sent' | 'voided';
+  /** ISO 4217 ledger currency for this receipt. Optional. */
+  currency?: string;
 }
 
 export interface ReprintReceiptModalProps {
   isOpen: boolean;
   onClose: () => void;
-  /**
-   * Called with the receipt number of the row the operator selected.
-   * The parent is responsible for fetching the sale, opening the
-   * print dialog, and marking the receipt as printed if applicable.
-   */
   onReprint: (receiptNumber: string) => void | Promise<void>;
+  /**
+   * Optional ISO 4217 fallback currency supplied by the POS parent.
+   * Used only when a search result payload doesn't carry one of its
+   * own. Never hardcode.
+   */
+  currency?: string;
 }
-
-// ============================================
-// CONSTANTS
-// ============================================
 
 const MIN_QUERY_LENGTH = 2;
 const SEARCH_DEBOUNCE_MS = 300;
-
-// ============================================
-// HELPERS
-// ============================================
 
 function extractErrorMessage(error: unknown, fallback: string): string {
   if (!error) return fallback;
@@ -89,18 +74,6 @@ function extractErrorMessage(error: unknown, fallback: string): string {
   return fallback;
 }
 
-/**
- * Map a sale row returned by the API into the row shape this modal
- * renders. Handles the two shapes the search endpoint may return:
- *
- *   1. A single sale by receipt number (from
- *      `saleService.getSaleByReceiptNumber`).
- *   2. A paginated list of sales whose receipt numbers or customer
- *      names match the query (from `saleService.getAllSales`).
- *
- * Both carry the same `Sale`-shaped fields; this function reads them
- * defensively and returns `null` when the row lacks a receipt number.
- */
 function normalizeReceiptRow(raw: unknown): ReceiptRow | null {
   if (!raw || typeof raw !== 'object') return null;
 
@@ -114,9 +87,6 @@ function normalizeReceiptRow(raw: unknown): ReceiptRow | null {
 
   if (!id || !receiptNumber) return null;
 
-  // Customer name — prefer a pre-formatted `customerName` if the
-  // backend computed one, else fall back to composing from the
-  // relation.
   let customerName = 'Guest';
   if (typeof r.customerName === 'string' && r.customerName.length > 0) {
     customerName = r.customerName;
@@ -131,9 +101,6 @@ function normalizeReceiptRow(raw: unknown): ReceiptRow | null {
   const total =
     typeof r.total === 'number' && Number.isFinite(r.total) ? r.total : 0;
 
-  // The wire format carries ISO strings for `saleDate` and
-  // `createdAt`. Prefer `saleDate` (the business date) but fall back
-  // to `createdAt` when it's absent.
   const dateValue =
     typeof r.saleDate === 'string'
       ? r.saleDate
@@ -142,18 +109,17 @@ function normalizeReceiptRow(raw: unknown): ReceiptRow | null {
       : null;
   const createdAt = dateValue ?? new Date().toISOString();
 
-  // Status: the sale's `status` column drives the badge. Voided and
-  // refunded sales are not reprintable as the original receipt.
   const rawStatus =
     typeof r.status === 'string' ? r.status.toUpperCase() : '';
   let status: ReceiptRow['status'] = 'issued';
-  if (rawStatus === 'VOID' || rawStatus === 'CANCELLED' || rawStatus === 'DELETED') {
+  if (
+    rawStatus === 'VOID' ||
+    rawStatus === 'CANCELLED' ||
+    rawStatus === 'DELETED'
+  ) {
     status = 'voided';
   }
 
-  // The `receipt` relation, if present, carries its own status:
-  // `printed` when a physical print has happened, `sent` when it was
-  // emailed. Prefer it over the sale status when available.
   if (r.receipt && typeof r.receipt === 'object') {
     const rec = r.receipt as Record<string, unknown>;
     const recStatus =
@@ -161,6 +127,16 @@ function normalizeReceiptRow(raw: unknown): ReceiptRow | null {
     if (recStatus === 'PRINTED') status = 'printed';
     else if (recStatus === 'SENT' || recStatus === 'EMAILED') status = 'sent';
   }
+
+  const payment = Array.isArray(r.payments)
+    ? (r.payments[0] as Record<string, unknown> | undefined)
+    : undefined;
+
+  const currency = pickPosCurrency(
+    r.currency,
+    payment?.currency,
+    payment?.displayCurrency,
+  );
 
   return {
     id,
@@ -170,17 +146,15 @@ function normalizeReceiptRow(raw: unknown): ReceiptRow | null {
     total,
     createdAt,
     status,
+    currency,
   };
 }
-
-// ============================================
-// COMPONENT
-// ============================================
 
 export function ReprintReceiptModal({
   isOpen,
   onClose,
   onReprint,
+  currency: currencyProp,
 }: ReprintReceiptModalProps) {
   const [searchQuery, setSearchQuery] = useState('');
   const [receipts, setReceipts] = useState<ReceiptRow[]>([]);
@@ -202,12 +176,6 @@ export function ReprintReceiptModal({
     };
   }, []);
 
-  // ── Reset on open transition ─────────────────────────────
-  //
-  // State persists across open/close cycles unless we clear it.
-  // Resetting on the false → true transition gives the operator a
-  // fresh modal every time.
-
   const wasOpenRef = useRef(false);
   useEffect(() => {
     const wasOpen = wasOpenRef.current;
@@ -223,25 +191,21 @@ export function ReprintReceiptModal({
     }
   }, [isOpen]);
 
-  // Focus the search input when the modal opens.
   useEffect(() => {
     if (!isOpen) return;
     const t = setTimeout(() => searchInputRef.current?.focus(), 0);
     return () => clearTimeout(t);
   }, [isOpen]);
 
-  // ── Search ───────────────────────────────────────────────
-  //
-  // Two paths:
-  //
-  //   1. Exact receipt-number match: call
-  //      `saleService.getSaleByReceiptNumber`. This is the common
-  //      reprint case (the customer hands over a receipt, the
-  //      operator scans or types the number).
-  //
-  //   2. Fallback: call `saleService.getAllSales` with `search` to
-  //      find sales whose receipt number, customer, or notes match
-  //      the query. Used when the operator is searching by name.
+  const listCurrency = pickPosCurrency(
+    receipts[0]?.currency,
+    currencyProp,
+  );
+
+  const selectedCurrency = pickPosCurrency(
+    selectedReceipt?.currency,
+    listCurrency,
+  );
 
   const searchReceipts = useCallback(async (query: string): Promise<void> => {
     const trimmed = query.trim();
@@ -252,10 +216,6 @@ export function ReprintReceiptModal({
     setSearchError(null);
 
     try {
-      // Exact receipt-number lookup first. If the query looks like a
-      // receipt number (starts with letters/digits and has no
-      // spaces), try it directly — this is the common case and it's
-      // cheaper than a list search.
       const looksLikeReceiptNumber = !trimmed.includes(' ');
 
       let rows: ReceiptRow[] = [];
@@ -266,8 +226,6 @@ export function ReprintReceiptModal({
           const normalized = normalizeReceiptRow(sale);
           if (normalized) rows = [normalized];
         } catch (err) {
-          // 404 is expected when the query doesn't match a receipt
-          // number exactly — fall through to the list search.
           const status = (err as any)?.response?.status;
           if (status !== 404) {
             throw err;
@@ -275,7 +233,6 @@ export function ReprintReceiptModal({
         }
       }
 
-      // If the exact lookup found nothing, search the sales list.
       if (rows.length === 0) {
         const result = await saleService.getAllSales({
           search: trimmed,
@@ -308,8 +265,6 @@ export function ReprintReceiptModal({
     }
   }, []);
 
-  // Auto-search on input change with a debounce. Matches the
-  // pattern used by the other search modals.
   useEffect(() => {
     if (!isOpen) return;
 
@@ -328,8 +283,6 @@ export function ReprintReceiptModal({
     return () => clearTimeout(timer);
   }, [searchQuery, isOpen, searchReceipts]);
 
-  // ── Handlers ─────────────────────────────────────────────
-
   const handleSelectReceipt = useCallback((receipt: ReceiptRow) => {
     setSelectedReceipt(receipt);
   }, []);
@@ -344,7 +297,9 @@ export function ReprintReceiptModal({
   const handleReprint = useCallback(async () => {
     if (!selectedReceipt) return;
     if (selectedReceipt.status === 'voided') {
-      toast.error('This receipt belongs to a voided sale and cannot be reprinted');
+      toast.error(
+        'This receipt belongs to a voided sale and cannot be reprinted',
+      );
       return;
     }
     if (reprinting) return;
@@ -367,8 +322,6 @@ export function ReprintReceiptModal({
     }
   }, [selectedReceipt, reprinting, onReprint, onClose]);
 
-  // ── Keyboard: Escape closes, Enter triggers reprint ──────
-
   useEffect(() => {
     if (!isOpen) return;
 
@@ -382,8 +335,6 @@ export function ReprintReceiptModal({
     document.addEventListener('keydown', handler);
     return () => document.removeEventListener('keydown', handler);
   }, [isOpen, reprinting, onClose]);
-
-  // ── Render ───────────────────────────────────────────────
 
   if (!isOpen) return null;
 
@@ -404,7 +355,6 @@ export function ReprintReceiptModal({
         className="bg-white dark:bg-gray-800 rounded-xl w-full max-w-lg max-h-[80vh] flex flex-col shadow-2xl border border-gray-200 dark:border-gray-700"
         onClick={(e) => e.stopPropagation()}
       >
-        {/* Header */}
         <div className="p-6 border-b border-gray-200 dark:border-gray-700 flex items-center justify-between flex-shrink-0">
           <div>
             <h2
@@ -432,7 +382,6 @@ export function ReprintReceiptModal({
           </button>
         </div>
 
-        {/* Search */}
         <div className="p-6 border-b border-gray-200 dark:border-gray-700 flex-shrink-0">
           <div className="relative">
             <Search
@@ -463,7 +412,6 @@ export function ReprintReceiptModal({
           </div>
         </div>
 
-        {/* Results */}
         <div className="flex-1 min-h-0 overflow-y-auto p-6">
           {searching ? (
             <div className="flex items-center justify-center py-12">
@@ -494,6 +442,7 @@ export function ReprintReceiptModal({
                   receipt={receipt}
                   isSelected={selectedReceipt?.id === receipt.id}
                   onSelect={() => handleSelectReceipt(receipt)}
+                  currency={pickPosCurrency(receipt.currency, listCurrency)}
                 />
               ))}
             </div>
@@ -523,7 +472,6 @@ export function ReprintReceiptModal({
           ) : null}
         </div>
 
-        {/* Selected receipt actions */}
         {selectedReceipt && (
           <div className="p-6 border-t border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800/50 flex-shrink-0">
             <div className="flex items-center justify-between gap-3 flex-wrap">
@@ -540,11 +488,7 @@ export function ReprintReceiptModal({
                     {selectedReceipt.customerName}
                   </span>
                   <span className="flex items-center gap-1 tabular-nums">
-                    <DollarSign
-                      className="w-3 h-3 flex-shrink-0"
-                      aria-hidden="true"
-                    />
-                    {formatCurrency(selectedReceipt.total)}
+                    {formatPosCurrency(selectedReceipt.total, selectedCurrency)}
                   </span>
                   <span className="flex items-center gap-1 tabular-nums">
                     <Clock
@@ -579,14 +523,11 @@ export function ReprintReceiptModal({
   );
 }
 
-// ============================================
-// RECEIPT RESULT ITEM
-// ============================================
-
 interface ReceiptResultItemProps {
   receipt: ReceiptRow;
   isSelected: boolean;
   onSelect: () => void;
+  currency?: string;
 }
 
 function getStatusBadgeClasses(status: ReceiptRow['status']): string {
@@ -607,11 +548,11 @@ function ReceiptResultItem({
   receipt,
   isSelected,
   onSelect,
+  currency,
 }: ReceiptResultItemProps) {
   return (
     <button
       type="button"
-      role="listitem"
       onClick={onSelect}
       aria-pressed={isSelected}
       className={`w-full p-3 border rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 cursor-pointer transition-colors flex items-center justify-between text-left focus-ring ${
@@ -643,11 +584,7 @@ function ReceiptResultItem({
             {receipt.customerName}
           </span>
           <span className="flex items-center gap-1 tabular-nums">
-            <DollarSign
-              className="w-3 h-3 flex-shrink-0"
-              aria-hidden="true"
-            />
-            {formatCurrency(receipt.total)}
+            {formatPosCurrency(receipt.total, currency)}
           </span>
           <span className="flex items-center gap-1 tabular-nums">
             <Calendar

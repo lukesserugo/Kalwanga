@@ -2,21 +2,6 @@
 
 'use client';
 
-// ============================================
-// PHONE NUMBER INPUT
-// ============================================
-//
-// A phone field wired for mobile-money flows. Auto-focuses when
-// `autoFocus` is set, exposes a ref for the parent to focus
-// programmatically, and shows an inline validity hint when the
-// selected mobile provider expects a specific format.
-//
-// ⚠ Emptiness is NOT validated here. When `required` is set, the
-//   native browser `required` attribute on the `<input>` produces
-//   the standard "Please fill out this field" message. Callers that
-//   want a custom empty-message should render one alongside this
-//   component (or gate submission on their own check).
-
 import { forwardRef, useMemo } from 'react';
 import { Smartphone, AlertCircle, Check } from 'lucide-react';
 import { useThemeStore } from '../../app/stores/themeStore';

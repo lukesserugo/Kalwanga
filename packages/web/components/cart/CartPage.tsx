@@ -115,10 +115,42 @@ interface CartAdapter {
 }
 
 /**
+ * ── Phase 2: default currency for guest carts. ────────────────
+ *
+ * The guest cart backend endpoints (`/cart/guest/*`) were NOT
+ * updated to carry `currency` / `currencySymbol`. See the Phase 2
+ * gap note on `GuestCart` in `services/guestCartService.ts`.
+ *
+ * When `normalizeGuestCart` maps a `GuestCart` into the canonical
+ * `Cart` shape, it must fill in the two currency fields somehow.
+ * This constant is that filler.
+ *
+ * ⚠ `'UGX'` is the registry default (`DEFAULT_CURRENCY_CODE` in
+ *   `lib/currencies.ts`). It is correct for the current target
+ *   deployment. On a KES / GHS / NGN deployment, a guest cart
+ *   will render amounts in UGX until the guest logs in and the
+ *   guest cart is merged into an authenticated cart — at which
+ *   point the merge produces a real `Cart` with the correct
+ *   currency.
+ *
+ *   The correct fix is to mirror the Phase 2 change on the guest
+ *   backend path: resolve currency in the guest cart controller
+ *   and surface it on the response. When that lands, replace this
+ *   constant with `guest.currency ?? DEFAULT_GUEST_CURRENCY`.
+ */
+const DEFAULT_GUEST_CURRENCY = 'UGX';
+
+/**
  * Normalize a `GuestCart | null` into the `Cart` shape the page
- * expects. `GuestCart` is missing `itemCount` and may be missing
- * other backend-authored fields; we compute what we can and fill the
- * rest with safe defaults.
+ * expects. `GuestCart` is missing `itemCount`, `currency`, and
+ * `currencySymbol`; we compute what we can and fill the rest with
+ * safe defaults.
+ *
+ * ⚠ Phase 2: `currency` and `currencySymbol` are filled with
+ *   `DEFAULT_GUEST_CURRENCY` because the guest cart backend path
+ *   does not yet surface a resolved currency. See the constant's
+ *   JSDoc. Once the guest backend is updated, prefer
+ *   `guest.currency ?? DEFAULT_GUEST_CURRENCY` here.
  */
 function normalizeGuestCart(guest: any): Cart | null {
   if (!guest) return null;
@@ -131,6 +163,20 @@ function normalizeGuestCart(guest: any): Cart | null {
           (sum: number, item: any) => sum + (item.quantity ?? 0),
           0,
         );
+
+  // ── Phase 2: resolve currency with an explicit fallback ──
+  // The guest backend does not currently send a currency. Prefer
+  // `guest.currency` when present (forward compatibility with a
+  // future backend change) and fall back to the default otherwise.
+  const currency =
+    typeof guest.currency === 'string' && guest.currency.length > 0
+      ? guest.currency
+      : DEFAULT_GUEST_CURRENCY;
+  const currencySymbol =
+    typeof guest.currencySymbol === 'string' &&
+    guest.currencySymbol.length > 0
+      ? guest.currencySymbol
+      : currency;
 
   return {
     id: guest.id ?? '',
@@ -151,9 +197,14 @@ function normalizeGuestCart(guest: any): Cart | null {
     promotionDiscount: guest.promotionDiscount,
     loyaltyPointsUsed: guest.loyaltyPointsUsed,
     loyaltyDiscount: guest.loyaltyDiscount,
+    // ── Phase 2: required currency fields ────────────────
+    // See the constant JSDoc above for why this is a
+    // hardcoded default rather than `guest.currency`.
+    currency,
+    currencySymbol,
     createdAt: guest.createdAt ?? new Date().toISOString(),
     updatedAt: guest.updatedAt ?? new Date().toISOString(),
-  } as Cart;
+  };
 }
 
 function makeAuthenticatedAdapter(): CartAdapter {
@@ -545,6 +596,14 @@ export function CartPage({ className = '' }: CartPageProps) {
                   onUpdateQuantity={updateQuantity}
                   onRemove={removeItem}
                   isUpdating={updating === item.id}
+                  // ── Phase 2: pass the cart's resolved ─────
+                  //   currency so each card formats its
+                  //   `unitPrice` and `total` in the correct
+                  //   currency. `cart.currency` is required on
+                  //   the type and always populated by the
+                  //   backend (real cart) or by
+                  //   `normalizeGuestCart` (guest cart).
+                  currency={cart.currency}
                 />
               ))}
             </AnimatePresence>

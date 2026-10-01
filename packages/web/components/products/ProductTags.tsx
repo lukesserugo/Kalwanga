@@ -230,7 +230,7 @@ export function ProductTags({
   // ============================================
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-4 animate-fade-in">
       <div>
         <h3 className="text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
           Tags
@@ -244,13 +244,13 @@ export function ProductTags({
       {/* Search + Add */}
       <div className="flex gap-2">
         <div className="flex-1 relative">
-          <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-gray-400" />
+          <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-gray-400 dark:text-gray-500" />
           <input
             type="text"
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
             placeholder="Search tags..."
-            className="w-full pl-10 pr-4 py-2 bg-gray-100 dark:bg-gray-700 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 text-gray-900 dark:text-white"
+            className="w-full pl-10 pr-4 py-2 bg-gray-100 dark:bg-gray-700 rounded-lg text-sm text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-brand-500 transition duration-250"
           />
         </div>
 
@@ -263,13 +263,13 @@ export function ProductTags({
               onKeyDown={handleAddKeyDown}
               placeholder="New tag..."
               maxLength={MAX_TAG_LENGTH}
-              className="w-32 px-3 py-2 bg-gray-100 dark:bg-gray-700 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 text-gray-900 dark:text-white"
+              className="w-32 px-3 py-2 bg-gray-100 dark:bg-gray-700 rounded-lg text-sm text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-brand-500 transition duration-250"
             />
             <button
               type="button"
               onClick={handleAddTag}
               disabled={!newTag.trim()}
-              className="px-3 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 transition-colors"
+              className="btn-brand disabled:opacity-50"
               aria-label="Add tag"
             >
               <Plus className="w-4 h-4" />
@@ -280,8 +280,8 @@ export function ProductTags({
 
       {/* Suggestions */}
       {canManage && filteredSuggestions.length > 0 && (
-        <div className="flex flex-wrap items-center gap-2">
-          <span className="text-xs text-gray-500 dark:text-gray-400">
+        <div className="flex flex-wrap items-center gap-2 animate-slide-down">
+          <span className="text-2xs text-gray-500 dark:text-gray-400 eyebrow">
             Suggestions:
           </span>
           {filteredSuggestions.map((suggestion) => (
@@ -289,7 +289,7 @@ export function ProductTags({
               key={suggestion}
               type="button"
               onClick={() => handleAddSuggestion(suggestion)}
-              className="px-2 py-1 text-xs bg-gray-100 dark:bg-gray-700 rounded-lg hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors"
+              className="px-2 py-1 text-2xs bg-gray-100 dark:bg-gray-700 rounded-lg hover:bg-gray-200 dark:hover:bg-gray-600 transition duration-250 focus-ring"
             >
               + {suggestion}
             </button>
@@ -299,14 +299,14 @@ export function ProductTags({
 
       {/* Tags list */}
       {tags.length === 0 ? (
-        <div className="text-center py-6 bg-gray-50 dark:bg-gray-700/50 rounded-lg border border-gray-200 dark:border-gray-700">
+        <div className="text-center py-6 bg-gray-50 dark:bg-gray-700/50 rounded-2xl border border-gray-200 dark:border-gray-700">
           <Tag className="w-8 h-8 text-gray-300 dark:text-gray-600 mx-auto mb-2" />
           <p className="text-sm text-gray-500 dark:text-gray-400">
             No tags added yet
           </p>
         </div>
       ) : filteredTags.length === 0 ? (
-        <div className="text-center py-6 bg-gray-50 dark:bg-gray-700/50 rounded-lg border border-gray-200 dark:border-gray-700">
+        <div className="text-center py-6 bg-gray-50 dark:bg-gray-700/50 rounded-2xl border border-gray-200 dark:border-gray-700">
           <p className="text-sm text-gray-500 dark:text-gray-400">
             No tags match &ldquo;{searchQuery}&rdquo;
           </p>
@@ -323,7 +323,7 @@ export function ProductTags({
                 initial={{ opacity: 0, scale: 0.8 }}
                 animate={{ opacity: 1, scale: 1 }}
                 exit={{ opacity: 0, scale: 0.8 }}
-                className="flex items-center gap-1 px-3 py-1.5 bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-full group hover:shadow-sm transition-shadow"
+                className="flex items-center gap-1 px-3 py-1.5 bg-brand-50 dark:bg-brand-900/20 border border-brand-200 dark:border-brand-800 rounded-full group hover:shadow-soft transition duration-250"
               >
                 {isEditing ? (
                   <>
@@ -333,29 +333,29 @@ export function ProductTags({
                       onChange={(e) => setEditValue(e.target.value)}
                       onKeyDown={handleEditKeyDown}
                       maxLength={MAX_TAG_LENGTH}
-                      className="w-24 px-1 py-0.5 text-sm bg-transparent border-b border-blue-300 focus:outline-none focus:border-blue-600 text-gray-900 dark:text-white"
+                      className="w-24 px-1 py-0.5 text-sm bg-transparent border-b border-brand-300 focus:outline-none focus:border-brand-600 text-gray-900 dark:text-white transition duration-250"
                       autoFocus
                     />
                     <button
                       type="button"
                       onClick={handleSaveEdit}
-                      className="p-0.5 hover:bg-green-100 dark:hover:bg-green-900/30 rounded"
+                      className="p-0.5 hover:bg-success-100 dark:hover:bg-success-900/30 rounded transition duration-250 focus-ring"
                       aria-label="Save tag"
                     >
-                      <Check className="w-3 h-3 text-green-600 dark:text-green-400" />
+                      <Check className="w-3 h-3 text-success-600 dark:text-success-400" />
                     </button>
                     <button
                       type="button"
                       onClick={handleCancelEdit}
-                      className="p-0.5 hover:bg-red-100 dark:hover:bg-red-900/30 rounded"
+                      className="p-0.5 hover:bg-danger-100 dark:hover:bg-danger-900/30 rounded transition duration-250 focus-ring"
                       aria-label="Cancel edit"
                     >
-                      <X className="w-3 h-3 text-red-600 dark:text-red-400" />
+                      <X className="w-3 h-3 text-danger-600 dark:text-danger-400" />
                     </button>
                   </>
                 ) : (
                   <>
-                    <Tag className="w-3 h-3 text-blue-500" />
+                    <Tag className="w-3 h-3 text-brand-500 dark:text-brand-400" />
                     <span className="text-sm text-gray-700 dark:text-gray-300">
                       {tag}
                     </span>
@@ -364,18 +364,18 @@ export function ProductTags({
                         <button
                           type="button"
                           onClick={() => handleStartEdit(tag)}
-                          className="p-0.5 hover:bg-blue-100 dark:hover:bg-blue-900/30 rounded"
+                          className="p-0.5 hover:bg-brand-100 dark:hover:bg-brand-900/30 rounded transition duration-250 focus-ring"
                           aria-label={`Edit tag ${tag}`}
                         >
-                          <Edit className="w-3 h-3 text-blue-500" />
+                          <Edit className="w-3 h-3 text-brand-500 dark:text-brand-400" />
                         </button>
                         <button
                           type="button"
                           onClick={() => handleRemoveTag(tag)}
-                          className="p-0.5 hover:bg-red-100 dark:hover:bg-red-900/30 rounded"
+                          className="p-0.5 hover:bg-danger-100 dark:hover:bg-danger-900/30 rounded transition duration-250 focus-ring"
                           aria-label={`Remove tag ${tag}`}
                         >
-                          <X className="w-3 h-3 text-red-500" />
+                          <X className="w-3 h-3 text-danger-500" />
                         </button>
                       </div>
                     )}
@@ -389,7 +389,7 @@ export function ProductTags({
 
       {/* Stats */}
       {tags.length > 0 && (
-        <div className="text-xs text-gray-500 dark:text-gray-400">
+        <div className="text-xs tabular-nums text-gray-500 dark:text-gray-400">
           {tags.length} tag{tags.length === 1 ? '' : 's'}
           {normalizedSearch && (
             <>

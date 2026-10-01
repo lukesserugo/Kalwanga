@@ -3,6 +3,10 @@
 import { api } from './api';
 import type { Sale, SaleStatus } from '../types/sale';
 
+// ============================================
+// PAYMENT METHOD
+// ============================================
+
 export type PaymentMethod =
   | 'CASH'
   | 'CARD'
@@ -53,17 +57,52 @@ export const PAYMENT_METHODS: readonly PaymentMethod[] = [
 ] as const;
 
 /**
- * Discount category stored on `Sale.discountType`. Mirrors the
- * backend's Prisma `DiscountType` enum exactly:
+ * Payment methods that require a gateway handshake and therefore
+ * CANNOT be used with the POS/direct sale endpoints
+ * (`POST /sales`, `POST /sales/checkout`, `POST /sales/pos/checkout`).
  *
- *   - 'PERCENTAGE' — applied from a percentage-based promotion
- *   - 'FIXED'      — applied from a fixed-amount promotion
- *   - 'LOYALTY'    — discount came entirely from loyalty points
- *   - 'MANUAL'     — free-form discount (mixed sources / bare discount)
+ * The backend rejects these with a 400. They must go through the
+ * online checkout flow (`/checkout/online`), which creates a PENDING
+ * sale, resolves the charge currency, invokes the gateway, and
+ * completes the sale from the webhook.
+ *
+ * ⚠ Keep in sync with `REMOTE_GATEWAY_METHODS` in the backend's
+ *   `checkoutService.ts` and `saleController.ts`.
+ */
+export const GATEWAY_PAYMENT_METHODS: ReadonlySet<PaymentMethod> =
+  new Set<PaymentMethod>([
+    'CARD',
+    'CREDIT_CARD',
+    'DEBIT_CARD',
+    'PAYPAL',
+    'FLUTTERWAVE',
+    'PAYSTACK',
+    'SQUARE',
+  ]);
+
+/**
+ * Payment methods that are ledger-native — the charge currency is
+ * the ledger currency by construction. Safe for POS / direct sale.
+ */
+export function isLedgerNativePaymentMethod(
+  method: string,
+): boolean {
+  return !GATEWAY_PAYMENT_METHODS.has(
+    method.trim().toUpperCase() as PaymentMethod,
+  );
+}
+
+// ============================================
+// DISCOUNT TYPE
+// ============================================
+
+/**
+ * Discount category stored on `Sale.discountType`. Mirrors the
+ * backend's Prisma `DiscountType` enum exactly.
  *
  * ⚠ Keep this union in sync with `enum DiscountType` in
- * `prisma/schema.prisma`. Any value added here that is not in the
- * enum will be rejected by the database at insert time.
+ *   `prisma/schema.prisma`. Values outside the enum are rejected by
+ *   Postgres at insert time.
  */
 export type DiscountType =
   | 'PERCENTAGE'
@@ -71,10 +110,6 @@ export type DiscountType =
   | 'LOYALTY'
   | 'MANUAL';
 
-/**
- * Runtime list of the enum members. Handy for validation and for
- * rendering a `<select>` of discount types.
- */
 export const DISCOUNT_TYPE_VALUES: readonly DiscountType[] = [
   'PERCENTAGE',
   'FIXED',
@@ -85,8 +120,7 @@ export const DISCOUNT_TYPE_VALUES: readonly DiscountType[] = [
 /**
  * Promotion / loyalty passthrough fields shared by every create
  * path. All optional. When omitted, the backend infers
- * `discountType` from the underlying sources and leaves the rest
- * at their model defaults.
+ * `discountType` from the underlying sources.
  */
 export interface PromotionPassthrough {
   discountType?: DiscountType | null;
@@ -99,13 +133,8 @@ export interface PromotionPassthrough {
  * inside receipt payloads.
  *
  * `discountType` is typed as `DiscountType | string | null` on the
- * READ side to remain compatible with:
- *   1. sales created before the enum migration ran (whose column was
- *      a free-form TEXT at the time), and
- *   2. any future enum member the frontend hasn't been updated to
- *      know about yet.
- *
- * Narrow it with `isDiscountType()` before rendering a label.
+ * READ side to remain compatible with legacy rows and forward-
+ * compatible with future enum members.
  */
 export interface SaleBreakdown {
   discountType?: DiscountType | string | null;
@@ -129,15 +158,12 @@ export const LOYALTY_POINT_VALUE = 0.1;
 
 /**
  * Maximum share of the order total that can be covered by loyalty
- * points, as a decimal. Mirrors the `* 0.5` cap in the backend's
- * `checkoutService.processCheckout` and
- * `saleService.createSaleFromCart`.
+ * points, as a decimal. Mirrors the `* 0.5` cap in the backend.
  */
 export const MAX_LOYALTY_DISCOUNT_FRACTION = 0.5;
 
 /**
- * Human-readable labels for each discount type. Centralized so every
- * screen renders the same wording.
+ * Human-readable labels for each discount type.
  */
 export const DISCOUNT_TYPE_LABELS: Record<DiscountType, string> = {
   PERCENTAGE: 'Percentage off',
@@ -147,8 +173,7 @@ export const DISCOUNT_TYPE_LABELS: Record<DiscountType, string> = {
 };
 
 /**
- * Round to two decimal places. Mirrors the backend's `round2` in
- * `utils/money.ts` so previews match what the server will charge.
+ * Round to two decimal places. Mirrors the backend's `round2`.
  */
 function round2(value: number): number {
   if (!Number.isFinite(value)) return 0;
@@ -157,12 +182,10 @@ function round2(value: number): number {
 
 /**
  * Compute the loyalty point cap and discount for a given total.
- * Used by the cart summary and by the POS to render the "you can use
- * up to N points" line.
  */
 export function computeLoyaltyCapacity(
   total: number,
-  availablePoints: number
+  availablePoints: number,
 ): {
   redeemablePoints: number;
   maxDiscount: number;
@@ -172,10 +195,12 @@ export function computeLoyaltyCapacity(
   const pointsByValue = Math.floor(maxDiscount / LOYALTY_POINT_VALUE);
   const redeemablePoints = Math.max(
     0,
-    Math.min(availablePoints, pointsByValue)
+    Math.min(availablePoints, pointsByValue),
   );
   const discountFraction =
-    total > 0 ? round2((redeemablePoints * LOYALTY_POINT_VALUE) / total) : 0;
+    total > 0
+      ? round2((redeemablePoints * LOYALTY_POINT_VALUE) / total)
+      : 0;
 
   return {
     redeemablePoints,
@@ -185,8 +210,7 @@ export function computeLoyaltyCapacity(
 }
 
 /**
- * Type guard for the discount type union. Useful for narrowing an
- * arbitrary string coming off the wire.
+ * Type guard for the discount type union.
  */
 export function isDiscountType(value: unknown): value is DiscountType {
   if (typeof value !== 'string') return false;
@@ -194,12 +218,10 @@ export function isDiscountType(value: unknown): value is DiscountType {
 }
 
 /**
- * Best-effort label for an arbitrary `discountType` value. Falls
- * back to the raw string when the value isn't a known enum member —
- * this keeps old rows renderable even if they carry a legacy value.
+ * Best-effort label for an arbitrary `discountType` value.
  */
 export function getDiscountTypeLabel(
-  value: DiscountType | string | null | undefined
+  value: DiscountType | string | null | undefined,
 ): string {
   if (value === null || value === undefined) return '';
   if (isDiscountType(value)) return DISCOUNT_TYPE_LABELS[value];
@@ -235,6 +257,15 @@ export interface PaginatedResponse<T> {
   totalPages: number;
   limit: number;
   stats?: SalesStats;
+  /**
+   * ISO 4217 ledger currency for the response. Present when the
+   * backend endpoint is currency-aware.
+   *
+   * ⚠ Prefer this over a hardcoded symbol. The ledger currency is
+   *   resolved server-side from the business unit; the frontend
+   *   must never assume `USD`.
+   */
+  currency?: string;
 }
 
 export interface SalesStats {
@@ -326,8 +357,23 @@ export interface SalesSettings {
   emailReceipts: boolean;
   receiptFooter: string;
   defaultPaymentMethod: PaymentMethod;
-  currencySymbol: string;
+  /**
+   * ISO 4217 code. The authoritative field.
+   */
   currencyCode: string;
+  /**
+   * Display symbol for `currencyCode`.
+   *
+   * ⚠ Phase 2: DERIVED, not stored. The backend resolves this from
+   *   `currencyCode` via the registry. It is optional because a
+   *   fresh install or a code that has no registered symbol will
+   *   not carry one — callers must fall back to `currencyCode`
+   *   itself.
+   *
+   * ⚠ Do NOT send this field when updating settings. The backend
+   *   silently drops it; only `currencyCode` is persisted.
+   */
+  currencySymbol?: string;
   invoicePrefix: string;
   receiptPrefix: string;
   createdAt?: string;
@@ -335,6 +381,10 @@ export interface SalesSettings {
 }
 
 export interface DashboardStats {
+  /**
+   * ISO 4217 ledger currency for every amount in this response.
+   */
+  currency?: string;
   today: {
     totalSales: number;
     totalRevenue: number;
@@ -386,6 +436,10 @@ export interface DailySalesSummary {
     revenue: number;
   }>;
   sales: Sale[];
+  /**
+   * ISO 4217 ledger currency for every amount in this response.
+   */
+  currency?: string;
 }
 
 export interface ExportSalesParams {
@@ -393,6 +447,26 @@ export interface ExportSalesParams {
   startDate: string;
   endDate: string;
   format?: 'json' | 'csv' | 'excel' | 'pdf';
+}
+
+/**
+ * Result of an export call. The caller is responsible for
+ * downloading the blob (e.g. via an anchor click).
+ */
+export interface ExportSalesResult {
+  blob: Blob;
+  /**
+   * The format the backend actually served. Normalized to the set
+   * of supported formats. When the server returns an unexpected
+   * content type, this is `'csv'` (the backend's default).
+   */
+  format: 'csv' | 'json' | 'excel' | 'pdf';
+  /**
+   * Suggested filename, derived from the response's
+   * `Content-Disposition` header when present, otherwise generated
+   * locally from `format` and the date range.
+   */
+  filename: string;
 }
 
 // ============================================
@@ -432,9 +506,7 @@ export interface Cart {
   tax: number;
   discount: number;
   /**
-   * Category of the discount currently applied to the cart. Uses the
-   * same union as the backend `DiscountType` enum so cart payloads
-   * round-trip cleanly through checkout.
+   * Category of the discount currently applied to the cart.
    */
   discountType?: DiscountType;
   promotionCode?: string;
@@ -451,10 +523,48 @@ export interface Cart {
   createdAt: string;
   updatedAt: string;
   itemCount: number;
+  /**
+   * ISO 4217 ledger currency, resolved server-side.
+   *
+   * ⚠ Phase 2: always present on the cart response. Use this to
+   *   format every amount on the cart. Never hardcode a symbol.
+   */
+  currency?: string;
+  /**
+   * Display symbol for `currency`. Derived server-side.
+   *
+   * ⚠ Phase 2: optional. Prefer passing `currency` (the code) to
+   *   `Intl.NumberFormat`. Use `currencySymbol` only for contexts
+   *   that cannot call `Intl` (CSV exports, plain-text receipts).
+   */
+  currencySymbol?: string;
+
+  // ── Phase 3a: display-currency view ─────────────────────────
+  /**
+   * The payer's chosen display currency, when different from the
+   * ledger currency AND an FX rate is available. Absent otherwise.
+   *
+   * ⚠ These are VIEWS, not ledger amounts. The ledger fields
+   *   (`subtotal`, `total`, `items[].unitPrice`, …) are unchanged.
+   */
+  displayCurrency?: string | null;
+  displayRate?: number | null;
+  displayRateSource?: string | null;
+  displaySubtotal?: number;
+  displayTax?: number;
+  displayDiscount?: number;
+  displayPromotionDiscount?: number;
+  displayLoyaltyDiscount?: number;
+  displayTotal?: number;
+  displayItems?: Array<{ unitPrice: number; total: number }>;
 }
 
 export interface PosCheckoutData extends PromotionPassthrough {
   cartId: string;
+  /**
+   * Payment method. Must be ledger-native — gateway-backed methods
+   * are rejected by the backend. See `GATEWAY_PAYMENT_METHODS`.
+   */
   paymentMethod: PaymentMethod;
   paidAmount: number;
   customerId?: string;
@@ -465,12 +575,17 @@ export interface PosCheckoutData extends PromotionPassthrough {
   applyLoyaltyPoints?: boolean;
   tipAmount?: number;
   /**
-   * Optional. When omitted, no idempotency is applied (same behavior
-   * as before). When provided, retries with the same value return the
-   * original sale instead of creating a duplicate. Use
-   * `saleService.generateIdempotencyKey()` to obtain a value.
+   * Optional. When omitted, no idempotency is applied. When
+   * provided, retries with the same value return the original sale
+   * instead of creating a duplicate.
    */
   idempotencyKey?: string;
+  /**
+   * Optional. ISO 4217 code of the payer's chosen display
+   * currency. Recorded on the `Payment` row as an audit fact —
+   * never mutates any amount.
+   */
+  displayCurrency?: string | null;
 }
 
 export interface PosSummary {
@@ -541,6 +656,12 @@ export interface PosTransaction {
     paymentMethod: string;
     amount: number;
     status: string;
+    currency?: string;
+    displayCurrency?: string | null;
+    gatewayCurrency?: string | null;
+    gatewayAmount?: number | null;
+    exchangeRate?: number | null;
+    exchangeRateSource?: string | null;
   }>;
 }
 
@@ -557,9 +678,7 @@ export interface PopularProduct {
 }
 
 /**
- * Preview of what a discount will look like at checkout. Returned by
- * `saleService.previewDiscount`. All numbers are in tenant currency
- * unless noted.
+ * Preview of what a discount will look like at checkout.
  */
 export interface DiscountPreview {
   originalTotal: number;
@@ -572,17 +691,14 @@ export interface DiscountPreview {
 }
 
 // ============================================
-// IDEMPOTENCY HELPERS
+// REQUEST HELPERS
 // ============================================
 
 /**
  * Build an `Idempotency-Key` header object for a request.
- * Returns `undefined` when no key is supplied so callers can pass the
- * result straight through to `api.post(..., { headers })` without a
- * conditional — an undefined headers object is harmless.
  */
 function idempotencyHeaders(
-  key?: string
+  key?: string,
 ): Record<string, string> | undefined {
   if (!key) return undefined;
   const trimmed = String(key).trim();
@@ -591,16 +707,51 @@ function idempotencyHeaders(
 }
 
 /**
+ * Build an `X-Display-Currency` header object for a request.
+ *
+ * Returns `undefined` when no display currency is supplied so
+ * callers can pass the result straight through without a
+ * conditional. The value is upper-cased and validated to be a
+ * plausible ISO code (3 letters). The backend validates against
+ * the registry and drops unknown codes silently.
+ */
+function displayCurrencyHeaders(
+  code?: string | null,
+): Record<string, string> | undefined {
+  if (!code) return undefined;
+  const trimmed = String(code).trim().toUpperCase();
+  if (!/^[A-Z]{3}$/.test(trimmed)) return undefined;
+  return { 'X-Display-Currency': trimmed };
+}
+
+/**
+ * Merge two header objects, dropping `undefined` ones. The result
+ * is `undefined` when both are empty so `api.post` receives
+ * `headers: undefined` (a no-op).
+ */
+function mergeHeaders(
+  ...sources: Array<Record<string, string> | undefined>
+): Record<string, string> | undefined {
+  const merged: Record<string, string> = {};
+  let hasAny = false;
+  for (const source of sources) {
+    if (!source) continue;
+    for (const [k, v] of Object.entries(source)) {
+      merged[k] = v;
+      hasAny = true;
+    }
+  }
+  return hasAny ? merged : undefined;
+}
+
+/**
  * Copy the three promotion / loyalty passthrough fields onto a
  * request body, skipping any that are `undefined`. Returns the
  * mutated body for chaining.
- *
- * Fields are optional everywhere they appear. When omitted, the
- * backend infers `discountType` from the underlying sources.
  */
 function attachPromotionFields<T extends Record<string, unknown>>(
   body: T,
-  source: PromotionPassthrough
+  source: PromotionPassthrough,
 ): T {
   const target = body as Record<string, unknown>;
 
@@ -616,19 +767,70 @@ function attachPromotionFields<T extends Record<string, unknown>>(
   return body;
 }
 
+/**
+ * Unwrap the standard `{ success, data, … }` envelope the backend
+ * returns. Handles three shapes:
+ *   • `{ data: T }`  → returns `T`
+ *   • `T` directly   → returns `T`
+ *   • null / scalar  → returns the input unchanged
+ */
+function unwrap<T>(response: unknown): T {
+  if (response && typeof response === 'object') {
+    if ('data' in (response as any)) {
+      const inner = (response as any).data;
+      if (inner !== undefined && inner !== null) return inner as T;
+    }
+  }
+  return response as T;
+}
+
+/**
+ * Extract `currency` from an envelope that carries it at the top
+ * level (e.g. `{ success, data, currency }`). Returns `undefined`
+ * when absent.
+ */
+function extractEnvelopeCurrency(response: unknown): string | undefined {
+  if (response && typeof response === 'object' && 'currency' in response) {
+    const c = (response as any).currency;
+    if (typeof c === 'string' && c.length > 0) return c;
+  }
+  return undefined;
+}
+
+// ============================================
+// IDEMPOTENCY / DISPLAY CURRENCY BODY HELPERS
+// ============================================
+
+/**
+ * Attach the display-currency hint to a request body, in addition
+ * to the `X-Display-Currency` header. The backend accepts either;
+ * sending both is harmless and makes the intent visible in request
+ * logs.
+ */
+function attachDisplayCurrency<T extends Record<string, unknown>>(
+  body: T,
+  code?: string | null,
+): T {
+  if (code === undefined || code === null) return body;
+  const trimmed = String(code).trim().toUpperCase();
+  if (!trimmed) return body;
+  (body as Record<string, unknown>).displayCurrency = trimmed;
+  return body;
+}
+
 // ============================================
 // SALE SERVICE
 // ============================================
 
 export const saleService = {
+  // ============================================
+  // IDEMPOTENCY
+  // ============================================
+
   /**
    * Generate a fresh idempotency key for a new logical operation.
-   * Call once when the user initiates a sale, then reuse the same value
-   * on every retry of that same sale.
-   *
-   * Uses `crypto.randomUUID()` when available (all modern browsers and
-   * Node 16+). Falls back to a time + random hex string otherwise so
-   * the key is always unique enough for the POS use case.
+   * Call once when the user initiates a sale, then reuse the same
+   * value on every retry of that same sale.
    */
   generateIdempotencyKey(): string {
     const g: any =
@@ -647,11 +849,7 @@ export const saleService = {
 
   /**
    * Extract the promotion / loyalty breakdown from any object that
-   * carries it — a `Sale` returned by any of the create endpoints, a
-   * receipt, or a transaction row.
-   *
-   * Every field is optional; callers can render the breakdown even
-   * when the sale predates the migration that added the columns.
+   * carries it — a `Sale`, a receipt, or a transaction row.
    */
   extractBreakdown(source: unknown): SaleBreakdown {
     if (!source || typeof source !== 'object') {
@@ -699,8 +897,6 @@ export const saleService = {
 
   /**
    * True when the sale carries any promotion or loyalty attribution.
-   * Callers use this to decide whether to render the "how this
-   * discount was computed" section on a receipt.
    */
   hasBreakdown(source: unknown): boolean {
     const b = this.extractBreakdown(source);
@@ -709,13 +905,12 @@ export const saleService = {
         b.promotionCode ||
         (b.promotionDiscount ?? 0) > 0 ||
         (b.loyaltyPointsUsed ?? 0) > 0 ||
-        (b.loyaltyDiscount ?? 0) > 0
+        (b.loyaltyDiscount ?? 0) > 0,
     );
   },
 
   /**
-   * Render a human-readable one-line summary of the breakdown. Used in
-   * the receipt footer and the sale detail panel.
+   * Render a human-readable one-line summary of the breakdown.
    */
   describeBreakdown(source: unknown): string {
     const b = this.extractBreakdown(source);
@@ -738,10 +933,9 @@ export const saleService = {
   },
 
   /**
-   * Compute a client-side discount preview. This never talks to the
-   * backend — it's the "you'll save X" line that renders the moment a
-   * point count is typed. The authoritative numbers come from the
-   * backend at checkout time.
+   * Compute a client-side discount preview. Never talks to the
+   * backend — the authoritative numbers come from the backend at
+   * checkout time.
    */
   previewDiscount(params: {
     total: number;
@@ -761,30 +955,30 @@ export const saleService = {
     const capacity = computeLoyaltyCapacity(total, availableLoyaltyPoints);
     const effectiveLoyaltyPoints = Math.min(
       loyaltyPointsToUse,
-      capacity.redeemablePoints
+      capacity.redeemablePoints,
     );
     const loyaltyDiscount = round2(
-      effectiveLoyaltyPoints * LOYALTY_POINT_VALUE
+      effectiveLoyaltyPoints * LOYALTY_POINT_VALUE,
     );
 
     const effectivePromotion = Math.min(
       promotionDiscount,
-      Math.max(0, total - loyaltyDiscount)
+      Math.max(0, total - loyaltyDiscount),
     );
 
     const finalTotal = round2(
-      Math.max(0, total - effectivePromotion - loyaltyDiscount)
+      Math.max(0, total - effectivePromotion - loyaltyDiscount),
     );
 
     const warnings: string[] = [];
     if (loyaltyPointsToUse > capacity.redeemablePoints) {
       warnings.push(
-        `Only ${capacity.redeemablePoints} points can be applied to this order.`
+        `Only ${capacity.redeemablePoints} points can be applied to this order.`,
       );
     }
     if (promotionDiscount > effectivePromotion) {
       warnings.push(
-        `Promotion discount capped at ${effectivePromotion.toFixed(2)}.`
+        `Promotion discount capped at ${effectivePromotion.toFixed(2)}.`,
       );
     }
 
@@ -801,21 +995,7 @@ export const saleService = {
 
   /**
    * Build the `PromotionPassthrough` block to attach to a checkout
-   * payload. Handy when the caller already knows the discount it
-   * wants to send and just needs the shape.
-   *
-   * Example:
-   *
-   *   const payload = {
-   *     cartId,
-   *     paymentMethod: 'CASH',
-   *     paidAmount: 31500,
-   *     ...saleService.buildPassthrough({
-   *       discountType: 'MANUAL',
-   *       promotionCode: 'WELCOME10',
-   *       promotionDiscount: 3500,
-   *     }),
-   *   };
+   * payload.
    */
   buildPassthrough(input: PromotionPassthrough): PromotionPassthrough {
     const out: PromotionPassthrough = {};
@@ -846,16 +1026,10 @@ export const saleService = {
   }): Promise<SalesStats> {
     try {
       const response = await api.get<any>('/sales/stats', { params });
-
-      if (response && typeof response === 'object') {
-        if ('data' in response && response.data) {
-          return response.data as SalesStats;
-        }
-        if ('totalSales' in response || 'totalRevenue' in response) {
-          return response as SalesStats;
-        }
+      const data = unwrap<SalesStats>(response);
+      if (data && typeof data === 'object' && 'totalSales' in data) {
+        return data;
       }
-
       return this.getDefaultStats();
     } catch (error) {
       console.error('Failed to fetch sales stats:', error);
@@ -867,21 +1041,23 @@ export const saleService = {
    * Get today's sales summary
    * GET /sales/today
    */
-  async getTodaySalesSummary(params?: { businessUnitId?: string }): Promise<{
+  async getTodaySalesSummary(params?: {
+    businessUnitId?: string;
+  }): Promise<{
     date: string;
     totalSales: number;
     totalRevenue: number;
     averageTicket: number;
     totalCustomers: number;
     paymentBreakdown: Record<string, number>;
+    currency?: string;
   }> {
     try {
       const response = await api.get<any>('/sales/today', { params });
-      if (response && typeof response === 'object') {
-        if ('data' in response && response.data) {
-          return response.data;
-        }
-        return response;
+      const data = unwrap<any>(response);
+      const currency = extractEnvelopeCurrency(response);
+      if (data && typeof data === 'object') {
+        return { ...data, ...(currency ? { currency } : {}) };
       }
       return this.getDefaultTodaySummary();
     } catch (error) {
@@ -899,12 +1075,13 @@ export const saleService = {
     date: string;
   }): Promise<DailySalesSummary> {
     try {
-      const response = await api.get<any>('/sales/daily-summary', { params });
-      if (response && typeof response === 'object') {
-        if ('data' in response && response.data) {
-          return response.data;
-        }
-        return response;
+      const response = await api.get<any>('/sales/daily-summary', {
+        params,
+      });
+      const data = unwrap<any>(response);
+      const currency = extractEnvelopeCurrency(response);
+      if (data && typeof data === 'object') {
+        return { ...data, ...(currency ? { currency } : {}) };
       }
       return this.getDefaultDailySummary();
     } catch (error) {
@@ -922,11 +1099,13 @@ export const saleService = {
   }): Promise<DashboardStats> {
     try {
       const response = await api.get<any>('/sales/dashboard', { params });
-      if (response && typeof response === 'object') {
-        if ('data' in response && response.data) {
-          return response.data;
-        }
-        return response;
+      const data = unwrap<any>(response);
+      // The backend nests `currency` inside `data`.
+      const currency =
+        (data && typeof data === 'object' && data.currency) ||
+        extractEnvelopeCurrency(response);
+      if (data && typeof data === 'object') {
+        return currency ? { ...data, currency } : data;
       }
       return this.getDefaultDashboardStats();
     } catch (error) {
@@ -940,15 +1119,13 @@ export const saleService = {
    * GET /sales/analytics
    */
   async getSalesAnalytics(
-    params?: SalesAnalyticsParams
+    params?: SalesAnalyticsParams,
   ): Promise<SalesAnalyticsResponse> {
     try {
       const response = await api.get<any>('/sales/analytics', { params });
-      if (response && typeof response === 'object') {
-        if ('data' in response && response.data) {
-          return response.data;
-        }
-        return response;
+      const data = unwrap<SalesAnalyticsResponse>(response);
+      if (data && typeof data === 'object' && 'revenueTrend' in data) {
+        return data;
       }
       return this.getDefaultAnalytics();
     } catch (error) {
@@ -980,11 +1157,9 @@ export const saleService = {
   }> {
     try {
       const response = await api.get<any>('/sales/forecast', { params });
-      if (response && typeof response === 'object') {
-        if ('data' in response && response.data) {
-          return response.data;
-        }
-        return response;
+      const data = unwrap<any>(response);
+      if (data && typeof data === 'object' && 'forecast' in data) {
+        return data;
       }
       return { forecast: [], trend: 'stable', growthRate: 0 };
     } catch (error) {
@@ -1011,11 +1186,9 @@ export const saleService = {
   }> {
     try {
       const response = await api.get<any>('/sales/compare', { params });
-      if (response && typeof response === 'object') {
-        if ('data' in response && response.data) {
-          return response.data;
-        }
-        return response;
+      const data = unwrap<any>(response);
+      if (data && typeof data === 'object' && 'period1' in data) {
+        return data;
       }
       return {
         period1: { revenue: 0, sales: 0, average: 0 },
@@ -1051,11 +1224,9 @@ export const saleService = {
   }> {
     try {
       const response = await api.get<any>('/sales/summary', { params });
-      if (response && typeof response === 'object') {
-        if ('data' in response && response.data) {
-          return response.data;
-        }
-        return response;
+      const data = unwrap<any>(response);
+      if (data && typeof data === 'object' && 'totalRevenue' in data) {
+        return data;
       }
       return {
         period: 'month',
@@ -1096,14 +1267,9 @@ export const saleService = {
       const response = await api.get<any>('/sales/payment-methods', {
         params,
       });
-      if (response && typeof response === 'object') {
-        if ('data' in response && response.data) {
-          return response.data;
-        }
-        if (Array.isArray(response)) {
-          return response;
-        }
-      }
+      const data = unwrap<any>(response);
+      if (Array.isArray(data)) return data;
+      if (Array.isArray(response)) return response;
       return [];
     } catch (error) {
       console.error('Failed to fetch sales by payment method:', error);
@@ -1117,17 +1283,18 @@ export const saleService = {
    */
   async getSalesByStatus(
     status: string,
-    params?: { page?: number; limit?: number }
+    params?: { page?: number; limit?: number },
   ): Promise<PaginatedResponse<Sale>> {
     try {
       const response = await api.get<any>(`/sales/status/${status}`, {
         params,
       });
-      if (response && typeof response === 'object') {
-        if ('data' in response && response.data) {
-          return response.data;
-        }
-        return response;
+      const data = unwrap<any>(response);
+      if (data && typeof data === 'object' && 'data' in data) {
+        return data;
+      }
+      if (data && typeof data === 'object') {
+        return data;
       }
       return { data: [], total: 0, page: 1, totalPages: 0, limit: 20 };
     } catch (error) {
@@ -1148,7 +1315,7 @@ export const saleService = {
       startDate?: string;
       endDate?: string;
       limit?: number;
-    }
+    },
   ): Promise<{
     items: Array<{
       date: string;
@@ -1166,11 +1333,9 @@ export const saleService = {
       const response = await api.get<any>(`/sales/product/${productId}`, {
         params,
       });
-      if (response && typeof response === 'object') {
-        if ('data' in response && response.data) {
-          return response.data;
-        }
-        return response;
+      const data = unwrap<any>(response);
+      if (data && typeof data === 'object' && 'items' in data) {
+        return data;
       }
       return { items: [], totalQuantity: 0, totalRevenue: 0, averagePrice: 0 };
     } catch (error) {
@@ -1198,7 +1363,11 @@ export const saleService = {
     lastPurchase: string | null;
     favoriteCategory: string;
     favoriteProduct: string;
-    monthlyTrend: Array<{ month: string; revenue: number; count: number }>;
+    monthlyTrend: Array<{
+      month: string;
+      revenue: number;
+      count: number;
+    }>;
     recentPurchases: Array<{
       receiptNumber: string;
       total: number;
@@ -1208,17 +1377,18 @@ export const saleService = {
   }> {
     try {
       const response = await api.get<any>(
-        `/sales/customer-stats/${customerId}`
+        `/sales/customer-stats/${customerId}`,
       );
-      if (response && typeof response === 'object') {
-        if ('data' in response && response.data) {
-          return response.data;
-        }
-        return response;
+      const data = unwrap<any>(response);
+      if (data && typeof data === 'object' && 'customer' in data) {
+        return data;
       }
       throw new Error('Invalid response from server');
     } catch (error) {
-      console.error(`Failed to fetch customer stats for ${customerId}:`, error);
+      console.error(
+        `Failed to fetch customer stats for ${customerId}:`,
+        error,
+      );
       throw error;
     }
   },
@@ -1235,11 +1405,9 @@ export const saleService = {
     try {
       const params = companyId ? { companyId } : undefined;
       const response = await api.get<any>('/sales/settings', { params });
-      if (response && typeof response === 'object') {
-        if ('data' in response && response.data) {
-          return response.data;
-        }
-        return response;
+      const data = unwrap<any>(response);
+      if (data && typeof data === 'object' && 'currencyCode' in data) {
+        return data;
       }
       return this.getDefaultSettings();
     } catch (error) {
@@ -1251,21 +1419,26 @@ export const saleService = {
   /**
    * Update sales settings
    * PUT /sales/settings
+   *
+   * ⚠ `currencySymbol` is stripped from the payload before send.
+   *   The backend column was removed in Phase 1 and the field is
+   *   now derived from `currencyCode` at read time. Sending it is
+   *   harmless — the backend drops it — but stripping it here
+   *   makes the contract explicit.
    */
   async updateSalesSettings(
     settings: Partial<SalesSettings>,
-    companyId?: string
+    companyId?: string,
   ): Promise<SalesSettings> {
     try {
+      const { currencySymbol: _drop, ...payload } = settings;
       const params = companyId ? { companyId } : undefined;
-      const response = await api.put<any>('/sales/settings', settings, {
+      const response = await api.put<any>('/sales/settings', payload, {
         params,
       });
-      if (response && typeof response === 'object') {
-        if ('data' in response && response.data) {
-          return response.data;
-        }
-        return response;
+      const data = unwrap<any>(response);
+      if (data && typeof data === 'object' && 'currencyCode' in data) {
+        return data;
       }
       throw new Error('Invalid response from server');
     } catch (error) {
@@ -1283,15 +1456,16 @@ export const saleService = {
    * GET /sales
    */
   async getAllSales(
-    params?: SaleSearchParams
+    params?: SaleSearchParams,
   ): Promise<PaginatedResponse<Sale>> {
     try {
       const response = await api.get<any>('/sales', { params });
-      if (response && typeof response === 'object') {
-        if ('data' in response && response.data) {
-          return response.data;
-        }
-        return response;
+      const data = unwrap<any>(response);
+      if (data && typeof data === 'object' && 'data' in data) {
+        return data;
+      }
+      if (data && typeof data === 'object') {
+        return data;
       }
       return { data: [], total: 0, page: 1, totalPages: 0, limit: 20 };
     } catch (error) {
@@ -1307,11 +1481,9 @@ export const saleService = {
   async getSaleById(id: string): Promise<Sale> {
     try {
       const response = await api.get<any>(`/sales/${id}`);
-      if (response && typeof response === 'object') {
-        if ('data' in response && response.data) {
-          return response.data;
-        }
-        return response;
+      const data = unwrap<any>(response);
+      if (data && typeof data === 'object' && 'id' in data) {
+        return data;
       }
       throw new Error('Invalid response from server');
     } catch (error) {
@@ -1327,15 +1499,16 @@ export const saleService = {
   async getSaleByReceiptNumber(receiptNumber: string): Promise<Sale> {
     try {
       const response = await api.get<any>(`/sales/receipt/${receiptNumber}`);
-      if (response && typeof response === 'object') {
-        if ('data' in response && response.data) {
-          return response.data;
-        }
-        return response;
+      const data = unwrap<any>(response);
+      if (data && typeof data === 'object' && 'id' in data) {
+        return data;
       }
       throw new Error('Invalid response from server');
     } catch (error) {
-      console.error(`Failed to fetch sale by receipt ${receiptNumber}:`, error);
+      console.error(
+        `Failed to fetch sale by receipt ${receiptNumber}:`,
+        error,
+      );
       throw error;
     }
   },
@@ -1346,21 +1519,25 @@ export const saleService = {
    */
   async getSalesByCustomer(
     customerId: string,
-    params?: { page?: number; limit?: number }
+    params?: { page?: number; limit?: number },
   ): Promise<PaginatedResponse<Sale>> {
     try {
       const response = await api.get<any>(`/sales/customer/${customerId}`, {
         params,
       });
-      if (response && typeof response === 'object') {
-        if ('data' in response && response.data) {
-          return response.data;
-        }
-        return response;
+      const data = unwrap<any>(response);
+      if (data && typeof data === 'object' && 'data' in data) {
+        return data;
+      }
+      if (data && typeof data === 'object') {
+        return data;
       }
       return { data: [], total: 0, page: 1, totalPages: 0, limit: 20 };
     } catch (error) {
-      console.error(`Failed to fetch sales for customer ${customerId}:`, error);
+      console.error(
+        `Failed to fetch sales for customer ${customerId}:`,
+        error,
+      );
       return { data: [], total: 0, page: 1, totalPages: 0, limit: 20 };
     }
   },
@@ -1375,14 +1552,9 @@ export const saleService = {
   }): Promise<Sale[]> {
     try {
       const response = await api.get<any>('/sales/recent', { params });
-      if (response && typeof response === 'object') {
-        if ('data' in response && response.data) {
-          return response.data;
-        }
-        if (Array.isArray(response)) {
-          return response;
-        }
-      }
+      const data = unwrap<any>(response);
+      if (Array.isArray(data)) return data;
+      if (Array.isArray(response)) return response;
       return [];
     } catch (error) {
       console.error('Failed to fetch recent sales:', error);
@@ -1393,6 +1565,11 @@ export const saleService = {
   /**
    * Get sales by date range
    * GET /sales/date-range
+   *
+   * ⚠ The backend returns `{ success, data, count, currency }`.
+   *   Only `data` is exposed — `currency` is surfaced via the
+   *   sibling helper `getSalesByDateRangeWithCurrency` for callers
+   *   that need it.
    */
   async getSalesByDateRange(params: {
     businessUnitId?: string;
@@ -1401,14 +1578,9 @@ export const saleService = {
   }): Promise<Sale[]> {
     try {
       const response = await api.get<any>('/sales/date-range', { params });
-      if (response && typeof response === 'object') {
-        if ('data' in response && response.data) {
-          return response.data;
-        }
-        if (Array.isArray(response)) {
-          return response;
-        }
-      }
+      const data = unwrap<any>(response);
+      if (Array.isArray(data)) return data;
+      if (Array.isArray(response)) return response;
       return [];
     } catch (error) {
       console.error('Failed to fetch sales by date range:', error);
@@ -1417,15 +1589,51 @@ export const saleService = {
   },
 
   /**
-   * Create sale
+   * Get sales by date range with the resolved ledger currency.
+   * GET /sales/date-range
+   *
+   * Prefer this over `getSalesByDateRange` when the caller needs to
+   * format amounts. The extra field is free — it arrives in the
+   * same response.
+   */
+  async getSalesByDateRangeWithCurrency(params: {
+    businessUnitId?: string;
+    startDate: string;
+    endDate: string;
+  }): Promise<{ sales: Sale[]; currency?: string; count: number }> {
+    try {
+      const response = await api.get<any>('/sales/date-range', { params });
+      const data = unwrap<any>(response);
+      const sales: Sale[] = Array.isArray(data)
+        ? data
+        : Array.isArray(response)
+          ? response
+          : [];
+      const currency = extractEnvelopeCurrency(response);
+      const count =
+        typeof (response as any)?.count === 'number'
+          ? (response as any).count
+          : sales.length;
+      return { sales, currency, count };
+    } catch (error) {
+      console.error('Failed to fetch sales by date range:', error);
+      return { sales: [], count: 0 };
+    }
+  },
+
+  /**
+   * Create sale (legacy direct sale).
    * POST /sales
+   *
+   * ⚠ Only ledger-native payment methods are accepted. Gateway
+   *   methods (CARD, CREDIT_CARD, DEBIT_CARD, PAYPAL, FLUTTERWAVE,
+   *   PAYSTACK, SQUARE) are rejected with a 400 by the backend.
+   *   Those must go through the online checkout flow.
    *
    * Idempotent when `data.idempotencyKey` is provided.
    *
-   * Accepts optional promotion / loyalty passthrough fields
-   * (`discountType`, `promotionCode`, `promotionDiscount`). When
-   * omitted, the backend infers `discountType` from the underlying
-   * sources.
+   * Accepts `data.displayCurrency` — forwarded as
+   * `X-Display-Currency` header and `displayCurrency` body field.
    */
   async createSale(
     data: {
@@ -1448,9 +1656,14 @@ export const saleService = {
       cashRegisterSessionId?: string;
       tipAmount?: number;
       loyaltyPointsUsed?: number;
-      /** Optional. Retries with the same value return the original sale. */
       idempotencyKey?: string;
-    } & PromotionPassthrough
+      /**
+       * ISO 4217 code of the payer's chosen display currency.
+       * Recorded on the `Payment` row as an audit fact — never
+       * mutates any amount.
+       */
+      displayCurrency?: string | null;
+    } & PromotionPassthrough,
   ): Promise<Sale> {
     try {
       const {
@@ -1458,22 +1671,27 @@ export const saleService = {
         discountType,
         promotionCode,
         promotionDiscount,
+        displayCurrency,
         ...rest
       } = data;
 
-      const body = attachPromotionFields(
-        { ...rest } as Record<string, unknown>,
-        { discountType, promotionCode, promotionDiscount }
+      const body = attachDisplayCurrency(
+        attachPromotionFields(
+          { ...rest } as Record<string, unknown>,
+          { discountType, promotionCode, promotionDiscount },
+        ),
+        displayCurrency,
       );
 
-      const response = await api.post<any>('/sales', body, {
-        headers: idempotencyHeaders(idempotencyKey),
-      });
-      if (response && typeof response === 'object') {
-        if ('data' in response && response.data) {
-          return response.data;
-        }
-        return response;
+      const headers = mergeHeaders(
+        idempotencyHeaders(idempotencyKey),
+        displayCurrencyHeaders(displayCurrency),
+      );
+
+      const response = await api.post<any>('/sales', body, { headers });
+      const unwrapped = unwrap<any>(response);
+      if (unwrapped && typeof unwrapped === 'object' && 'id' in unwrapped) {
+        return unwrapped;
       }
       throw new Error('Invalid response from server');
     } catch (error) {
@@ -1483,13 +1701,13 @@ export const saleService = {
   },
 
   /**
-   * Create sale from cart checkout
+   * Create sale from cart checkout.
    * POST /sales/checkout
    *
-   * Idempotent when `data.idempotencyKey` is provided.
+   * ⚠ Only ledger-native payment methods are accepted. See
+   *   `createSale`.
    *
-   * Accepts the same promotion / loyalty passthrough fields as
-   * `createSale`.
+   * Idempotent when `data.idempotencyKey` is provided.
    */
   async createSaleFromCart(
     data: {
@@ -1503,9 +1721,9 @@ export const saleService = {
       cashRegisterSessionId?: string;
       applyLoyaltyPoints?: boolean;
       tipAmount?: number;
-      /** Optional. Retries with the same value return the original sale. */
       idempotencyKey?: string;
-    } & PromotionPassthrough
+      displayCurrency?: string | null;
+    } & PromotionPassthrough,
   ): Promise<Sale> {
     try {
       const {
@@ -1513,22 +1731,29 @@ export const saleService = {
         discountType,
         promotionCode,
         promotionDiscount,
+        displayCurrency,
         ...rest
       } = data;
 
-      const body = attachPromotionFields(
-        { ...rest } as Record<string, unknown>,
-        { discountType, promotionCode, promotionDiscount }
+      const body = attachDisplayCurrency(
+        attachPromotionFields(
+          { ...rest } as Record<string, unknown>,
+          { discountType, promotionCode, promotionDiscount },
+        ),
+        displayCurrency,
+      );
+
+      const headers = mergeHeaders(
+        idempotencyHeaders(idempotencyKey),
+        displayCurrencyHeaders(displayCurrency),
       );
 
       const response = await api.post<any>('/sales/checkout', body, {
-        headers: idempotencyHeaders(idempotencyKey),
+        headers,
       });
-      if (response && typeof response === 'object') {
-        if ('data' in response && response.data) {
-          return response.data;
-        }
-        return response;
+      const unwrapped = unwrap<any>(response);
+      if (unwrapped && typeof unwrapped === 'object' && 'id' in unwrapped) {
+        return unwrapped;
       }
       throw new Error('Invalid response from server');
     } catch (error) {
@@ -1544,11 +1769,9 @@ export const saleService = {
   async updateSale(id: string, data: Partial<Sale>): Promise<Sale> {
     try {
       const response = await api.put<any>(`/sales/${id}`, data);
-      if (response && typeof response === 'object') {
-        if ('data' in response && response.data) {
-          return response.data;
-        }
-        return response;
+      const unwrapped = unwrap<any>(response);
+      if (unwrapped && typeof unwrapped === 'object' && 'id' in unwrapped) {
+        return unwrapped;
       }
       throw new Error('Invalid response from server');
     } catch (error) {
@@ -1564,11 +1787,9 @@ export const saleService = {
   async deleteSale(id: string): Promise<Sale> {
     try {
       const response = await api.delete<any>(`/sales/${id}`);
-      if (response && typeof response === 'object') {
-        if ('data' in response && response.data) {
-          return response.data;
-        }
-        return response;
+      const unwrapped = unwrap<any>(response);
+      if (unwrapped && typeof unwrapped === 'object' && 'id' in unwrapped) {
+        return unwrapped;
       }
       throw new Error('Invalid response from server');
     } catch (error) {
@@ -1577,69 +1798,108 @@ export const saleService = {
     }
   },
 
-    /**
-   * Export sales to a downloadable file.
-   * GET /sales/export?startDate=…&endDate=…&format=csv
+  // ============================================
+  // EXPORT
+  // ============================================
+
+  /**
+   * Export sales as a downloadable file.
    *
-   * Returns a `Blob` the caller is responsible for downloading
-   * (e.g. via an anchor click). The backend streams CSV, JSON,
-   * Excel, or PDF depending on the `format` param; the actual
-   * content type comes back in the response headers, not in the
-   * body.
+   * ⚠ The backend has TWO distinct export endpoints:
    *
-   * ⚠ This method was missing from the service; it's the wrapper
-   *    the `SaleList` and any future sales export UI should call.
+   *     GET /sales/export        → JSON envelope, role-gated
+   *     GET /sales/export/csv    → streamed CSV, role-gated
+   *     GET /sales/export/excel  → JSON placeholder, role-gated
+   *     GET /sales/export/pdf    → JSON placeholder, role-gated
+   *
+   *   The `format` query param on `/sales/export` does NOT change
+   *   the response shape — it only affects the message. Do not
+   *   pass `format=csv` to `/sales/export` expecting a CSV file.
+   *
+   * This method routes to the correct endpoint for the requested
+   * format. Only `csv` and `json` return a real file today;
+   * `excel` and `pdf` return a JSON payload as a placeholder (the
+   * backend logs `"Excel export would be generated here"`).
    */
-  async exportSales(params: {
-    businessUnitId?: string;
-    startDate: string;
-    endDate: string;
-    format?: 'json' | 'csv' | 'excel' | 'pdf';
-  }): Promise<Blob> {
+  async exportSales(params: ExportSalesParams): Promise<ExportSalesResult> {
     const format = params.format ?? 'csv';
 
     const query: Record<string, string> = {
       startDate: params.startDate,
       endDate: params.endDate,
-      format,
     };
     if (params.businessUnitId) {
       query.businessUnitId = params.businessUnitId;
     }
 
+    // `/sales/export/csv` is the only endpoint that streams a real
+    // file. The others return JSON.
+    const path =
+      format === 'csv' ? '/sales/export/csv' : '/sales/export';
+
     try {
-      const response = await api.get<any>('/sales/export', {
+      const response = await api.get<any>(path, {
         params: query,
         responseType: 'blob',
       });
 
-      // The `api` client may return the Blob directly, wrap it in
-      // `{ data: Blob }`, or (rarely) fall through with the raw
-      // axios response. Normalize all three so callers always get
-      // a Blob they can `URL.createObjectURL` on.
-      if (response instanceof Blob) return response;
-      if (response?.data instanceof Blob) return response.data;
-      return new Blob(
-        [
+      // Normalize: the client may return a Blob, `{ data: Blob }`,
+      // a raw axios response, or (for the JSON endpoints) a plain
+      // object that the caller still wants as a Blob.
+      let blob: Blob;
+      let contentType: string | undefined;
+      let contentDisposition: string | undefined;
+
+      if (response instanceof Blob) {
+        blob = response;
+        contentType = response.type;
+      } else if (response?.data instanceof Blob) {
+        blob = response.data;
+        contentType = response.data.type;
+        contentDisposition =
+          response.headers?.['content-disposition'] ||
+          response.headers?.['Content-Disposition'];
+      } else {
+        const payload =
           typeof response === 'string'
             ? response
-            : JSON.stringify(response),
-        ],
-        { type: 'application/json' },
-      );
+            : JSON.stringify(response);
+        blob = new Blob([payload], { type: 'application/json' });
+        contentType = 'application/json';
+      }
+
+      // Fallback filename: `<format>-<startDate>-<endDate>.<ext>`.
+      const ext =
+        format === 'excel' ? 'xlsx' : format === 'pdf' ? 'pdf' : format;
+      const fallbackFilename = `sales-${params.startDate}-${params.endDate}.${ext}`;
+
+      const filename = extractFilenameFromDisposition(
+        contentDisposition,
+      ) ?? fallbackFilename;
+
+      // If the server sent `Content-Type: text/csv`, trust that
+      // over the requested `format`.
+      const resolvedFormat: ExportSalesResult['format'] =
+        contentType?.includes('text/csv')
+          ? 'csv'
+          : contentType?.includes('application/json')
+            ? 'json'
+            : format;
+
+      return { blob, format: resolvedFormat, filename };
     } catch (error) {
       console.error('Failed to export sales:', error);
       throw error;
     }
   },
 
-    /**
+  // ============================================
+  // RECEIPT / REFUND
+  // ============================================
+
+  /**
    * Send a receipt email for a sale.
    * POST /sales/:id/email-receipt
-   *
-   * The backend's `sendReceiptEmail` accepts an email address and
-   * (optionally) records that the receipt was emailed by updating
-   * the `Receipt.sentAt` timestamp.
    */
   async sendReceiptEmail(
     saleId: string,
@@ -1653,11 +1913,9 @@ export const saleService = {
         `/sales/${saleId}/email-receipt`,
         { email },
       );
-      if (response && typeof response === 'object') {
-        if ('data' in response && response.data) {
-          return response.data;
-        }
-        return response;
+      const data = unwrap<any>(response);
+      if (data && typeof data === 'object') {
+        return data;
       }
       return { success: true, message: 'Receipt sent' };
     } catch (error) {
@@ -1671,11 +1929,11 @@ export const saleService = {
    * POST /sales/:id/refund
    *
    * `amount` is optional. When omitted, the backend refunds the
-   * full remaining balance. `reason` is required by the backend's
-   * `refundSchema` (it's `.optional()` in the schema, but the
-   * service treats a missing reason as `'No reason provided'`).
+   * full remaining balance.
    *
-   * Returns the created refund record along with the updated sale.
+   * ⚠ This endpoint is NOT idempotent — retrying creates a second
+   *   refund record. The caller is responsible for not retrying
+   *   blindly.
    */
   async refundSale(
     saleId: string,
@@ -1694,9 +1952,13 @@ export const saleService = {
     if (!saleId) throw new Error('Sale ID is required');
 
     const body: Record<string, unknown> = {
-      reason: reason?.trim() || undefined,
+      reason: reason?.trim() || 'No reason provided',
     };
-    if (typeof amount === 'number' && Number.isFinite(amount) && amount > 0) {
+    if (
+      typeof amount === 'number' &&
+      Number.isFinite(amount) &&
+      amount > 0
+    ) {
       body.amount = amount;
     }
 
@@ -1705,11 +1967,9 @@ export const saleService = {
         `/sales/${saleId}/refund`,
         body,
       );
-      if (response && typeof response === 'object') {
-        if ('data' in response && response.data) {
-          return response.data;
-        }
-        return response;
+      const data = unwrap<any>(response);
+      if (data && typeof data === 'object' && 'refund' in data) {
+        return data;
       }
       throw new Error('Invalid response from server');
     } catch (error) {
@@ -1729,11 +1989,9 @@ export const saleService = {
   async getPosCart(): Promise<Cart> {
     try {
       const response = await api.get<any>('/sales/pos/cart');
-      if (response && typeof response === 'object') {
-        if ('data' in response && response.data) {
-          return response.data;
-        }
-        return response;
+      const data = unwrap<any>(response);
+      if (data && typeof data === 'object' && 'id' in data) {
+        return data;
       }
       throw new Error('Invalid response from server');
     } catch (error) {
@@ -1749,11 +2007,9 @@ export const saleService = {
   async getPosCartDetails(): Promise<Cart> {
     try {
       const response = await api.get<any>('/sales/pos/cart/details');
-      if (response && typeof response === 'object') {
-        if ('data' in response && response.data) {
-          return response.data;
-        }
-        return response;
+      const data = unwrap<any>(response);
+      if (data && typeof data === 'object' && 'id' in data) {
+        return data;
       }
       throw new Error('Invalid response from server');
     } catch (error) {
@@ -1769,11 +2025,9 @@ export const saleService = {
   async clearPosCart(): Promise<{ message: string }> {
     try {
       const response = await api.delete<any>('/sales/pos/cart');
-      if (response && typeof response === 'object') {
-        if ('data' in response && response.data) {
-          return response.data;
-        }
-        return response || { message: 'Cart cleared successfully' };
+      const data = unwrap<any>(response);
+      if (data && typeof data === 'object') {
+        return data;
       }
       return { message: 'Cart cleared successfully' };
     } catch (error) {
@@ -1794,11 +2048,9 @@ export const saleService = {
   }): Promise<Cart> {
     try {
       const response = await api.post<any>('/sales/pos/items', data);
-      if (response && typeof response === 'object') {
-        if ('data' in response && response.data) {
-          return response.data;
-        }
-        return response;
+      const unwrapped = unwrap<any>(response);
+      if (unwrapped && typeof unwrapped === 'object' && 'id' in unwrapped) {
+        return unwrapped;
       }
       throw new Error('Invalid response from server');
     } catch (error) {
@@ -1817,15 +2069,15 @@ export const saleService = {
       quantity: number;
       variantId?: string;
       notes?: string;
-    }>
+    }>,
   ): Promise<Cart> {
     try {
-      const response = await api.post<any>('/sales/pos/items/bulk', { items });
-      if (response && typeof response === 'object') {
-        if ('data' in response && response.data) {
-          return response.data;
-        }
-        return response;
+      const response = await api.post<any>('/sales/pos/items/bulk', {
+        items,
+      });
+      const unwrapped = unwrap<any>(response);
+      if (unwrapped && typeof unwrapped === 'object' && 'id' in unwrapped) {
+        return unwrapped;
       }
       throw new Error('Invalid response from server');
     } catch (error) {
@@ -1840,15 +2092,16 @@ export const saleService = {
    */
   async updatePosItem(
     itemId: string,
-    data: { quantity: number; unitPrice?: number; notes?: string }
+    data: { quantity: number; unitPrice?: number; notes?: string },
   ): Promise<Cart> {
     try {
-      const response = await api.put<any>(`/sales/pos/items/${itemId}`, data);
-      if (response && typeof response === 'object') {
-        if ('data' in response && response.data) {
-          return response.data;
-        }
-        return response;
+      const response = await api.put<any>(
+        `/sales/pos/items/${itemId}`,
+        data,
+      );
+      const unwrapped = unwrap<any>(response);
+      if (unwrapped && typeof unwrapped === 'object' && 'id' in unwrapped) {
+        return unwrapped;
       }
       throw new Error('Invalid response from server');
     } catch (error) {
@@ -1864,11 +2117,9 @@ export const saleService = {
   async removePosItem(itemId: string): Promise<Cart> {
     try {
       const response = await api.delete<any>(`/sales/pos/items/${itemId}`);
-      if (response && typeof response === 'object') {
-        if ('data' in response && response.data) {
-          return response.data;
-        }
-        return response;
+      const unwrapped = unwrap<any>(response);
+      if (unwrapped && typeof unwrapped === 'object' && 'id' in unwrapped) {
+        return unwrapped;
       }
       throw new Error('Invalid response from server');
     } catch (error) {
@@ -1881,13 +2132,13 @@ export const saleService = {
    * POS Checkout
    * POST /sales/pos/checkout
    *
-   * Idempotent when `data.idempotencyKey` is provided. The header is
-   * extracted and sent as `Idempotency-Key`, matching the backend
-   * controller contract.
+   * ⚠ Only ledger-native payment methods are accepted. Gateway
+   *   methods are rejected with a 400.
    *
-   * Accepts the same promotion / loyalty passthrough fields as
-   * `createSale` and `createSaleFromCart`. `PosCheckoutData` extends
-   * `PromotionPassthrough`, so callers can supply them inline.
+   * Idempotent when `data.idempotencyKey` is provided.
+   *
+   * Accepts `data.displayCurrency` — forwarded as both an
+   * `X-Display-Currency` header and a `displayCurrency` body field.
    */
   async posCheckout(data: PosCheckoutData): Promise<Sale> {
     try {
@@ -1896,22 +2147,29 @@ export const saleService = {
         discountType,
         promotionCode,
         promotionDiscount,
+        displayCurrency,
         ...rest
       } = data;
 
-      const body = attachPromotionFields(
-        { ...rest } as Record<string, unknown>,
-        { discountType, promotionCode, promotionDiscount }
+      const body = attachDisplayCurrency(
+        attachPromotionFields(
+          { ...rest } as Record<string, unknown>,
+          { discountType, promotionCode, promotionDiscount },
+        ),
+        displayCurrency,
+      );
+
+      const headers = mergeHeaders(
+        idempotencyHeaders(idempotencyKey),
+        displayCurrencyHeaders(displayCurrency),
       );
 
       const response = await api.post<any>('/sales/pos/checkout', body, {
-        headers: idempotencyHeaders(idempotencyKey),
+        headers,
       });
-      if (response && typeof response === 'object') {
-        if ('data' in response && response.data) {
-          return response.data;
-        }
-        return response;
+      const unwrapped = unwrap<any>(response);
+      if (unwrapped && typeof unwrapped === 'object' && 'id' in unwrapped) {
+        return unwrapped;
       }
       throw new Error('Invalid response from server');
     } catch (error) {
@@ -1923,21 +2181,15 @@ export const saleService = {
   /**
    * Apply discount to POS cart
    * POST /sales/pos/cart/discount
-   *
-   * A discount applied here becomes the cart's `promotionDiscount` /
-   * `promotionCode` at checkout, and is persisted on the resulting
-   * `Sale` row.
    */
   async applyPosDiscount(discount: number): Promise<Cart> {
     try {
       const response = await api.post<any>('/sales/pos/cart/discount', {
         discount,
       });
-      if (response && typeof response === 'object') {
-        if ('data' in response && response.data) {
-          return response.data;
-        }
-        return response;
+      const unwrapped = unwrap<any>(response);
+      if (unwrapped && typeof unwrapped === 'object' && 'id' in unwrapped) {
+        return unwrapped;
       }
       throw new Error('Invalid response from server');
     } catch (error) {
@@ -1949,21 +2201,19 @@ export const saleService = {
   /**
    * Apply loyalty points to POS cart
    * POST /sales/pos/cart/loyalty-points
-   *
-   * Points applied here mirror to `Sale.loyaltyPointsUsed` /
-   * `Sale.loyaltyDiscount` at checkout.
    */
-  async applyPosLoyaltyPoints(customerId: string, points: number): Promise<Cart> {
+  async applyPosLoyaltyPoints(
+    customerId: string,
+    points: number,
+  ): Promise<Cart> {
     try {
       const response = await api.post<any>(
         '/sales/pos/cart/loyalty-points',
-        { customerId, points }
+        { customerId, points },
       );
-      if (response && typeof response === 'object') {
-        if ('data' in response && response.data) {
-          return response.data;
-        }
-        return response;
+      const unwrapped = unwrap<any>(response);
+      if (unwrapped && typeof unwrapped === 'object' && 'id' in unwrapped) {
+        return unwrapped;
       }
       throw new Error('Invalid response from server');
     } catch (error) {
@@ -1981,11 +2231,9 @@ export const saleService = {
       const response = await api.post<any>('/sales/pos/cart/customer', {
         customerId,
       });
-      if (response && typeof response === 'object') {
-        if ('data' in response && response.data) {
-          return response.data;
-        }
-        return response;
+      const unwrapped = unwrap<any>(response);
+      if (unwrapped && typeof unwrapped === 'object' && 'id' in unwrapped) {
+        return unwrapped;
       }
       throw new Error('Invalid response from server');
     } catch (error) {
@@ -2001,11 +2249,9 @@ export const saleService = {
   async getPosSummary(): Promise<PosSummary> {
     try {
       const response = await api.get<any>('/sales/pos/summary');
-      if (response && typeof response === 'object') {
-        if ('data' in response && response.data) {
-          return response.data;
-        }
-        return response;
+      const data = unwrap<any>(response);
+      if (data && typeof data === 'object' && 'cartCount' in data) {
+        return data;
       }
       return this.getDefaultPosSummary();
     } catch (error) {
@@ -2021,11 +2267,9 @@ export const saleService = {
   async getPosStats(): Promise<PosStats> {
     try {
       const response = await api.get<any>('/sales/pos/stats');
-      if (response && typeof response === 'object') {
-        if ('data' in response && response.data) {
-          return response.data;
-        }
-        return response;
+      const data = unwrap<any>(response);
+      if (data && typeof data === 'object' && 'today' in data) {
+        return data;
       }
       return {
         today: { revenue: 0, sales: 0, averageTicket: 0, itemsSold: 0 },
@@ -2064,11 +2308,12 @@ export const saleService = {
       const response = await api.get<any>('/sales/pos/transactions', {
         params,
       });
-      if (response && typeof response === 'object') {
-        if ('data' in response && response.data) {
-          return response.data;
-        }
-        return response;
+      const data = unwrap<any>(response);
+      if (data && typeof data === 'object' && 'data' in data) {
+        return data;
+      }
+      if (data && typeof data === 'object') {
+        return data;
       }
       return { data: [], total: 0, page: 1, totalPages: 0, limit: 20 };
     } catch (error) {
@@ -2084,11 +2329,9 @@ export const saleService = {
   async getPosRegisterStatus(): Promise<RegisterStatus> {
     try {
       const response = await api.get<any>('/sales/pos/register/status');
-      if (response && typeof response === 'object') {
-        if ('data' in response && response.data) {
-          return response.data;
-        }
-        return response;
+      const data = unwrap<any>(response);
+      if (data && typeof data === 'object' && 'status' in data) {
+        return data;
       }
       return this.getDefaultRegisterStatus();
     } catch (error) {
@@ -2110,14 +2353,9 @@ export const saleService = {
       const response = await api.get<any>('/sales/pos/customers/search', {
         params: { query, limit },
       });
-      if (response && typeof response === 'object') {
-        if ('data' in response && response.data) {
-          return response.data;
-        }
-        if (Array.isArray(response)) {
-          return response;
-        }
-      }
+      const data = unwrap<any>(response);
+      if (Array.isArray(data)) return data;
+      if (Array.isArray(response)) return response;
       return [];
     } catch (error) {
       console.error('Failed to search customers:', error);
@@ -2132,11 +2370,9 @@ export const saleService = {
   async getPosCustomer(id: string): Promise<any> {
     try {
       const response = await api.get<any>(`/sales/pos/customers/${id}`);
-      if (response && typeof response === 'object') {
-        if ('data' in response && response.data) {
-          return response.data;
-        }
-        return response;
+      const data = unwrap<any>(response);
+      if (data && typeof data === 'object') {
+        return data;
       }
       return null;
     } catch (error) {
@@ -2162,11 +2398,9 @@ export const saleService = {
   }): Promise<any> {
     try {
       const response = await api.post<any>('/sales/pos/customers', data);
-      if (response && typeof response === 'object') {
-        if ('data' in response && response.data) {
-          return response.data;
-        }
-        return response;
+      const unwrapped = unwrap<any>(response);
+      if (unwrapped && typeof unwrapped === 'object') {
+        return unwrapped;
       }
       throw new Error('Invalid response from server');
     } catch (error) {
@@ -2186,20 +2420,15 @@ export const saleService = {
   async searchPosProducts(
     query: string,
     category?: string,
-    limit?: number
+    limit?: number,
   ): Promise<any[]> {
     try {
       const response = await api.get<any>('/sales/pos/products/search', {
         params: { query, category, limit },
       });
-      if (response && typeof response === 'object') {
-        if ('data' in response && response.data) {
-          return response.data;
-        }
-        if (Array.isArray(response)) {
-          return response;
-        }
-      }
+      const data = unwrap<any>(response);
+      if (Array.isArray(data)) return data;
+      if (Array.isArray(response)) return response;
       return [];
     } catch (error) {
       console.error('Failed to search products:', error);
@@ -2214,17 +2443,18 @@ export const saleService = {
   async getPosProductByBarcode(barcode: string): Promise<any> {
     try {
       const response = await api.get<any>(
-        `/sales/pos/products/barcode/${barcode}`
+        `/sales/pos/products/barcode/${barcode}`,
       );
-      if (response && typeof response === 'object') {
-        if ('data' in response && response.data) {
-          return response.data;
-        }
-        return response;
+      const data = unwrap<any>(response);
+      if (data && typeof data === 'object') {
+        return data;
       }
       return null;
     } catch (error) {
-      console.error(`Failed to fetch product by barcode ${barcode}:`, error);
+      console.error(
+        `Failed to fetch product by barcode ${barcode}:`,
+        error,
+      );
       return null;
     }
   },
@@ -2235,12 +2465,12 @@ export const saleService = {
    */
   async getPosProductBySku(sku: string): Promise<any> {
     try {
-      const response = await api.get<any>(`/sales/pos/products/sku/${sku}`);
-      if (response && typeof response === 'object') {
-        if ('data' in response && response.data) {
-          return response.data;
-        }
-        return response;
+      const response = await api.get<any>(
+        `/sales/pos/products/sku/${sku}`,
+      );
+      const data = unwrap<any>(response);
+      if (data && typeof data === 'object') {
+        return data;
       }
       return null;
     } catch (error) {
@@ -2260,14 +2490,9 @@ export const saleService = {
       const response = await api.get<any>('/sales/pos/products/popular', {
         params,
       });
-      if (response && typeof response === 'object') {
-        if ('data' in response && response.data) {
-          return response.data;
-        }
-        if (Array.isArray(response)) {
-          return response;
-        }
-      }
+      const data = unwrap<any>(response);
+      if (Array.isArray(data)) return data;
+      if (Array.isArray(response)) return response;
       return [];
     } catch (error) {
       console.error('Failed to fetch popular products:', error);
@@ -2375,6 +2600,14 @@ export const saleService = {
     };
   },
 
+  /**
+   * Default sales settings, used only when the backend call fails
+   * or returns an unrecognised shape.
+   *
+   * ⚠ `currencySymbol` is left off. Callers must fall back to
+   *   `currencyCode` itself when rendering. Hardcoding `$` here
+   *   would mislabel a UGX deployment.
+   */
   getDefaultSettings(): SalesSettings {
     return {
       taxRate: 8,
@@ -2386,7 +2619,6 @@ export const saleService = {
       emailReceipts: true,
       receiptFooter: 'Thank you for your business!',
       defaultPaymentMethod: 'CASH',
-      currencySymbol: '$',
       currencyCode: 'USD',
       invoicePrefix: 'INV-',
       receiptPrefix: 'RCP-',
@@ -2419,6 +2651,35 @@ export const saleService = {
   },
 };
 
-// Export types for use in other files
+// ============================================
+// INTERNAL HELPERS
+// ============================================
+
+/**
+ * Parse a `Content-Disposition` header for the suggested filename.
+ * Returns `undefined` when the header is missing or malformed.
+ */
+function extractFilenameFromDisposition(
+  value: string | undefined,
+): string | undefined {
+  if (!value) return undefined;
+
+  // `filename*=UTF-8''sales%20report.csv` (RFC 5987).
+  const utf8Match = /filename\*=UTF-8''([^;]+)/i.exec(value);
+  if (utf8Match) {
+    try {
+      return decodeURIComponent(utf8Match[1]);
+    } catch {
+      /* fall through to the plain form */
+    }
+  }
+
+  // `filename="sales report.csv"` or `filename=sales.csv`.
+  const plainMatch = /filename="?([^";]+)"?/i.exec(value);
+  if (plainMatch) return plainMatch[1];
+
+  return undefined;
+}
+
 export type { Sale };
 export default saleService;

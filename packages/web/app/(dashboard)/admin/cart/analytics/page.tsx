@@ -121,9 +121,35 @@ interface ExportOptions {
   includeDetailedData: boolean;
 }
 
+/**
+ * Partial shape of `GET /cart/settings` as returned by the backend.
+ * Only the fields this page reads are declared; the endpoint returns
+ * a fuller object, but TypeScript does not need the rest.
+ */
+interface CartSettingsResponse {
+  currencyCode?: string;
+}
+
 // ============================================
 // CONSTANTS
 // ============================================
+
+/**
+ * ── Phase 2: fallback currency for the analytics page. ────────────
+ *
+ * The analytics endpoint (`GET /cart/analytics`) returns aggregate
+ * numbers with no cart row to read `currency` from — it does not
+ * currently include a `currency` field on its payload. This page
+ * therefore resolves the display currency from a separate call to
+ * `GET /cart/settings`, whose `currencyCode` is the same
+ * authoritative source the cart-settings admin page edits.
+ *
+ * `'UGX'` is the registry default (`DEFAULT_CURRENCY_CODE` in
+ * `lib/currencies.ts`) and matches the rest of Phase 2. It applies
+ * only when the settings fetch fails or the response omits
+ * `currencyCode`.
+ */
+const DEFAULT_ANALYTICS_CURRENCY = 'UGX';
 
 const DATE_RANGES = [
   { value: 'today', label: 'Today' },
@@ -333,6 +359,21 @@ export default function CartAnalyticsPage() {
     'overview' | 'trends' | 'details'
   >('overview');
 
+  /**
+   * ── Phase 2: resolved display currency for this page. ─────────
+   *
+   * The analytics endpoint returns aggregates with no cart row to
+   * read `currency` from. We resolve it from `GET /cart/settings`
+   * instead — the same authoritative source the cart-settings admin
+   * page edits. Falls back to `DEFAULT_ANALYTICS_CURRENCY` when the
+   * fetch fails or the response omits `currencyCode`.
+   *
+   * Threaded into every `formatCurrency` call on this page.
+   */
+  const [currency, setCurrency] = useState<string>(
+    DEFAULT_ANALYTICS_CURRENCY,
+  );
+
   // Export modal state.
   //
   // ⚠ `exportFormat` is narrowed to the wire union. It can only ever
@@ -368,6 +409,44 @@ export default function CartAnalyticsPage() {
     hasPermission(PermissionResource.ANALYTICS) ||
     hasPermission(PermissionResource.CART_MANAGE) ||
     hasPermission(PermissionResource.CART_VIEW);
+
+  // ============================================
+  // CURRENCY FETCH (Phase 2)
+  // ============================================
+  //
+  // Runs once on mount. Failures are silent — the fallback currency
+  // is already in state and the page is fully usable without this
+  // call. When it succeeds, the three `formatCurrency` call sites
+  // below re-render with the correct currency.
+
+  useEffect(() => {
+    let cancelled = false;
+
+    const loadCurrency = async () => {
+      try {
+        const response = await api.get<CartSettingsResponse>(
+          '/cart/settings',
+        );
+        if (cancelled || !isMountedRef.current) return;
+        const payload = unwrapApiResponse<CartSettingsResponse>(response);
+        const code = payload?.currencyCode;
+        if (typeof code === 'string' && code.length > 0) {
+          setCurrency(code);
+        }
+      } catch (err) {
+        // Non-fatal — see the JSDoc above. Logged at debug level.
+        console.debug(
+          '[analytics] Could not resolve currency from /cart/settings — using fallback:',
+          err instanceof Error ? err.message : err,
+        );
+      }
+    };
+
+    void loadCurrency();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   // ============================================
   // DATA FETCHING
@@ -644,7 +723,7 @@ export default function CartAnalyticsPage() {
           Access Restricted
         </h2>
         <p className="text-gray-500 dark:text-gray-400 mt-2 text-center max-w-md">
-          You don't have permission to view cart analytics.
+          You don&apos;t have permission to view cart analytics.
         </p>
         <button
           type="button"
@@ -926,8 +1005,10 @@ export default function CartAnalyticsPage() {
               />
               <MetricCard
                 label="Average Value"
+                // ── Phase 2: format in the resolved currency ──
                 value={formatCurrency(
                   Number(analytics.averageValue ?? 0),
+                  currency,
                 )}
                 icon={DollarSign}
                 iconColor="text-emerald-500"
@@ -944,7 +1025,11 @@ export default function CartAnalyticsPage() {
               />
               <MetricCard
                 label="Today's Revenue"
-                value={formatCurrency(analytics.todayRevenue ?? 0)}
+                // ── Phase 2: format in the resolved currency ──
+                value={formatCurrency(
+                  analytics.todayRevenue ?? 0,
+                  currency,
+                )}
                 icon={TrendingUp}
                 iconColor="text-amber-500"
                 accent="text-amber-600 dark:text-amber-400"
@@ -1031,7 +1116,8 @@ export default function CartAnalyticsPage() {
                             {formatNumber(day.carts)}
                           </td>
                           <td className="py-3 px-4 text-right text-sm font-medium text-emerald-600 dark:text-emerald-400 tabular-nums">
-                            {formatCurrency(day.revenue)}
+                            {/* ── Phase 2: format in the resolved currency ── */}
+                            {formatCurrency(day.revenue, currency)}
                           </td>
                           <td className="py-3 px-4 text-right text-sm text-purple-600 dark:text-purple-400 tabular-nums">
                             {day.conversionRate.toFixed(1)}%

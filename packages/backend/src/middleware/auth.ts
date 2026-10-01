@@ -9,6 +9,7 @@ import { verifyToken } from '@clerk/backend';
 // ✅ Single source of truth
 import {
   ALL_PERMISSIONS,
+  PERMISSION_CATALOGUE,
   WILDCARD,
   resolvePermissions,
   permissionSetHas,
@@ -94,8 +95,8 @@ function extractBearerToken(req: Request): string | null {
  *      → 403 USER_NOT_PROVISIONED. We DO NOT auto-create users
  *      here — provisioning is an explicit admin action.
  *   4. Resolve permissions via `resolvePermissions`.
- *   5. Resolve companyId. Missing → 403 NO_COMPANY_ASSIGNED.
- *      We DO NOT silently attach the user to a fallback company.
+ *   5. Resolve companyId when the user is assigned to a company.
+ *      Customer accounts may exist without a company/business unit.
  *   6. Populate req.user and continue.
  *
  * Any mutation the user might need to trigger (creating a user,
@@ -181,19 +182,6 @@ export const authMiddleware = async (
         ((user.businessUnits[0].businessUnit as any).companyId as
           | string
           | null) ?? null;
-    }
-
-    if (!companyId) {
-      logger.warn('User has no companyId', {
-        userId: user.id,
-        email: user.email,
-      });
-      return res.status(403).json({
-        success: false,
-        error:
-          'Your account is not associated with a company. Contact an administrator.',
-        code: 'NO_COMPANY_ASSIGNED',
-      });
     }
 
     // ── 6. Attach to request ─────────────────────────────────
@@ -310,6 +298,127 @@ export const optionalAuth = async (
 // ROLE / PERMISSION GUARDS
 // ============================================
 
+function permissionsForGuardedRoute(req: Request): string[] {
+  const routePath =
+    typeof req.route?.path === 'string' ? req.route.path : req.path;
+  const path = `${req.baseUrl}${routePath}`.toLowerCase();
+
+  if (path.includes('/permissions')) {
+    return req.method === 'GET'
+      ? [PERMISSION_CATALOGUE.USER_VIEW]
+      : [PERMISSION_CATALOGUE.USER_PERMISSION_UPDATE];
+  }
+  if (/\/role(?:\/|$)/.test(path)) {
+    return [PERMISSION_CATALOGUE.USER_ROLE_UPDATE];
+  }
+  if (/\/activate(?:\/|$)/.test(path)) {
+    return [PERMISSION_CATALOGUE.USER_ACTIVATE];
+  }
+  if (/\/deactivate(?:\/|$)/.test(path)) {
+    return [PERMISSION_CATALOGUE.USER_DEACTIVATE];
+  }
+  if (/\/invite(?:\/|$)/.test(path)) {
+    return [PERMISSION_CATALOGUE.USER_INVITE];
+  }
+  if (/\/export(?:\/|$)/.test(path)) {
+    const resource = routeResource(path);
+    return resource ? [`${resource}:export`] : [];
+  }
+  if (/\/import(?:\/|$)/.test(path)) {
+    const resource = routeResource(path);
+    return resource ? [`${resource}:import`] : [];
+  }
+
+  const specialActions: Array<[RegExp, string]> = [
+    [/\/low-stock(?:\/|$)/, PERMISSION_CATALOGUE.INVENTORY_VIEW_LOW_STOCK],
+    [/\/transactions(?:\/|$)/, PERMISSION_CATALOGUE.INVENTORY_VIEW_AUDIT],
+    [/\/transfer(?:\/|$)/, PERMISSION_CATALOGUE.INVENTORY_TRANSFER],
+    [/\/restock(?:\/|$)/, PERMISSION_CATALOGUE.INVENTORY_RESTOCK],
+    [/\/adjust(?:\/|$)/, PERMISSION_CATALOGUE.INVENTORY_ADJUST],
+    [/\/issue(?:\/|$)/, PERMISSION_CATALOGUE.INVENTORY_ISSUE],
+    [/\/(?:start|open)(?:\/|$)/, PERMISSION_CATALOGUE.SHIFT_START],
+    [/\/(?:end|close)(?:\/|$)/, PERMISSION_CATALOGUE.SHIFT_END],
+    [/\/checkout(?:\/|$)/, PERMISSION_CATALOGUE.SALE_CREATE],
+    [/\/permissions\/update(?:\/|$)/, PERMISSION_CATALOGUE.USER_PERMISSION_UPDATE],
+    [/\/settings(?:\/|$)/, PERMISSION_CATALOGUE.SETTINGS_MANAGE],
+  ];
+  const special = specialActions.find(([pattern]) => pattern.test(path));
+  if (special) return [special[1]];
+
+  const resource = routeResource(path);
+  if (!resource) return [];
+
+  const methodAction: Record<string, string> = {
+    GET: 'view',
+    HEAD: 'view',
+    POST: 'create',
+    PUT: 'edit',
+    PATCH: 'edit',
+    DELETE: 'delete',
+  };
+  const action = methodAction[req.method.toUpperCase()];
+  if (!action) return [];
+
+  const directPermission = `${resource}:${action}`;
+  if (
+    (Object.values(PERMISSION_CATALOGUE) as string[]).includes(
+      directPermission,
+    )
+  ) {
+    return [directPermission];
+  }
+
+  const managePermission = `${resource}:manage`;
+  return (Object.values(PERMISSION_CATALOGUE) as string[]).includes(
+    managePermission,
+  )
+    ? [managePermission]
+    : [];
+}
+
+function routeResource(path: string): string | null {
+  const resources: Array<[string, string]> = [
+    ['/user-groups', 'group'],
+    ['/groups', 'group'],
+    ['/users', 'user'],
+    ['/invitations', 'user'],
+    ['/business-units', 'business_unit'],
+    ['/companies', 'company'],
+    ['/categories', 'category'],
+    ['/products', 'product'],
+    ['/catalog', 'product'],
+    ['/suppliers', 'supplier'],
+    ['/inventory', 'inventory'],
+    ['/locations', 'inventory'],
+    ['/purchase-orders', 'inventory'],
+    ['/orders', 'order'],
+    ['/customers', 'customer'],
+    ['/sales', 'sale'],
+    ['/pos', 'pos'],
+    ['/cash-registers', 'cash_register'],
+    ['/cash-register', 'cash_register'],
+    ['/shifts', 'shift'],
+    ['/returns', 'return'],
+    ['/refunds', 'refund'],
+    ['/invoices', 'invoice'],
+    ['/receipts', 'receipt'],
+    ['/payments', 'payment'],
+    ['/reports', 'report'],
+    ['/analytics', 'analytics'],
+    ['/settings', 'settings'],
+    ['/integrations', 'integration'],
+    ['/webhooks', 'webhook'],
+    ['/backups', 'system'],
+    ['/user-activity', 'activity'],
+    ['/dashboard', 'dashboard'],
+  ];
+
+  const normalizedPath = path.replace(/^\/api(?=\/)/, '');
+  return (
+    resources.find(([prefix]) => normalizedPath.includes(prefix))?.[1] ?? null
+  );
+}
+
 export const requireRole = (roles: UserRole[]) => {
   return (req: Request, res: Response, next: NextFunction) => {
     if (!req.user) {
@@ -319,13 +428,30 @@ export const requireRole = (roles: UserRole[]) => {
         code: 'NO_USER',
       });
     }
-    if (!roles.includes(req.user.role)) {
+    if (roles.length === 1 && roles[0] === UserRole.SUPER_ADMIN) {
+      if (req.user.role !== UserRole.SUPER_ADMIN) {
+        return res.status(403).json({
+          success: false,
+          error: 'Insufficient role',
+          code: 'FORBIDDEN',
+          required: roles,
+          current: req.user.role,
+        });
+      }
+    }
+
+    const requiredPermissions = permissionsForGuardedRoute(req);
+    if (
+      requiredPermissions.length === 0 ||
+      !requiredPermissions.some((permission) =>
+        permissionSetHas(req.user!.permissions ?? [], permission),
+      )
+    ) {
       return res.status(403).json({
         success: false,
-        error: 'Insufficient role',
-        code: 'FORBIDDEN',
-        required: roles,
-        current: req.user.role,
+        error: 'Insufficient permissions',
+        code: 'FORBIDDEN_PERMISSION',
+        required: requiredPermissions,
       });
     }
     next();

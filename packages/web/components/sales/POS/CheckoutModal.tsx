@@ -1,4 +1,4 @@
-// packages/web/components/checkout/CheckoutModal.tsx
+// packages/web/components/sales/POS/CheckoutModal.tsx
 'use client';
 
 import React, {
@@ -12,9 +12,9 @@ import {
   X,
   ArrowLeft,
   CreditCard,
-  DollarSign,
-  Smartphone,
+  Banknote,
   Award,
+  ExternalLink,
   Loader2,
   CheckCircle,
   AlertCircle,
@@ -22,7 +22,6 @@ import {
   Sparkles,
 } from 'lucide-react';
 
-import { checkoutService } from '../../../services/checkoutService';
 import {
   saleService,
   LOYALTY_POINT_VALUE,
@@ -31,19 +30,29 @@ import {
   isDiscountType,
   getDiscountTypeLabel,
 } from '../../../services/saleService';
-import type { DiscountType } from '../../../services/saleService';
+import type {
+  DiscountType,
+  PaymentMethod as ServicePaymentMethod,
+} from '../../../services/saleService';
 import { toast } from '../../../utils/toast-manager';
 import { formatCurrency } from '../../../utils/formatters';
+import { formatPosCurrency } from './posDisplay';
 
 // ============================================
-// TYPES
+// PUBLIC TYPES
 // ============================================
 
+/**
+ * Payment methods the POS endpoint can settle directly. Mobile
+ * money and gateway-backed methods must use the online checkout
+ * flow so provider authorization is completed before the sale.
+ */
 export type CheckoutPaymentMethod =
   | 'CASH'
-  | 'CARD'
-  | 'MOBILE_MONEY'
-  | 'LOYALTY_POINTS';
+  | 'LOYALTY_POINTS'
+  | 'GIFT_CARD'
+  | 'BANK_TRANSFER'
+  | 'CHECK';
 
 export interface CheckoutCustomer {
   id: string;
@@ -64,91 +73,79 @@ export interface CheckoutDetails {
   notes?: string;
   reference?: string;
   loyaltyPointsUsed?: number;
+  loyaltyDiscount?: number;
+  promotionDiscount?: number;
+  promotionCode?: string | null;
+  discountType?: DiscountType | null;
 }
 
 export interface CheckoutModalProps {
   isOpen: boolean;
   onClose: () => void;
 
-  /** Total amount to charge (after tax and discount). */
   total: number;
 
   /**
-   * Cart id — passed through to `checkoutService.processCheckout`.
-   *
-   * ⚠ Required by the backend. `SaleService.createSaleFromCart`
-   *   rejects a missing `cartId` with a 400. The modal guards on
-   *   this locally so the user sees a clear message instead of an
-   *   axios error.
+   * ISO 4217 ledger currency for `total`. The POS resolves it from
+   * the cart, the shift's business unit, or the auth payload — in
+   * that order — and passes it here. Never fabricate a code; if the
+   * POS hasn't resolved one yet, it should not open the modal.
    */
+  currency: string;
+
   cartId?: string;
 
-  /** Optional customer attached to the sale. */
   customer?: CheckoutCustomer | null;
 
-  /**
-   * Discount already applied to the cart (display only here).
-   *
-   * ⚠ The modal forwards this value to the backend as `discount`.
-   *   The backend reduces the total by `discount` *again*, so
-   *   `total` should already include or exclude this discount
-   *   consistently with how the backend treats it. See the note
-   *   below.
-   */
+  /** Pre-computed cart-level discount (promotion + loyalty). */
   discount?: number;
 
-  /** Active shift — required to process a sale. */
   shift?: CheckoutShift | null;
 
-  /** Optional notes forwarded to checkoutService. */
   notes?: string;
 
   /**
-   * Promotion / loyalty passthrough.
-   *
-   * `discountType` is typed as the 4-member Prisma `DiscountType`
-   * enum — the same union `posController.posCheckoutSchema` enforces
-   * with Zod. If the caller needs to pass a string that isn't a
-   * member (e.g. from a URL parameter), narrow it first.
+   * Promotion / loyalty passthrough. The modal forwards these
+   * verbatim into `saleService.posCheckout` so the backend
+   * persists the attribution on the `Sale` row instead of
+   * inferring a possibly-wrong `discountType`.
    */
   discountType?: DiscountType | null;
   promotionCode?: string | null;
   promotionDiscount?: number;
 
   /**
-   * Optional caller-owned idempotency key. When provided, the modal
-   * forwards it to the backend as the `Idempotency-Key` header; a
-   * retry with the same key returns the original sale.
-   *
-   * Lifecycle belongs to the caller:
-   *   - Caller generates a key when the operator initiates a sale.
-   *   - Same key on every retry of that sale.
-   *   - Caller clears the key after a successful checkout.
-   *   - Caller clears the key when the operator abandons the attempt.
-   *
-   * The modal forwards it verbatim. It never generates or clears it.
+   * Loyalty points the cashier has chosen to redeem. When omitted
+   * the modal defaults to the max-redeemable amount for the
+   * customer's balance. The actual redemption is capped
+   * server-side, so a value that is too high just gets clipped.
    */
-  idempotencyKey?: string;
+  loyaltyPointsUsed?: number;
+  /** Currency value of `loyaltyPointsUsed`. Forwarded for receipt text. */
+  loyaltyDiscount?: number;
 
   /**
-   * Called after checkout succeeds.
-   * Receives the raw result from checkoutService.processCheckout.
+   * Payer's chosen display currency (ISO 4217). Recorded on the
+   * `Payment` row as an audit fact. Never mutates any amount.
    */
+  displayCurrency?: string | null;
+
+  idempotencyKey?: string;
+
   onPaymentComplete: (
     result: any,
     method: CheckoutPaymentMethod,
-    details: CheckoutDetails
+    details: CheckoutDetails,
   ) => void | Promise<void>;
 
-  /** Called when the user cancels / closes the modal. */
   onCancel?: () => void;
+  onOnlineCheckout?: () => void;
 
-  /** External processing lock (e.g. from a parent that owns the request). */
   isProcessing?: boolean;
 }
 
 // ============================================
-// CONSTANTS
+// INTERNAL CONFIG
 // ============================================
 
 interface MethodConfig {
@@ -156,63 +153,72 @@ interface MethodConfig {
   label: string;
   description: string;
   icon: React.ElementType;
+  /** When true, the tile is only enabled if a customer is attached. */
+  requiresCustomer?: boolean;
 }
 
+/**
+ * The POS method grid. Gateway-backed methods are absent by design
+ * — the backend rejects them on `/sales/pos/checkout` and the
+ * cashier's correct action is to route the customer to the online
+ * checkout, not to try harder on the POS.
+ *
+ * ⚠ Keep this list in sync with `PaymentMethod` in the frontend
+ *   `saleService.ts` and `REMOTE_GATEWAY_METHODS` in the backend
+ *   `saleController.ts`.
+ */
 const PAYMENT_METHODS: MethodConfig[] = [
   {
     id: 'CASH',
     label: 'Cash',
     description: 'Physical cash payment',
-    icon: DollarSign,
-  },
-  {
-    id: 'CARD',
-    label: 'Card',
-    description: 'Credit or debit card',
-    icon: CreditCard,
-  },
-  {
-    id: 'MOBILE_MONEY',
-    label: 'Mobile Money',
-    description: 'MTN / Airtel / M-Pesa',
-    icon: Smartphone,
+    icon: Banknote,
   },
   {
     id: 'LOYALTY_POINTS',
     label: 'Loyalty Points',
     description: 'Redeem customer points',
     icon: Award,
+    requiresCustomer: true,
+  },
+  {
+    id: 'GIFT_CARD',
+    label: 'Gift Card',
+    description: 'Redeem a gift card',
+    icon: CreditCard,
+  },
+  {
+    id: 'BANK_TRANSFER',
+    label: 'Bank Transfer',
+    description: 'Direct bank deposit',
+    icon: CreditCard,
+  },
+  {
+    id: 'CHECK',
+    label: 'Check',
+    description: 'Paper check',
+    icon: CreditCard,
   },
 ];
 
 /**
- * Canonical payment-method list for the POS route.
- * Mirrors `CANONICAL_PAYMENT_METHODS_SET` in the backend.
+ * Methods the modal refuses to submit. The backend rejects them
+ * with a 400 on the POS endpoint. Listed here so the modal can
+ * pre-empt with a clear, actionable message.
  */
-const CANONICAL_METHODS_SET = new Set<string>([
-  'CASH',
+const GATEWAY_METHODS_TO_REJECT = new Set<string>([
+  'CARD',
   'CREDIT_CARD',
   'DEBIT_CARD',
-  'MOBILE_MONEY',
-  'BANK_TRANSFER',
-  'GIFT_CARD',
-  'LOYALTY_POINTS',
-  'CHECK',
-  'CARD',
+  'PAYPAL',
+  'FLUTTERWAVE',
+  'PAYSTACK',
+  'SQUARE',
 ]);
 
 const QUICK_CASH_DENOMINATIONS = [5, 10, 20, 50, 100] as const;
 
-/**
- * Only digits and at most two decimal places. Used to reject garbage
- * like "10.5.5" before it reaches `parseFloat`, which would silently
- * read that as `10.5`.
- */
 const PAID_AMOUNT_PATTERN = /^\d*(\.\d{0,2})?$/;
-
-// ============================================
-// HELPERS
-// ============================================
 
 function extractErrorMessage(error: unknown, fallback: string): string {
   if (!error) return fallback;
@@ -220,14 +226,20 @@ function extractErrorMessage(error: unknown, fallback: string): string {
   const data = anyErr?.response?.data;
 
   if (data) {
+    if (Array.isArray(data.errors) && data.errors.length > 0) {
+      return data.errors
+        .map((entry: any) => {
+          const field =
+            entry.field ??
+            (Array.isArray(entry.path) ? entry.path.join('.') : undefined) ??
+            'Field';
+          return `${field}: ${entry.message ?? 'Invalid value'}`;
+        })
+        .join('; ');
+    }
     if (typeof data.error === 'string') return data.error;
     if (data.error?.message) return String(data.error.message);
     if (data.message) return String(data.message);
-    if (Array.isArray(data.errors) && data.errors.length > 0) {
-      return data.errors
-        .map((e: any) => `${e.field ?? 'field'}: ${e.message ?? 'invalid'}`)
-        .join(', ');
-    }
   }
 
   if (anyErr?.message) return String(anyErr.message);
@@ -242,6 +254,7 @@ export function CheckoutModal({
   isOpen,
   onClose,
   total,
+  currency,
   cartId,
   customer = null,
   discount = 0,
@@ -250,9 +263,13 @@ export function CheckoutModal({
   discountType = null,
   promotionCode = null,
   promotionDiscount = 0,
+  loyaltyPointsUsed: loyaltyPointsUsedProp,
+  loyaltyDiscount: loyaltyDiscountProp,
+  displayCurrency = null,
   idempotencyKey,
   onPaymentComplete,
   onCancel,
+  onOnlineCheckout,
   isProcessing: externalProcessing = false,
 }: CheckoutModalProps) {
   const [method, setMethod] = useState<CheckoutPaymentMethod>('CASH');
@@ -262,34 +279,23 @@ export function CheckoutModal({
   const [internalProcessing, setInternalProcessing] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  /**
-   * Guard against a duplicate `onPaymentComplete` invocation when the
-   * operator double-clicks. The backend dedupes on `idempotencyKey`;
-   * the modal must dedupe on its side too, or the parent's success
-   * handler runs twice (double receipt print, double cart clear,
-   * double route push).
-   */
+  // ── Loyalty points to redeem. ───────────────────────────────
+  // Defaults to the max-redeemable amount for the customer's
+  // balance, capped by the modal's own `MAX_LOYALTY_DISCOUNT_FRACTION`
+  // rule. The cashier can lower it.
+  const [loyaltyPointsToRedeem, setLoyaltyPointsToRedeem] = useState<number>(0);
+
   const submittedKeyRef = useRef<string | null>(null);
-
-  /**
-   * Synchronous in-flight guard. `internalProcessing` from state is
-   * stale inside a single render — two rapid clicks both see
-   * `false`. A ref updated synchronously can't be raced.
-   */
   const inFlightRef = useRef(false);
-
   const containerRef = useRef<HTMLDivElement | null>(null);
+  const paidAmountInputRef = useRef<HTMLInputElement | null>(null);
+  const previouslyFocusedRef = useRef<HTMLElement | null>(null);
+  const notesTouchedRef = useRef(false);
+  const wasOpenRef = useRef(false);
 
   const processing = externalProcessing || internalProcessing;
 
-  // ── Reset internal state on the open transition ───────────
-  //
-  // Keyed on the false → true transition of `isOpen`, NOT on every
-  // change of `isOpen` or `initialNotes`. The previous version
-  // re-ran the whole reset whenever `initialNotes` changed while the
-  // modal was open, wiping the operator's in-progress cash amount.
-
-  const wasOpenRef = useRef(false);
+  // ---------- Reset on open ----------
   useEffect(() => {
     const wasOpen = wasOpenRef.current;
     wasOpenRef.current = isOpen;
@@ -303,33 +309,26 @@ export function CheckoutModal({
       setInternalProcessing(false);
       submittedKeyRef.current = null;
       inFlightRef.current = false;
+      notesTouchedRef.current = false;
+      // Loyalty points reset is handled by the effect below, which
+      // runs after the customer's balance is known.
+      setLoyaltyPointsToRedeem(0);
     }
   }, [isOpen, initialNotes]);
 
-  // Keep `notes` in sync if the parent supplies a fresh value while
-  // the operator hasn't typed anything.
-  const notesTouchedRef = useRef(false);
+  // Adopt caller-supplied `initialNotes` only until the cashier
+  // edits the textarea.
   useEffect(() => {
     if (!isOpen) return;
     if (notesTouchedRef.current) return;
     setNotes(initialNotes);
   }, [initialNotes, isOpen]);
 
-  // Reset the touched flag when the modal closes so the next open
-  // starts fresh.
   useEffect(() => {
     if (!isOpen) notesTouchedRef.current = false;
   }, [isOpen]);
 
-  // ── Focus management ──────────────────────────────────────
-  //
-  // Remember what had focus before the modal opened, move focus into
-  // the modal, and restore on close. A full focus trap is out of
-  // scope; this at least gets the keyboard user into the modal and
-  // back to where they were.
-
-  const previouslyFocusedRef = useRef<HTMLElement | null>(null);
-
+  // ---------- Focus management ----------
   useEffect(() => {
     if (!isOpen) return;
     if (typeof document === 'undefined') return;
@@ -338,7 +337,7 @@ export function CheckoutModal({
       (document.activeElement as HTMLElement) ?? null;
 
     const t = setTimeout(() => {
-      containerRef.current?.focus();
+      (paidAmountInputRef.current ?? containerRef.current)?.focus();
     }, 0);
 
     return () => {
@@ -347,10 +346,7 @@ export function CheckoutModal({
     };
   }, [isOpen]);
 
-  // ============================================
-  // DERIVED
-  // ============================================
-
+  // ---------- Derived numbers ----------
   const paidNumber = useMemo(() => {
     const n = parseFloat(paidAmount);
     return Number.isFinite(n) ? n : 0;
@@ -363,24 +359,38 @@ export function CheckoutModal({
 
   const cashInsufficient = method === 'CASH' && paidNumber < total;
 
-  /**
-   * Points required to cover the total, using the SAME calculation
-   * the frontend service uses (`computeLoyaltyCapacity`), which in
-   * turn mirrors the backend's `checkoutService.processCheckout`.
-   *
-   * Using the service helper directly (instead of re-deriving the
-   * formula here) is what keeps the display in lockstep with what
-   * the backend will actually consume. The earlier version used a
-   * `Math.ceil` on the wrong side of the cap and disagreed with the
-   * server by one point on some totals.
-   */
+  // Max points the customer can apply to this order. Server enforces
+  // the same cap, so an over-large value just gets clipped on the
+  // backend — but capping on the client gives a truthful preview.
   const loyaltyCapacity = useMemo(
-    () =>
-      computeLoyaltyCapacity(total, customer?.loyaltyPoints ?? 0),
+    () => computeLoyaltyCapacity(total, customer?.loyaltyPoints ?? 0),
     [total, customer?.loyaltyPoints],
   );
 
-  const loyaltyPointsRequired = loyaltyCapacity.redeemablePoints;
+  // Sync the redeem amount the first time we know the capacity.
+  // Once the cashier edits it, we keep their value.
+  useEffect(() => {
+    if (!isOpen) return;
+    // If the caller supplied an explicit amount, use that.
+    if (typeof loyaltyPointsUsedProp === 'number') {
+      setLoyaltyPointsToRedeem(
+        Math.min(
+          Math.max(0, Math.floor(loyaltyPointsUsedProp)),
+          loyaltyCapacity.redeemablePoints,
+        ),
+      );
+      return;
+    }
+    // Otherwise default to the max redeemable for the customer.
+    setLoyaltyPointsToRedeem(loyaltyCapacity.redeemablePoints);
+  }, [isOpen, loyaltyPointsUsedProp, loyaltyCapacity.redeemablePoints]);
+
+  const loyaltyPointsRequired = loyaltyPointsToRedeem;
+  const loyaltyDiscount = useMemo(
+    () =>
+      Math.round(loyaltyPointsRequired * LOYALTY_POINT_VALUE * 100) / 100,
+    [loyaltyPointsRequired],
+  );
 
   const loyaltyInsufficient = useMemo(() => {
     if (method !== 'LOYALTY_POINTS') return false;
@@ -388,22 +398,25 @@ export function CheckoutModal({
   }, [method, customer?.loyaltyPoints, loyaltyPointsRequired]);
 
   const breakdownPreview = useMemo(() => {
-    if (!saleService.hasBreakdown({ promotionDiscount })) return null;
+    const hasPromotion = promotionDiscount > 0;
+    const hasLoyalty = loyaltyDiscount > 0;
+    if (!hasPromotion && !hasLoyalty) return null;
     return saleService.describeBreakdown({
       promotionDiscount,
       promotionCode,
+      loyaltyPointsUsed: loyaltyPointsRequired,
+      loyaltyDiscount,
     });
-  }, [promotionDiscount, promotionCode]);
+  }, [
+    promotionDiscount,
+    promotionCode,
+    loyaltyPointsRequired,
+    loyaltyDiscount,
+  ]);
 
-  // ============================================
-  // HANDLERS
-  // ============================================
-
+  // ---------- Handlers ----------
   const handleClose = useCallback(() => {
     if (processing) return;
-
-    // Guard against a throwing `onCancel` blocking `onClose`. The
-    // modal must always close when the user dismisses it.
     try {
       onCancel?.();
     } catch (err) {
@@ -420,9 +433,6 @@ export function CheckoutModal({
   const handlePaidAmountChange = useCallback(
     (e: React.ChangeEvent<HTMLInputElement>) => {
       const next = e.target.value;
-      // Allow the empty string while typing, but reject anything
-      // that isn't a partial decimal number. Rejecting here means
-      // `parseFloat` never has to silently discard trailing garbage.
       if (next === '' || PAID_AMOUNT_PATTERN.test(next)) {
         setPaidAmount(next);
       }
@@ -430,11 +440,20 @@ export function CheckoutModal({
     [],
   );
 
+  /**
+   * Submit the POS checkout.
+   *
+   * ⚠ This is the ONLY path the POS uses. It calls
+   *   `saleService.posCheckout(...)`, which routes to
+   *   `POST /sales/pos/checkout`. Do NOT swap this for
+   *   `checkoutService.processCheckout(...)` — that endpoint is
+   *   `/checkout` (online), which creates a PENDING sale and waits
+   *   for a gateway webhook. POS sales are ledger-native and must
+   *   complete immediately.
+   */
   const handleSubmit = useCallback(async () => {
     setError(null);
 
-    // Synchronous guard — prevents double submission even if state
-    // hasn't re-rendered yet.
     if (inFlightRef.current) return;
     if (processing) return;
 
@@ -442,14 +461,16 @@ export function CheckoutModal({
       setError('Please open a shift before processing a sale.');
       return;
     }
-
     if (!cartId) {
       setError('No cart is attached to this checkout.');
       return;
     }
 
-    if (!CANONICAL_METHODS_SET.has(method)) {
-      setError(`Unsupported payment method: ${method}`);
+    // Pre-empt gateway-backed methods with a clear message.
+    if (GATEWAY_METHODS_TO_REJECT.has(method)) {
+      setError(
+        `${method} requires gateway authorization. Use the online checkout instead.`,
+      );
       return;
     }
 
@@ -457,28 +478,22 @@ export function CheckoutModal({
       setError('Paid amount is less than the total.');
       return;
     }
-
     if (method === 'LOYALTY_POINTS' && loyaltyInsufficient) {
       setError('Customer does not have enough loyalty points.');
       return;
     }
 
-    // Idempotency self-guard. If the caller supplied a key and we've
-    // already successfully submitted with it during this modal's
-    // open lifetime, treat the second submit as a no-op.
     const key = idempotencyKey ?? null;
     if (key && submittedKeyRef.current === key) {
       return;
     }
 
-    // Zero is legitimate for non-cash methods (loyalty-only /
-    // fully-discounted). For cash we've already validated
-    // paidNumber >= total. Never coerce with `|| total`.
     const effectivePaidAmount = method === 'CASH' ? paidNumber : total;
 
-    // Guard the enum before forwarding. If the parent passed a
-    // legacy string that isn't a Prisma enum member, drop it — the
-    // backend infers a valid type instead.
+    // ── Normalize the passthrough ──────────────────────────────
+    // `discountType` is narrowed to the union the service accepts.
+    // Any other value is dropped so the backend can still infer a
+    // valid one from the amounts.
     const safeDiscountType: DiscountType | null =
       discountType !== null &&
       discountType !== undefined &&
@@ -486,37 +501,54 @@ export function CheckoutModal({
         ? discountType
         : null;
 
+    // Total discount = the cart's own discount + the loyalty
+    // discount the cashier selected in this modal. The cart already
+    // included the loyalty discount when the cashier pre-applied
+    // it, so if `loyaltyDiscountProp` matches the cart value we
+    // pass `discount` through unchanged; otherwise we add the
+    // delta.
+    const cartLoyalty =
+      typeof loyaltyDiscountProp === 'number' ? loyaltyDiscountProp : 0;
+    const extraLoyalty = Math.max(0, loyaltyDiscount - cartLoyalty);
+    const effectiveDiscount = Math.round((discount + extraLoyalty) * 100) / 100;
+
+    const paymentMethod: ServicePaymentMethod =
+      method as ServicePaymentMethod;
+
     inFlightRef.current = true;
     setInternalProcessing(true);
 
     let checkoutResult: any;
     try {
-      checkoutResult = await checkoutService.processCheckout({
+      checkoutResult = await saleService.posCheckout({
         cartId,
-        customerId: customer?.id,
-        paymentMethod: method,
+        paymentMethod,
         paidAmount: effectivePaidAmount,
-        discount,
+        customerId: customer?.id,
+        discount: effectiveDiscount,
         notes: notes.trim() || undefined,
         cashRegisterId: shift.cashRegisterId,
         cashRegisterSessionId: shift.id,
-        applyLoyaltyPoints: method === 'LOYALTY_POINTS',
-        // Forward the caller-owned key so the backend persists /
-        // dedupes on it. When undefined, behavior is unchanged.
+        applyLoyaltyPoints:
+          method === 'LOYALTY_POINTS' || loyaltyPointsRequired > 0,
         idempotencyKey,
-        // Forward the promotion passthrough. `null` means "let the
-        // backend infer". `undefined` and `null` are treated the
-        // same by the backend's `readPromotionFields`.
-        discountType: safeDiscountType,
+        displayCurrency: displayCurrency ?? null,
+
+        // Promotion / loyalty passthrough. These ride through
+        // to the Sale row's discountType, promotionCode,
+        // promotionDiscount, loyaltyPointsUsed, loyaltyDiscount
+        // columns.
+        discountType: safeDiscountType ?? undefined,
         promotionCode: promotionCode ?? undefined,
-        promotionDiscount: promotionDiscount || undefined,
+        promotionDiscount:
+          promotionDiscount > 0 ? promotionDiscount : undefined,
       });
     } catch (err) {
       const message = extractErrorMessage(
         err,
         'Checkout failed. Please try again.',
       );
-      console.error('[CheckoutModal] checkout failed:', message);
+      console.error('[CheckoutModal] POS checkout failed:', message);
       setError(message);
       toast.error(message);
 
@@ -525,9 +557,6 @@ export function CheckoutModal({
       return;
     }
 
-    // The sale has been created on the server. Everything from here
-    // is post-processing — record the key so a duplicate submit
-    // can't re-run it.
     if (key) submittedKeyRef.current = key;
 
     const details: CheckoutDetails = {
@@ -536,16 +565,17 @@ export function CheckoutModal({
       notes: notes.trim() || undefined,
       reference: reference.trim() || undefined,
       loyaltyPointsUsed:
-        method === 'LOYALTY_POINTS' ? loyaltyPointsRequired : undefined,
+        loyaltyPointsRequired > 0 ? loyaltyPointsRequired : undefined,
+      loyaltyDiscount: loyaltyDiscount > 0 ? loyaltyDiscount : undefined,
+      promotionDiscount:
+        promotionDiscount > 0 ? promotionDiscount : undefined,
+      promotionCode: promotionCode ?? null,
+      discountType: safeDiscountType,
     };
 
     try {
       await onPaymentComplete(checkoutResult, method, details);
-      toast.success('Checkout completed successfully!');
     } catch (callbackErr) {
-      // The sale succeeded — only the parent's post-processing
-      // failed. Surface the distinction so the operator knows not to
-      // retry the payment.
       console.error(
         '[CheckoutModal] onPaymentComplete callback failed:',
         callbackErr,
@@ -576,11 +606,13 @@ export function CheckoutModal({
     promotionCode,
     promotionDiscount,
     loyaltyPointsRequired,
+    loyaltyDiscount,
+    loyaltyDiscountProp,
+    displayCurrency,
     onPaymentComplete,
   ]);
 
-  // ── Keyboard: Esc closes, Cmd/Ctrl+Enter submits ──────────
-
+  // ---------- Keyboard shortcuts ----------
   useEffect(() => {
     if (!isOpen) return;
 
@@ -601,10 +633,7 @@ export function CheckoutModal({
 
   if (!isOpen) return null;
 
-  // ============================================
-  // RENDER
-  // ============================================
-
+  // ---------- Render ----------
   return (
     <div
       className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4"
@@ -647,11 +676,11 @@ export function CheckoutModal({
               <p className="text-sm text-gray-500 dark:text-gray-400">
                 Total due:{' '}
                 <span className="font-semibold text-gray-900 dark:text-white">
-                  {formatCurrency(total)}
+                  {formatCurrency(total, currency)}
                 </span>
                 {discount > 0 && (
                   <span className="ml-2 text-green-600 dark:text-green-400">
-                    (Discount: -{formatCurrency(discount)})
+                    (Discount: -{formatCurrency(discount, currency)})
                   </span>
                 )}
               </p>
@@ -668,8 +697,8 @@ export function CheckoutModal({
           </button>
         </div>
 
+        {/* Body */}
         <div className="p-6 space-y-5">
-          {/* Customer */}
           {customer && (
             <div className="flex items-center gap-2 text-sm text-blue-600 dark:text-blue-400 bg-blue-50 dark:bg-blue-900/20 rounded-lg px-3 py-2">
               <User
@@ -688,7 +717,6 @@ export function CheckoutModal({
             </div>
           )}
 
-          {/* Promotion preview */}
           {breakdownPreview && (
             <div className="flex items-center gap-2 text-sm text-blue-600 dark:text-blue-400 bg-blue-50 dark:bg-blue-900/20 rounded-lg px-3 py-2">
               <Sparkles
@@ -709,7 +737,6 @@ export function CheckoutModal({
             </div>
           )}
 
-          {/* Shift missing warning */}
           {!shift && (
             <div
               role="alert"
@@ -723,7 +750,7 @@ export function CheckoutModal({
             </div>
           )}
 
-          {/* Payment method selector */}
+          {/* Payment method grid */}
           <div>
             <span className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
               Payment Method
@@ -731,12 +758,13 @@ export function CheckoutModal({
             <div
               role="radiogroup"
               aria-label="Payment method"
-              className="grid grid-cols-2 sm:grid-cols-4 gap-2"
+              className="grid grid-cols-2 sm:grid-cols-3 gap-2"
             >
               {PAYMENT_METHODS.map((m) => {
                 const Icon = m.icon;
                 const active = method === m.id;
-                const disabled = m.id === 'LOYALTY_POINTS' && !customer;
+                const disabled =
+                  (m.requiresCustomer && !customer) || processing;
                 return (
                   <button
                     key={m.id}
@@ -744,7 +772,7 @@ export function CheckoutModal({
                     role="radio"
                     aria-checked={active}
                     onClick={() => !disabled && setMethod(m.id)}
-                    disabled={disabled || processing}
+                    disabled={disabled}
                     className={`p-3 rounded-lg border text-left transition-colors disabled:opacity-40 disabled:cursor-not-allowed ${
                       active
                         ? 'border-blue-600 bg-blue-50 dark:bg-blue-900/20'
@@ -771,7 +799,7 @@ export function CheckoutModal({
             </div>
           </div>
 
-          {/* Method-specific fields */}
+          {/* Cash tender */}
           {method === 'CASH' && (
             <div className="space-y-3">
               <div>
@@ -782,30 +810,41 @@ export function CheckoutModal({
                   Amount Paid
                 </label>
                 <div className="relative">
-                  <DollarSign
+                  <Banknote
                     className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400 pointer-events-none"
                     aria-hidden="true"
                   />
                   <input
+                    ref={paidAmountInputRef}
                     id="checkout-paid-amount"
                     type="text"
                     inputMode="decimal"
                     value={paidAmount}
                     onChange={handlePaidAmountChange}
                     placeholder={total.toFixed(2)}
+                    aria-invalid={cashInsufficient}
+                    aria-describedby={
+                      cashInsufficient
+                        ? 'checkout-paid-amount-validation'
+                        : undefined
+                    }
                     className="w-full pl-10 pr-4 py-2.5 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white dark:bg-gray-700 text-gray-900 dark:text-white tabular-nums"
                     disabled={processing}
                     autoFocus
                   />
                 </div>
+                {cashInsufficient && (
+                  <p
+                    id="checkout-paid-amount-validation"
+                    className="mt-1 text-sm text-red-600 dark:text-red-400"
+                    aria-live="polite"
+                  >
+                    Amount received must be at least{' '}
+                    {formatCurrency(total, currency)}.
+                  </p>
+                )}
               </div>
 
-              {/* Quick-cash shortcuts.
-                  These are tender-amount shortcuts, not minimums.
-                  A $5 button on a $20 sale sets paid to $5 — the
-                  operator adds more cash and clicks again. The
-                  previous version disabled them below the total,
-                  blocking that flow. */}
               <div className="flex flex-wrap gap-2">
                 <button
                   type="button"
@@ -813,7 +852,7 @@ export function CheckoutModal({
                   disabled={processing}
                   className="px-3 py-1.5 text-sm border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 disabled:opacity-50"
                 >
-                  Exact ({formatCurrency(total)})
+                  Exact ({formatCurrency(total, currency)})
                 </button>
                 {QUICK_CASH_DENOMINATIONS.map((v) => (
                   <button
@@ -827,7 +866,7 @@ export function CheckoutModal({
                         : 'border-gray-300 dark:border-gray-600'
                     }`}
                   >
-                    ${v}
+                    +{v}
                   </button>
                 ))}
               </div>
@@ -838,27 +877,28 @@ export function CheckoutModal({
                     Change
                   </span>
                   <span className="text-lg font-bold text-green-700 dark:text-green-300 tabular-nums">
-                    {formatCurrency(changeAmount)}
+                    {formatCurrency(changeAmount, currency)}
                   </span>
                 </div>
               )}
             </div>
           )}
 
-          {method === 'CARD' && (
+          {/* Gift card reference */}
+          {method === 'GIFT_CARD' && (
             <div>
               <label
-                htmlFor="checkout-card-reference"
+                htmlFor="checkout-giftcard-reference"
                 className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1"
               >
-                Reference / Last 4 digits
+                Gift Card Number
               </label>
               <input
-                id="checkout-card-reference"
+                id="checkout-giftcard-reference"
                 type="text"
                 value={reference}
                 onChange={(e) => setReference(e.target.value)}
-                placeholder="e.g. 4242"
+                placeholder="e.g. GC-001-234-567"
                 autoComplete="off"
                 className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
                 disabled={processing}
@@ -866,20 +906,21 @@ export function CheckoutModal({
             </div>
           )}
 
-          {method === 'MOBILE_MONEY' && (
+          {/* Bank transfer reference */}
+          {method === 'BANK_TRANSFER' && (
             <div>
               <label
-                htmlFor="checkout-mobile-reference"
+                htmlFor="checkout-bank-reference"
                 className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1"
               >
-                Transaction Reference
+                Transfer Reference
               </label>
               <input
-                id="checkout-mobile-reference"
+                id="checkout-bank-reference"
                 type="text"
                 value={reference}
                 onChange={(e) => setReference(e.target.value)}
-                placeholder="e.g. MP123456789"
+                placeholder="e.g. TXN-2025-001"
                 autoComplete="off"
                 className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
                 disabled={processing}
@@ -887,14 +928,65 @@ export function CheckoutModal({
             </div>
           )}
 
+          {/* Check reference */}
+          {method === 'CHECK' && (
+            <div>
+              <label
+                htmlFor="checkout-check-reference"
+                className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1"
+              >
+                Check Number
+              </label>
+              <input
+                id="checkout-check-reference"
+                type="text"
+                value={reference}
+                onChange={(e) => setReference(e.target.value)}
+                placeholder="e.g. 000123"
+                autoComplete="off"
+                className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+                disabled={processing}
+              />
+            </div>
+          )}
+
+          {/* Loyalty points */}
           {method === 'LOYALTY_POINTS' && (
-            <div className="p-3 bg-gray-50 dark:bg-gray-700 rounded-lg space-y-1 text-sm">
+            <div className="p-3 bg-gray-50 dark:bg-gray-700 rounded-lg space-y-2 text-sm">
+              <div>
+                <label
+                  htmlFor="checkout-loyalty-points"
+                  className="block text-xs font-medium text-gray-600 dark:text-gray-400 mb-1"
+                >
+                  Points to Redeem
+                </label>
+                <input
+                  id="checkout-loyalty-points"
+                  type="number"
+                  min={0}
+                  max={loyaltyCapacity.redeemablePoints}
+                  value={loyaltyPointsToRedeem}
+                  onChange={(e) => {
+                    const raw = parseInt(e.target.value, 10);
+                    const n = Number.isFinite(raw) ? raw : 0;
+                    setLoyaltyPointsToRedeem(
+                      Math.max(
+                        0,
+                        Math.min(n, loyaltyCapacity.redeemablePoints),
+                      ),
+                    );
+                  }}
+                  disabled={processing}
+                  className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-800 text-gray-900 dark:text-white tabular-nums"
+                />
+              </div>
+
               <div className="flex justify-between">
                 <span className="text-gray-600 dark:text-gray-400">
-                  Points Required
+                  Max Redeemable
                 </span>
                 <span className="font-medium text-gray-900 dark:text-white tabular-nums">
-                  {loyaltyPointsRequired}
+                  {loyaltyCapacity.redeemablePoints}
                 </span>
               </div>
               <div className="flex justify-between">
@@ -916,13 +1008,26 @@ export function CheckoutModal({
                   Conversion
                 </span>
                 <span className="text-gray-900 dark:text-white tabular-nums">
-                  1 pt = {formatCurrency(LOYALTY_POINT_VALUE)}
+                  1 pt = {formatCurrency(LOYALTY_POINT_VALUE, currency)}
                 </span>
               </div>
-              <div className="flex justify-between text-xs text-gray-400 dark:text-gray-500 pt-1 border-t border-gray-200 dark:border-gray-600">
-                <span>Max discount</span>
+              <div className="flex justify-between pt-2 border-t border-gray-200 dark:border-gray-600">
+                <span className="text-gray-600 dark:text-gray-400">
+                  Discount Applied
+                </span>
+                <span className="font-medium text-green-600 dark:text-green-400 tabular-nums">
+                  -{formatCurrency(loyaltyDiscount, currency)}
+                </span>
+              </div>
+              <div className="flex justify-between text-xs text-gray-400 dark:text-gray-500">
+                <span>
+                  Max discount ({Math.round(MAX_LOYALTY_DISCOUNT_FRACTION * 100)}%)
+                </span>
                 <span className="tabular-nums">
-                  {formatCurrency(total * MAX_LOYALTY_DISCOUNT_FRACTION)}
+                  {formatCurrency(
+                    total * MAX_LOYALTY_DISCOUNT_FRACTION,
+                    currency,
+                  )}
                 </span>
               </div>
             </div>
@@ -950,7 +1055,6 @@ export function CheckoutModal({
             />
           </div>
 
-          {/* Error */}
           {error && (
             <div
               role="alert"
@@ -965,14 +1069,24 @@ export function CheckoutModal({
             </div>
           )}
 
-          {/* Summary */}
+          {/* Totals footer */}
           <div className="border-t border-gray-200 dark:border-gray-700 pt-4 space-y-1">
             <div className="flex justify-between text-sm">
               <span className="text-gray-600 dark:text-gray-400">Total</span>
               <span className="font-bold text-gray-900 dark:text-white tabular-nums">
-                {formatCurrency(total)}
+                {formatCurrency(total, currency)}
               </span>
             </div>
+            {method === 'LOYALTY_POINTS' && loyaltyDiscount > 0 && (
+              <div className="flex justify-between text-sm">
+                <span className="text-green-600 dark:text-green-400">
+                  Loyalty ({loyaltyPointsRequired} pts)
+                </span>
+                <span className="text-green-600 dark:text-green-400 tabular-nums">
+                  -{formatCurrency(loyaltyDiscount, currency)}
+                </span>
+              </div>
+            )}
             {method === 'CASH' && paidNumber > 0 && (
               <>
                 <div className="flex justify-between text-sm">
@@ -980,7 +1094,7 @@ export function CheckoutModal({
                     Paid
                   </span>
                   <span className="text-gray-900 dark:text-white tabular-nums">
-                    {formatCurrency(paidNumber)}
+                    {formatCurrency(paidNumber, currency)}
                   </span>
                 </div>
                 <div className="flex justify-between text-sm">
@@ -988,7 +1102,7 @@ export function CheckoutModal({
                     Change
                   </span>
                   <span className="text-gray-900 dark:text-white tabular-nums">
-                    {formatCurrency(changeAmount)}
+                    {formatCurrency(changeAmount, currency)}
                   </span>
                 </div>
               </>
@@ -1006,6 +1120,17 @@ export function CheckoutModal({
           >
             Cancel
           </button>
+          {onOnlineCheckout && (
+            <button
+              type="button"
+              onClick={onOnlineCheckout}
+              disabled={processing}
+              className="px-4 py-2 border border-blue-300 dark:border-blue-700 text-blue-700 dark:text-blue-300 rounded-lg hover:bg-blue-50 dark:hover:bg-blue-900/20 transition-colors text-sm flex items-center gap-2 disabled:opacity-50"
+            >
+              <ExternalLink className="w-4 h-4" aria-hidden="true" />
+              More payment options
+            </button>
+          )}
           <button
             type="button"
             onClick={() => void handleSubmit()}

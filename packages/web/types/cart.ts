@@ -1,29 +1,5 @@
 // packages/web/types/cart.ts
 
-/**
- * Single source of truth for cart shapes on the web client.
- *
- * `services/cartService.ts` re-exports these — do NOT redefine `Cart`
- * or `CartItem` there. Component code and service code must agree, and
- * the only way to guarantee that is one definition.
- *
- * These mirror the *response* shape of `packages/backend`'s
- * `CartService.formatCartResponse`. Three invariants from the backend:
- *
- *   1. `CartItem.variantId` is `undefined` when there is no variant.
- *      The backend never returns `null` here. Clients may *send* `null`
- *      when adding items (see `CartItemInput`), but they never receive
- *      it.
- *
- *   2. `CartItem.variant.attributes` is `Json` in Postgres, so the
- *      backend types it as `any`. We narrow to `Record<string, unknown>`
- *      on the client to force callers to assert before use.
- *
- *   3. `GET /cart` returns a synthetic stub with `id: ''` when the
- *      user has no active cart. The next mutating call lazily creates
- *      a real cart and returns its actual id. See `Cart.id` below.
- */
-
 // ============================================
 // ENUMS / UNIONS
 // ============================================
@@ -191,6 +167,51 @@ export interface Cart {
   loyaltyDiscount: number;
 
   /**
+   * ── Phase 2: ISO 4217 currency code ────────────────────────────
+   *
+   * Resolved server-side from the cart's own business unit via
+   * `currencyService.resolveForBusiness(businessUnit.currency)` —
+   * the same walk used by `checkoutService` and `paymentService`.
+   *
+   * This is the ONLY authoritative source for what currency every
+   * amount on this cart is denominated in: `subtotal`, `tax`,
+   * `discount`, `total`, and every line's `unitPrice` / `total`.
+   *
+   * ⚠ Always pass this to `formatCurrency` as the second argument:
+   *
+   *     formatCurrency(cart.total, cart.currency)
+   *
+   *   A UGX cart that renders with a `$` is a bug this field exists
+   *   to prevent. Do not hardcode a currency anywhere on the cart UI
+   *   — read this field.
+   *
+   * The synthetic stub returned by `GET /cart` for a user with no
+   * active cart carries this field too — it is resolved from the
+   * caller's business unit, not left undefined. There is no case
+   * where a well-formed `Cart` response lacks this field.
+   */
+  currency: string;
+
+  /**
+   * ── Phase 2: display symbol for `currency` ─────────────────────
+   *
+   * Derived server-side from the registry
+   * (`currencyService.tryGetCurrency(code)?.symbol`). Falls back to
+   * the ISO code itself when the registry has no symbol registered.
+   *
+   * ⚠ Prefer passing `currency` (the code) to `Intl.NumberFormat` —
+   *   the browser's own formatting is more robust across locales
+   *   than prefixing a symbol. Use this field only for contexts that
+   *   cannot call `Intl` (the discount-type `<select>` in
+   *   `CartSummary`, CSV exports, plain-text emails).
+   *
+   * Never persisted — always computed from `currency` at read time.
+   * See the `CartResponse.currencySymbol` JSDoc in the backend
+   * `cartService.ts` for the full rationale.
+   */
+  currencySymbol: string;
+
+  /**
    * ISO 8601 string. The backend serializes the Prisma `Date` to a
    * string via `res.json`; it never reaches the client as a `Date`.
    * Test fixtures should use `new Date().toISOString()`, not
@@ -211,6 +232,11 @@ export interface Cart {
  * quick-add sends `null` explicitly. The web service collapses it to
  * `undefined` before serializing, matching the backend controller's
  * `addItemSchema` which does the same.
+ *
+ * ⚠ Currency is NEVER a client-supplied input. The cart's display
+ *   currency is resolved server-side from the business unit and
+ *   surfaced on the RESPONSE (see `Cart.currency`). Do not add a
+ *   `currency` field here.
  */
 export interface CartItemInput {
   productId: string;
@@ -251,6 +277,31 @@ export interface CartSummary {
   discount: number;
   total: number;
   items: CartSummaryItem[];
+
+  /**
+   * ── Phase 2: ISO 4217 currency code. ──────────────────────────
+   *
+   * Same resolution as `Cart.currency`: resolved server-side from
+   * the cart's business unit. Both branches of the backend handler
+   * (`GET /cart/summary` with and without an active cart) populate
+   * it.
+   *
+   * ⚠ Marked OPTIONAL here — unlike `Cart.currency` — because
+   *   pre-Phase-2 cached responses may not carry it. Callers should
+   *   fall back to `'UGX'` (the registry default) rather than
+   *   `'USD'`:
+   *
+   *     const currency = summary.currency ?? 'UGX';
+   */
+  currency?: string;
+
+  /**
+   * ── Phase 2: display symbol. ──────────────────────────────────
+   *
+   * See `Cart.currencySymbol`. Optional for the same reason as
+   * `CartSummary.currency` above.
+   */
+  currencySymbol?: string;
 }
 
 // ============================================

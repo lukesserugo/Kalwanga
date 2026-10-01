@@ -19,19 +19,6 @@ import {
 } from '../../../../../services/saleService';
 import { toast } from '../../../../../utils/toast-manager';
 
-// ============================================
-// TYPES
-// ============================================
-//
-// `SalesSettings` is imported from `services/saleService`, which
-// mirrors the fields the backend exposes on the `SalesSettings`
-// model via `GET /api/sales/settings` and `PUT /api/sales/settings`.
-//
-//     SaleController.getSalesSettings
-//     SaleController.updateSalesSettings
-//     SaleService.getSalesSettings
-//     SaleService.updateSalesSettings
-
 const DEFAULT_SETTINGS: SalesSettings = {
   taxRate: 8,
   discountEnabled: true,
@@ -42,24 +29,17 @@ const DEFAULT_SETTINGS: SalesSettings = {
   emailReceipts: true,
   receiptFooter: 'Thank you for your business!',
   defaultPaymentMethod: 'CASH',
-  currencySymbol: '$',
   currencyCode: 'USD',
+  // `currencySymbol` is derived server-side from `currencyCode` and
+  // is optional. Not part of the persisted payload.
   invoicePrefix: 'INV-',
   receiptPrefix: 'RCP-',
 };
-
-// ============================================
-// MAIN COMPONENT
-// ============================================
 
 export default function SalesSettingsPage() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [settings, setSettings] = useState<SalesSettings>(DEFAULT_SETTINGS);
-
-  // ============================================
-  // LOAD
-  // ============================================
 
   const loadSettings = useCallback(async () => {
     try {
@@ -76,16 +56,14 @@ export default function SalesSettingsPage() {
   }, []);
 
   useEffect(() => {
-    loadSettings();
+    void loadSettings();
   }, [loadSettings]);
-
-  // ============================================
-  // SAVE
-  // ============================================
 
   const handleSave = async () => {
     try {
       setSaving(true);
+      // `currencySymbol` is stripped inside `updateSalesSettings`
+      // before the request is sent. Only `currencyCode` is persisted.
       const saved = await saleService.updateSalesSettings(settings);
       setSettings({ ...DEFAULT_SETTINGS, ...(saved || settings) });
       toast.success('Sales settings saved successfully');
@@ -97,22 +75,20 @@ export default function SalesSettingsPage() {
     }
   };
 
-  // ============================================
-  // LOADING
-  // ============================================
-
   if (loading) {
     return <LoadingSkeleton />;
   }
 
-  // ============================================
-  // RENDER
-  // ============================================
+  // Display symbol: prefer the server-derived symbol, otherwise the
+  // ISO code itself. Never hardcode a `$`.
+  const displaySymbol =
+    settings.currencySymbol && settings.currencySymbol.trim().length > 0
+      ? settings.currencySymbol
+      : settings.currencyCode;
 
   return (
     <div className="min-h-screen bg-gray-50 dark:bg-gray-900 p-6">
       <div className="max-w-4xl mx-auto">
-        {/* Header */}
         <div className="flex flex-wrap justify-between items-center gap-4 mb-8">
           <div>
             <h1 className="text-3xl font-bold text-gray-900 dark:text-white">
@@ -124,22 +100,25 @@ export default function SalesSettingsPage() {
           </div>
           <div className="flex flex-wrap gap-3">
             <button
-              onClick={loadSettings}
+              onClick={() => void loadSettings()}
               disabled={saving}
               className="px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors flex items-center gap-2 focus-ring disabled:opacity-50"
             >
-              <RefreshCw className="w-4 h-4" />
+              <RefreshCw className="w-4 h-4" aria-hidden="true" />
               Reload
             </button>
             <button
-              onClick={handleSave}
+              onClick={() => void handleSave()}
               disabled={saving}
               className="px-6 py-2 bg-brand-500 text-white rounded-lg hover:bg-brand-600 flex items-center gap-2 disabled:opacity-50 focus-ring"
             >
               {saving ? (
-                <Loader2 className="w-4 h-4 animate-spin" />
+                <Loader2
+                  className="w-4 h-4 animate-spin"
+                  aria-hidden="true"
+                />
               ) : (
-                <Save className="w-4 h-4" />
+                <Save className="w-4 h-4" aria-hidden="true" />
               )}
               {saving ? 'Saving...' : 'Save Settings'}
             </button>
@@ -147,22 +126,8 @@ export default function SalesSettingsPage() {
         </div>
 
         <div className="space-y-6">
-          {/* General Settings */}
           <SettingsSection title="General Settings" icon={SettingsIcon}>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-              <div>
-                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                  Currency Symbol
-                </label>
-                <input
-                  type="text"
-                  value={settings.currencySymbol}
-                  onChange={(e) =>
-                    setSettings({ ...settings, currencySymbol: e.target.value })
-                  }
-                  className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-800 text-gray-900 dark:text-white focus:ring-2 focus:ring-brand-500 focus:outline-none"
-                />
-              </div>
               <div>
                 <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
                   Currency Code
@@ -171,10 +136,19 @@ export default function SalesSettingsPage() {
                   type="text"
                   value={settings.currencyCode}
                   onChange={(e) =>
-                    setSettings({ ...settings, currencyCode: e.target.value })
+                    setSettings({
+                      ...settings,
+                      currencyCode: e.target.value.toUpperCase(),
+                    })
                   }
-                  className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-800 text-gray-900 dark:text-white focus:ring-2 focus:ring-brand-500 focus:outline-none"
+                  maxLength={3}
+                  placeholder="USD"
+                  className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-800 text-gray-900 dark:text-white focus:ring-2 focus:ring-brand-500 focus:outline-none font-mono uppercase"
                 />
+                <p className="text-xs text-gray-400 dark:text-gray-500 mt-1">
+                  ISO 4217 code. The display symbol ({displaySymbol}) is
+                  derived from this code on the backend.
+                </p>
               </div>
               <div>
                 <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
@@ -184,7 +158,10 @@ export default function SalesSettingsPage() {
                   type="text"
                   value={settings.invoicePrefix}
                   onChange={(e) =>
-                    setSettings({ ...settings, invoicePrefix: e.target.value })
+                    setSettings({
+                      ...settings,
+                      invoicePrefix: e.target.value,
+                    })
                   }
                   className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-800 text-gray-900 dark:text-white focus:ring-2 focus:ring-brand-500 focus:outline-none font-mono"
                 />
@@ -197,7 +174,10 @@ export default function SalesSettingsPage() {
                   type="text"
                   value={settings.receiptPrefix}
                   onChange={(e) =>
-                    setSettings({ ...settings, receiptPrefix: e.target.value })
+                    setSettings({
+                      ...settings,
+                      receiptPrefix: e.target.value,
+                    })
                   }
                   className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-800 text-gray-900 dark:text-white focus:ring-2 focus:ring-brand-500 focus:outline-none font-mono"
                 />
@@ -228,7 +208,6 @@ export default function SalesSettingsPage() {
             </div>
           </SettingsSection>
 
-          {/* Tax & Discount */}
           <SettingsSection title="Tax & Discount" icon={DollarSign}>
             <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
               <div>
@@ -286,7 +265,6 @@ export default function SalesSettingsPage() {
             </div>
           </SettingsSection>
 
-          {/* Loyalty Points */}
           <SettingsSection title="Loyalty Points" icon={Users}>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
               <div className="flex items-center gap-3">
@@ -307,7 +285,7 @@ export default function SalesSettingsPage() {
               </div>
               <div>
                 <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                  Points per $1 spent
+                  Points per {displaySymbol} 1 spent
                 </label>
                 <input
                   type="number"
@@ -326,7 +304,6 @@ export default function SalesSettingsPage() {
             </div>
           </SettingsSection>
 
-          {/* Receipt Settings */}
           <SettingsSection title="Receipt Settings" icon={Receipt}>
             <div className="space-y-4">
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -370,7 +347,10 @@ export default function SalesSettingsPage() {
                 <textarea
                   value={settings.receiptFooter}
                   onChange={(e) =>
-                    setSettings({ ...settings, receiptFooter: e.target.value })
+                    setSettings({
+                      ...settings,
+                      receiptFooter: e.target.value,
+                    })
                   }
                   rows={2}
                   className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-800 text-gray-900 dark:text-white focus:ring-2 focus:ring-brand-500 focus:outline-none resize-none"
@@ -384,10 +364,6 @@ export default function SalesSettingsPage() {
     </div>
   );
 }
-
-// ============================================
-// SUB-COMPONENTS
-// ============================================
 
 interface SettingsSectionProps {
   title: string;
@@ -407,7 +383,10 @@ function SettingsSection({
       className="card-brand p-6"
     >
       <div className="flex items-center gap-2 mb-6">
-        <Icon className="w-5 h-5 text-brand-600 dark:text-brand-400" />
+        <Icon
+          className="w-5 h-5 text-brand-600 dark:text-brand-400"
+          aria-hidden="true"
+        />
         <h2 className="text-lg font-semibold text-gray-900 dark:text-white">
           {title}
         </h2>
@@ -416,10 +395,6 @@ function SettingsSection({
     </motion.div>
   );
 }
-
-// ============================================
-// LOADING SKELETON
-// ============================================
 
 function LoadingSkeleton() {
   return (

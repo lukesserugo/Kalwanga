@@ -4,7 +4,7 @@
     "baseUrl": ".",
     "paths": {
       "@pos/shared": ["../shared/src/index.ts"],
-      "@pos/shared/*": ["../shared/src/*"]
+      "@pos/shared/*": ["../shared/src/*"],
     },
     "types": ["node"],
     "typeRoots": [

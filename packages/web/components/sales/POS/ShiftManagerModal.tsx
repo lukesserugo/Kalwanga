@@ -14,7 +14,7 @@ import {
   CheckCircle,
   AlertCircle,
   Loader2,
-  DollarSign,
+  Banknote,
   Calendar,
   Users,
   RefreshCw,
@@ -31,22 +31,17 @@ import {
   BarChart3,
   ArrowUpRight,
   Smartphone,
-  Banknote,
 } from 'lucide-react';
 
 import {
-  formatCurrency,
   formatDate,
   formatTime,
   formatDuration,
 } from '../../../utils/formatters';
+import { formatPosCurrency, pickPosCurrency } from './posDisplay';
 import { shiftService } from '../../../services/shiftService';
 import { toast } from '../../../utils/toast-manager';
 import { useAuth } from '../../../hooks/useAuth';
-
-// ============================================
-// TYPES
-// ============================================
 
 interface ShiftSummary {
   totalSales: number;
@@ -58,6 +53,7 @@ interface ShiftSummary {
   otherReceived?: number;
   cashOut?: number;
   cashIn?: number;
+  currency?: string;
 }
 
 interface Shift {
@@ -84,6 +80,8 @@ interface Shift {
   };
   notes?: string;
   summary?: ShiftSummary;
+  /** ISO 4217 ledger currency for this shift. Optional. */
+  currency?: string;
   sales?: unknown[];
   payments?: unknown[];
   cashTransactions?: unknown[];
@@ -114,33 +112,32 @@ interface ShiftStats {
   averageShiftDuration: number;
   averageShiftRevenue: number;
   topCashiers: TopCashier[];
+  /** ISO 4217 ledger currency for the aggregate amounts. Optional. */
+  currency?: string;
 }
 
 interface ShiftManagerModalProps {
   isOpen: boolean;
   onClose: () => void;
   onShiftChanged?: () => void;
+  /**
+   * Optional ISO 4217 currency code supplied by the caller (POS
+   * parent) as a fallback when the shift payloads don't carry one.
+   * Never hardcode — the caller reads it from `cart.currency` or
+   * `dashboard.currency`.
+   */
+  currency?: string;
 }
 
 type TabKey = 'current' | 'history' | 'stats';
 
-/**
- * Live comparison between the operator's entered ending balance and
- * the system's expected balance.
- */
 interface DiscrepancyInfo {
-  /** Positive = over, negative = short, 0 = exact. */
   amount: number;
   absolute: number;
   direction: 'over' | 'short' | 'exact';
-  /** True when the discrepancy magnitude exceeds the alert threshold. */
   significant: boolean;
   expected: number;
 }
-
-// ============================================
-// CONSTANTS
-// ============================================
 
 const TABS: Array<{ key: TabKey; label: string; Icon: React.ElementType }> = [
   { key: 'current', label: 'Current Shift', Icon: Clock },
@@ -148,16 +145,7 @@ const TABS: Array<{ key: TabKey; label: string; Icon: React.ElementType }> = [
   { key: 'stats', label: 'Statistics', Icon: BarChart3 },
 ];
 
-/**
- * Discrepancies above this amount are flagged for the operator.
- * Below it, the difference is displayed but not called out
- * aggressively — small rounding differences are normal.
- */
 const DISCREPANCY_ALERT_THRESHOLD = 1;
-
-// ============================================
-// HELPERS
-// ============================================
 
 function extractErrorMessage(error: unknown, fallback: string): string {
   if (!error) return fallback;
@@ -199,11 +187,6 @@ function toNumber(value: unknown): number {
   return 0;
 }
 
-/**
- * Format a shift duration from its start and (optional) end
- * timestamps. Uses the shared `formatDuration` from `formatters` so
- * the whole app renders durations identically.
- */
 function formatShiftDuration(startIso: string, endIso?: string): string {
   const start = new Date(startIso).getTime();
   const end = endIso ? new Date(endIso).getTime() : Date.now();
@@ -254,15 +237,6 @@ function getStatusConfig(status: string): StatusConfig {
   }
 }
 
-/**
- * Normalize a raw shift returned by the service. Handles the two
- * shapes `shiftService` may produce:
- *
- *   1. A fully-hydrated `Shift` with `cashRegister` and `user`
- *      relations populated.
- *   2. A flat row with only `cashRegisterId` / `userId` — the
- *      modal fills in "Unknown" placeholders.
- */
 function normalizeShift(raw: unknown): Shift | null {
   if (!raw || typeof raw !== 'object') return null;
   const r = raw as Record<string, unknown>;
@@ -290,13 +264,15 @@ function normalizeShift(raw: unknown): Shift | null {
           id: String((r.user as any).id ?? userId),
           firstName: String((r.user as any).firstName ?? ''),
           lastName: String((r.user as any).lastName ?? ''),
-          email: typeof (r.user as any).email === 'string'
-            ? (r.user as any).email
-            : undefined,
+          email:
+            typeof (r.user as any).email === 'string'
+              ? (r.user as any).email
+              : undefined,
         }
       : undefined;
 
-  const rawStatus = typeof r.status === 'string' ? r.status.toUpperCase() : 'PENDING';
+  const rawStatus =
+    typeof r.status === 'string' ? r.status.toUpperCase() : 'PENDING';
   const status: Shift['status'] =
     rawStatus === 'OPEN' ||
     rawStatus === 'CLOSED' ||
@@ -310,7 +286,7 @@ function normalizeShift(raw: unknown): Shift | null {
       ? (r.summary as Record<string, unknown>)
       : null;
 
-  const summary = summaryRaw
+  const summary: ShiftSummary | undefined = summaryRaw
     ? {
         totalSales: toNumber(summaryRaw.totalSales),
         totalRevenue: toNumber(summaryRaw.totalRevenue),
@@ -321,6 +297,10 @@ function normalizeShift(raw: unknown): Shift | null {
         otherReceived: toNumber(summaryRaw.otherReceived),
         cashIn: toNumber(summaryRaw.cashIn),
         cashOut: toNumber(summaryRaw.cashOut),
+        currency:
+          typeof summaryRaw.currency === 'string'
+            ? summaryRaw.currency
+            : undefined,
       }
     : undefined;
 
@@ -349,6 +329,7 @@ function normalizeShift(raw: unknown): Shift | null {
     user,
     notes: typeof r.notes === 'string' ? r.notes : undefined,
     summary,
+    currency: typeof r.currency === 'string' ? r.currency : undefined,
   };
 }
 
@@ -401,17 +382,15 @@ function normalizeShiftStats(raw: unknown): ShiftStats | null {
         shiftCount: toNumber(c.shiftCount),
         totalRevenue: toNumber(c.totalRevenue),
       })),
+    currency: typeof r.currency === 'string' ? r.currency : undefined,
   };
 }
-
-// ============================================
-// COMPONENT
-// ============================================
 
 export function ShiftManagerModal({
   isOpen,
   onClose,
   onShiftChanged,
+  currency: currencyProp,
 }: ShiftManagerModalProps) {
   const { user } = useAuth();
 
@@ -447,7 +426,34 @@ export function ShiftManagerModal({
     };
   }, []);
 
-  // ── Reset on open transition ─────────────────────────────
+  /**
+   * Resolve the currency for this modal. The precedence mirrors
+   * the rest of the app:
+   *
+   *   1. The shift currently being closed (its own ledger).
+   *   2. Any shift in the history (all belong to the same BU).
+   *   3. The stats aggregate.
+   *   4. The currency the POS parent supplied via props.
+  *   No currency is fabricated when all sources are absent.
+   */
+  const currency = useMemo(() => {
+    return (
+      pickPosCurrency(
+        currentShift?.currency,
+        currentShift?.summary?.currency,
+        shiftHistory[0]?.currency,
+        shiftHistory[0]?.summary?.currency,
+        shiftStats?.currency,
+        currencyProp,
+      )
+    );
+  }, [currentShift, shiftHistory, shiftStats, currencyProp]);
+
+  const fmt = useCallback(
+    (amount: number | null | undefined): string =>
+      formatPosCurrency(amount, currency),
+    [currency],
+  );
 
   const wasOpenRef = useRef(false);
   useEffect(() => {
@@ -468,16 +474,11 @@ export function ShiftManagerModal({
     }
   }, [isOpen]);
 
-  // ── Load ─────────────────────────────────────────────────
-
   const loadAllShiftData = useCallback(async (): Promise<boolean> => {
     const requestId = ++fetchRequestIdRef.current;
     setLoading(true);
     setLoadError(null);
 
-    // Load each section independently. A failure in one doesn't
-    // blank the others — but we track overall failure so the UI can
-    // distinguish "no data" from "couldn't load".
     const results = await Promise.allSettled([
       shiftService.getCurrentShift(),
       shiftService.getRegisters({ isActive: true }),
@@ -493,7 +494,6 @@ export function ShiftManagerModal({
 
     const errors: string[] = [];
 
-    // ── Current shift ──────────────────────────────────────
     if (currentResult.status === 'fulfilled') {
       const normalized = normalizeShift(currentResult.value);
       setCurrentShift(normalized);
@@ -511,14 +511,9 @@ export function ShiftManagerModal({
       setCurrentShift(null);
     }
 
-    // ── Registers ──────────────────────────────────────────
     if (registersResult.status === 'fulfilled') {
       const raw: unknown = registersResult.value;
 
-      // Narrow to `unknown[]` before mapping so the chain is fully
-      // typed. Without this, `list` is `any` and the subsequent
-      // `.filter((x): x is Register => …)` fails with TS7006 — the
-      // type predicate requires `x` to be inferable, and `any` isn't.
       const list: unknown[] = Array.isArray(raw)
         ? raw
         : raw && typeof raw === 'object' && Array.isArray((raw as any).data)
@@ -544,12 +539,9 @@ export function ShiftManagerModal({
       setRegisters([]);
     }
 
-    // ── History ────────────────────────────────────────────
     if (historyResult.status === 'fulfilled') {
       const raw: unknown = historyResult.value;
 
-      // Same treatment — narrow to `unknown[]` so the `.map` /
-      // `.filter` chain has well-typed parameters.
       let list: unknown[] = [];
       if (raw && typeof raw === 'object') {
         const obj = raw as Record<string, unknown>;
@@ -581,7 +573,6 @@ export function ShiftManagerModal({
       setShiftHistory([]);
     }
 
-    // ── Stats ──────────────────────────────────────────────
     if (statsResult.status === 'fulfilled') {
       const normalized = normalizeShiftStats(statsResult.value);
       setShiftStats(normalized);
@@ -608,8 +599,6 @@ export function ShiftManagerModal({
     if (isOpen) void loadAllShiftData();
   }, [isOpen, loadAllShiftData]);
 
-  // ── Auto-select register ─────────────────────────────────
-
   useEffect(() => {
     if (registers.length === 0) {
       setSelectedRegisterId('');
@@ -621,13 +610,6 @@ export function ShiftManagerModal({
       return openRegister?.id ?? registers[0].id;
     });
   }, [registers]);
-
-  // ── Derived: close-shift discrepancy ─────────────────────
-  //
-  // The comparison the operator most needs to see: how their
-  // entered ending balance compares to what the system expects.
-  // Shown live so a mis-count is caught before Close Shift is
-  // clicked.
 
   const expectedEndingBalance = useMemo(() => {
     if (!currentShift) return 0;
@@ -658,8 +640,6 @@ export function ShiftManagerModal({
       expected,
     };
   }, [currentShift, endingBalanceInput, expectedEndingBalance]);
-
-  // ── Handlers ─────────────────────────────────────────────
 
   const handleRefresh = useCallback(async () => {
     const ok = await loadAllShiftData();
@@ -700,7 +680,7 @@ export function ShiftManagerModal({
         throw new Error('Shift was not created');
       }
 
-      toast.success(`Shift started with ${formatCurrency(balance)}`);
+      toast.success(`Shift started with ${fmt(balance)}`);
       setStartingBalanceInput('');
       setStartNotes('');
       await loadAllShiftData();
@@ -721,6 +701,7 @@ export function ShiftManagerModal({
     startNotes,
     loadAllShiftData,
     onShiftChanged,
+    fmt,
   ]);
 
   const handleCloseShift = useCallback(async () => {
@@ -741,17 +722,14 @@ export function ShiftManagerModal({
       return;
     }
 
-    // Warn on a significant discrepancy before submitting. The
-    // server still records it, but the operator gets a chance to
-    // re-count.
     if (discrepancyInfo && discrepancyInfo.significant) {
       const verb = discrepancyInfo.direction === 'over' ? 'over' : 'short';
       const confirmed =
         typeof window !== 'undefined' &&
         window.confirm(
-          `Ending balance is ${formatCurrency(
+          `Ending balance is ${fmt(
             discrepancyInfo.absolute,
-          )} ${verb} the expected ${formatCurrency(discrepancyInfo.expected)}.\n\n` +
+          )} ${verb} the expected ${fmt(discrepancyInfo.expected)}.\n\n` +
             `Click OK to close the shift with this discrepancy, or Cancel to re-count.`,
         );
       if (!confirmed) return;
@@ -772,7 +750,7 @@ export function ShiftManagerModal({
         throw new Error('Shift was not closed');
       }
 
-      toast.success(`Shift closed with ${formatCurrency(balance)}`);
+      toast.success(`Shift closed with ${fmt(balance)}`);
       setEndingBalanceInput('');
       setCloseNotes('');
       await loadAllShiftData();
@@ -794,13 +772,12 @@ export function ShiftManagerModal({
     discrepancyInfo,
     loadAllShiftData,
     onShiftChanged,
+    fmt,
   ]);
 
   const toggleShiftExpand = useCallback((shiftId: string) => {
     setExpandedShiftId((prev) => (prev === shiftId ? null : shiftId));
   }, []);
-
-  // ── Keyboard: Escape closes ──────────────────────────────
 
   useEffect(() => {
     if (!isOpen) return;
@@ -812,8 +789,6 @@ export function ShiftManagerModal({
     document.addEventListener('keydown', handler);
     return () => document.removeEventListener('keydown', handler);
   }, [isOpen, isStarting, isClosing, onClose]);
-
-  // ── Render ───────────────────────────────────────────────
 
   if (!isOpen) return null;
 
@@ -829,7 +804,6 @@ export function ShiftManagerModal({
         className="bg-white dark:bg-gray-800 rounded-2xl w-full max-w-4xl max-h-[90vh] flex flex-col shadow-2xl border border-gray-200 dark:border-gray-700"
         onClick={(e) => e.stopPropagation()}
       >
-        {/* Header */}
         <div className="p-6 border-b border-gray-200 dark:border-gray-700 flex items-center justify-between flex-shrink-0">
           <div>
             <h2
@@ -875,7 +849,6 @@ export function ShiftManagerModal({
           </div>
         </div>
 
-        {/* Body */}
         {loading && !currentShift && shiftHistory.length === 0 ? (
           <div className="flex items-center justify-center py-20">
             <Loader2
@@ -901,7 +874,6 @@ export function ShiftManagerModal({
               </div>
             )}
 
-            {/* Tabs */}
             <div
               role="tablist"
               aria-label="Shift manager sections"
@@ -931,10 +903,9 @@ export function ShiftManagerModal({
               })}
             </div>
 
-            {/* Current Shift */}
             {activeTab === 'current' && (
               <div className="space-y-6">
-                <CurrentShiftCard shift={currentShift} />
+                <CurrentShiftCard shift={currentShift} fmt={fmt} />
 
                 {!currentShift && (
                   <StartShiftForm
@@ -947,6 +918,7 @@ export function ShiftManagerModal({
                     onNotesChange={setStartNotes}
                     isStarting={isStarting}
                     onSubmit={() => void handleStartShift()}
+                    currency={currency}
                   />
                 )}
 
@@ -961,12 +933,12 @@ export function ShiftManagerModal({
                     onNotesChange={setCloseNotes}
                     isClosing={isClosing}
                     onSubmit={() => void handleCloseShift()}
+                    currency={currency}
                   />
                 )}
               </div>
             )}
 
-            {/* History */}
             {activeTab === 'history' && (
               <div className="space-y-4">
                 <div className="flex items-center justify-between">
@@ -1000,6 +972,7 @@ export function ShiftManagerModal({
                         shift={shift}
                         isExpanded={expandedShiftId === shift.id}
                         onToggle={() => toggleShiftExpand(shift.id)}
+                        fmt={fmt}
                       />
                     ))}
                   </div>
@@ -1007,7 +980,6 @@ export function ShiftManagerModal({
               </div>
             )}
 
-            {/* Stats */}
             {activeTab === 'stats' && shiftStats && (
               <div className="space-y-6">
                 <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
@@ -1025,13 +997,13 @@ export function ShiftManagerModal({
                   />
                   <StatCard
                     label="Total Revenue"
-                    value={formatCurrency(shiftStats.totalRevenue)}
-                    icon={DollarSign}
+                    value={fmt(shiftStats.totalRevenue)}
+                    icon={Banknote}
                     color="purple"
                   />
                   <StatCard
                     label="Avg. Shift Revenue"
-                    value={formatCurrency(shiftStats.averageShiftRevenue)}
+                    value={fmt(shiftStats.averageShiftRevenue)}
                     icon={TrendingUp}
                     color="orange"
                   />
@@ -1091,7 +1063,7 @@ export function ShiftManagerModal({
                             </span>
                           </div>
                           <span className="font-bold text-green-600 dark:text-green-400 tabular-nums flex-shrink-0">
-                            {formatCurrency(cashier.totalRevenue)}
+                            {fmt(cashier.totalRevenue)}
                           </span>
                         </div>
                       ))}
@@ -1113,7 +1085,6 @@ export function ShiftManagerModal({
           </div>
         )}
 
-        {/* Footer */}
         <div className="p-4 border-t border-gray-200 dark:border-gray-700 flex-shrink-0 flex justify-end">
           <button
             type="button"
@@ -1133,9 +1104,12 @@ export function ShiftManagerModal({
 // SUB-COMPONENTS
 // ============================================
 
-// ── Current shift card ──────────────────────────────────────
+interface CurrentShiftCardProps {
+  shift: Shift | null;
+  fmt: (amount: number | null | undefined) => string;
+}
 
-function CurrentShiftCard({ shift }: { shift: Shift | null }) {
+function CurrentShiftCard({ shift, fmt }: CurrentShiftCardProps) {
   if (!shift) {
     return (
       <div className="rounded-xl border p-6 bg-gray-50 dark:bg-gray-700/30 border-gray-200 dark:border-gray-700">
@@ -1176,7 +1150,7 @@ function CurrentShiftCard({ shift }: { shift: Shift | null }) {
             Starting Balance
           </p>
           <p className="text-xl font-bold text-gray-900 dark:text-white tabular-nums">
-            {formatCurrency(shift.startingBalance)}
+            {fmt(shift.startingBalance)}
           </p>
         </div>
       </div>
@@ -1219,7 +1193,7 @@ function CurrentShiftCard({ shift }: { shift: Shift | null }) {
           <div className="bg-white/50 dark:bg-gray-800/50 rounded-lg p-3 text-center">
             <p className="text-xs text-gray-500 dark:text-gray-400">Revenue</p>
             <p className="text-lg font-bold text-green-600 dark:text-green-400 tabular-nums">
-              {formatCurrency(shift.summary.totalRevenue)}
+              {fmt(shift.summary.totalRevenue)}
             </p>
           </div>
           <div className="bg-white/50 dark:bg-gray-800/50 rounded-lg p-3 text-center">
@@ -1227,7 +1201,7 @@ function CurrentShiftCard({ shift }: { shift: Shift | null }) {
               Avg. Ticket
             </p>
             <p className="text-lg font-bold text-blue-600 dark:text-blue-400 tabular-nums">
-              {formatCurrency(shift.summary.averageTicket)}
+              {fmt(shift.summary.averageTicket)}
             </p>
           </div>
           <div className="bg-white/50 dark:bg-gray-800/50 rounded-lg p-3 text-center">
@@ -1235,7 +1209,7 @@ function CurrentShiftCard({ shift }: { shift: Shift | null }) {
               Expected Balance
             </p>
             <p className="text-lg font-bold text-purple-600 dark:text-purple-400 tabular-nums">
-              {formatCurrency(
+              {fmt(
                 shift.expectedEndingBalance ??
                   shift.startingBalance + shift.summary.totalRevenue,
               )}
@@ -1247,8 +1221,6 @@ function CurrentShiftCard({ shift }: { shift: Shift | null }) {
   );
 }
 
-// ── Start shift form ────────────────────────────────────────
-
 interface StartShiftFormProps {
   registers: Register[];
   selectedRegisterId: string;
@@ -1259,6 +1231,7 @@ interface StartShiftFormProps {
   onNotesChange: (value: string) => void;
   isStarting: boolean;
   onSubmit: () => void;
+  currency?: string;
 }
 
 function StartShiftForm({
@@ -1271,6 +1244,7 @@ function StartShiftForm({
   onNotesChange,
   isStarting,
   onSubmit,
+  currency,
 }: StartShiftFormProps) {
   const hasRegisters = registers.length > 0;
 
@@ -1319,10 +1293,10 @@ function StartShiftForm({
           </label>
           <div className="relative">
             <span
-              className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-500 pointer-events-none"
+              className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-500 pointer-events-none text-sm font-medium"
               aria-hidden="true"
             >
-              $
+              {currency}
             </span>
             <input
               id="shift-starting-balance"
@@ -1336,7 +1310,7 @@ function StartShiftForm({
                 }
               }}
               disabled={isStarting}
-              className="w-full pl-7 pr-4 py-2.5 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-transparent bg-white dark:bg-gray-700 text-gray-900 dark:text-white tabular-nums disabled:opacity-50"
+              className="w-full pl-14 pr-4 py-2.5 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-transparent bg-white dark:bg-gray-700 text-gray-900 dark:text-white tabular-nums disabled:opacity-50"
               placeholder="0.00"
             />
           </div>
@@ -1380,8 +1354,6 @@ function StartShiftForm({
   );
 }
 
-// ── Close shift form ────────────────────────────────────────
-
 interface CloseShiftFormProps {
   shift: Shift;
   expectedEndingBalance: number;
@@ -1392,6 +1364,7 @@ interface CloseShiftFormProps {
   onNotesChange: (value: string) => void;
   isClosing: boolean;
   onSubmit: () => void;
+  currency?: string;
 }
 
 function CloseShiftForm({
@@ -1403,6 +1376,7 @@ function CloseShiftForm({
   onNotesChange,
   isClosing,
   onSubmit,
+  currency,
 }: CloseShiftFormProps) {
   return (
     <div className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-6 shadow-sm">
@@ -1421,10 +1395,10 @@ function CloseShiftForm({
           </label>
           <div className="relative">
             <span
-              className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-500 pointer-events-none"
+              className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-500 pointer-events-none text-sm font-medium"
               aria-hidden="true"
             >
-              $
+              {currency}
             </span>
             <input
               id="shift-ending-balance"
@@ -1438,13 +1412,13 @@ function CloseShiftForm({
                 }
               }}
               disabled={isClosing}
-              className="w-full pl-7 pr-4 py-2.5 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-red-500 focus:border-transparent bg-white dark:bg-gray-700 text-gray-900 dark:text-white tabular-nums disabled:opacity-50"
+              className="w-full pl-14 pr-4 py-2.5 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-red-500 focus:border-transparent bg-white dark:bg-gray-700 text-gray-900 dark:text-white tabular-nums disabled:opacity-50"
               placeholder="0.00"
               autoFocus
             />
           </div>
           <p className="mt-1 text-sm text-gray-500 dark:text-gray-400 tabular-nums">
-            Expected: {formatCurrency(expectedEndingBalance)}
+            Expected: {formatPosCurrency(expectedEndingBalance, currency)}
           </p>
         </div>
 
@@ -1467,7 +1441,6 @@ function CloseShiftForm({
         </div>
       </div>
 
-      {/* Live discrepancy display */}
       {discrepancy && (
         <div
           role="status"
@@ -1492,7 +1465,7 @@ function CloseShiftForm({
                 <p className="font-medium">
                   {discrepancy.direction === 'over' ? 'Overage' : 'Shortage'}:{' '}
                   <span className="tabular-nums">
-                    {formatCurrency(discrepancy.absolute)}
+                    {formatPosCurrency(discrepancy.absolute, currency)}
                   </span>
                 </p>
                 <p className="text-xs opacity-90">
@@ -1527,8 +1500,6 @@ function CloseShiftForm({
   );
 }
 
-// ── Stat card ───────────────────────────────────────────────
-
 interface StatCardProps {
   label: string;
   value: string | number;
@@ -1562,18 +1533,18 @@ function StatCard({ label, value, icon: Icon, color }: StatCardProps) {
   );
 }
 
-// ── Shift history item ──────────────────────────────────────
-
 interface ShiftHistoryItemProps {
   shift: Shift;
   isExpanded: boolean;
   onToggle: () => void;
+  fmt: (amount: number | null | undefined) => string;
 }
 
 function ShiftHistoryItem({
   shift,
   isExpanded,
   onToggle,
+  fmt,
 }: ShiftHistoryItemProps) {
   const hasDiscrepancy =
     typeof shift.discrepancy === 'number' && shift.discrepancy !== 0;
@@ -1638,7 +1609,7 @@ function ShiftHistoryItem({
         <div className="flex items-center gap-4 flex-shrink-0 ml-3">
           <div className="text-right">
             <p className="font-bold text-gray-900 dark:text-white tabular-nums">
-              {formatCurrency(displayBalance)}
+              {fmt(displayBalance)}
             </p>
             {hasDiscrepancy && (
               <p
@@ -1647,7 +1618,7 @@ function ShiftHistoryItem({
                 }`}
               >
                 {shift.discrepancy! > 0 ? '+' : ''}
-                {formatCurrency(shift.discrepancy!)}
+                {fmt(shift.discrepancy!)}
               </p>
             )}
             <p className="text-xs text-gray-400 dark:text-gray-500 tabular-nums">
@@ -1673,7 +1644,7 @@ function ShiftHistoryItem({
                 Starting Balance
               </p>
               <p className="font-medium text-gray-900 dark:text-white tabular-nums">
-                {formatCurrency(shift.startingBalance)}
+                {fmt(shift.startingBalance)}
               </p>
             </div>
             <div>
@@ -1681,7 +1652,7 @@ function ShiftHistoryItem({
                 Ending Balance
               </p>
               <p className="font-medium text-gray-900 dark:text-white tabular-nums">
-                {formatCurrency(shift.endingBalance ?? 0)}
+                {fmt(shift.endingBalance ?? 0)}
               </p>
             </div>
             <div>
@@ -1689,7 +1660,7 @@ function ShiftHistoryItem({
                 Total Revenue
               </p>
               <p className="font-medium text-green-600 dark:text-green-400 tabular-nums">
-                {formatCurrency(shift.summary?.totalRevenue ?? 0)}
+                {fmt(shift.summary?.totalRevenue ?? 0)}
               </p>
             </div>
             <div>
@@ -1715,7 +1686,7 @@ function ShiftHistoryItem({
                   />
                   <span className="text-gray-600 dark:text-gray-400">Cash:</span>
                   <span className="font-medium text-gray-900 dark:text-white tabular-nums">
-                    {formatCurrency(shift.summary.cashReceived ?? 0)}
+                    {fmt(shift.summary.cashReceived ?? 0)}
                   </span>
                 </div>
                 <div className="flex items-center gap-1 text-sm">
@@ -1725,7 +1696,7 @@ function ShiftHistoryItem({
                   />
                   <span className="text-gray-600 dark:text-gray-400">Card:</span>
                   <span className="font-medium text-gray-900 dark:text-white tabular-nums">
-                    {formatCurrency(shift.summary.cardReceived ?? 0)}
+                    {fmt(shift.summary.cardReceived ?? 0)}
                   </span>
                 </div>
                 <div className="flex items-center gap-1 text-sm">
@@ -1737,7 +1708,7 @@ function ShiftHistoryItem({
                     Mobile:
                   </span>
                   <span className="font-medium text-gray-900 dark:text-white tabular-nums">
-                    {formatCurrency(shift.summary.mobileReceived ?? 0)}
+                    {fmt(shift.summary.mobileReceived ?? 0)}
                   </span>
                 </div>
                 <div className="flex items-center gap-1 text-sm">
@@ -1749,7 +1720,7 @@ function ShiftHistoryItem({
                     Other:
                   </span>
                   <span className="font-medium text-gray-900 dark:text-white tabular-nums">
-                    {formatCurrency(shift.summary.otherReceived ?? 0)}
+                    {fmt(shift.summary.otherReceived ?? 0)}
                   </span>
                 </div>
               </div>

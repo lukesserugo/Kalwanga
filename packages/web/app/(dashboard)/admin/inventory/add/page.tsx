@@ -18,13 +18,14 @@ import {
 } from '../../../../../services/inventoryService';
 import { barcodeService } from '../../../../../services/barcodeService';
 import { toast } from '../../../../../utils/toast-manager';
+import { formatCurrency } from '../../../../../utils/formatters';
 import {
   ArrowLeft,
   Package,
   Save,
   Loader2,
   AlertCircle,
-  DollarSign,
+  Banknote,
   Tag,
   MapPin,
   Lock,
@@ -135,6 +136,7 @@ interface BusinessUnitOption {
   isActive?: boolean;
   companyId?: string;
   companyName?: string;
+  currency?: string;
 }
 
 // ============================================
@@ -399,6 +401,7 @@ export default function AddInventoryItemPage() {
           isActive: bu.isActive !== false,
           companyId: bu.companyId || undefined,
           companyName: bu.companyName || undefined,
+          currency: bu.currency || undefined,
         }));
 
       if (mapped.length > 0) {
@@ -503,6 +506,7 @@ export default function AddInventoryItemPage() {
               isActive: bu.isActive !== false,
               companyId: bu.companyId || undefined,
               companyName: bu.companyName || undefined,
+              currency: bu.currency || undefined,
             }))
         : [];
 
@@ -776,7 +780,7 @@ export default function AddInventoryItemPage() {
             }
             <div class="info">
               <p><span class="label">Barcode:</span> <span class="value">${safeBarcode}</span></p>
-              <p><span class="label">Price:</span> <span class="value">$${formData.unitPrice.toFixed(2)}</span></p>
+              <p><span class="label">Price:</span> <span class="value">${fmt(formData.unitPrice)}</span></p>
               <p><span class="label">Stock:</span> <span class="value">${formData.quantity}</span></p>
               <p><span class="label">Location:</span> <span class="value">${safeLocation}</span></p>
             </div>
@@ -1099,6 +1103,14 @@ export default function AddInventoryItemPage() {
       return;
     }
 
+    if (!ledgerCurrency) {
+      const msg =
+        'The selected business unit has no resolved ledger currency. Update its settings before creating inventory.';
+      setError(msg);
+      toast.error(msg);
+      return;
+    }
+
     if (!validateForm()) {
       const allTouched: Record<string, boolean> = {};
       Object.keys(formData).forEach((key) => {
@@ -1377,15 +1389,24 @@ export default function AddInventoryItemPage() {
       : `${base} border-gray-300 dark:border-gray-600`;
   };
 
-  const selectedBuName = useMemo(() => {
-    const bu = businessUnits.find((b) => b.id === selectedBusinessUnitId);
-    return bu?.name || '';
-  }, [businessUnits, selectedBusinessUnitId]);
+  const selectedBusinessUnit = useMemo(
+    () => businessUnits.find((unit) => unit.id === selectedBusinessUnitId),
+    [businessUnits, selectedBusinessUnitId],
+  );
+  const selectedBuName = selectedBusinessUnit?.name || '';
+  const ledgerCurrency =
+    selectedBusinessUnit?.currency?.trim().toUpperCase() || null;
+  const fmt = useCallback(
+    (amount: number): string =>
+      ledgerCurrency ? formatCurrency(amount, ledgerCurrency) : '—',
+    [ledgerCurrency],
+  );
 
   const canSubmit =
     !loading &&
     !success &&
     isValidBusinessUnitId(selectedBusinessUnitId) &&
+    Boolean(ledgerCurrency) &&
     businessUnits.length > 0;
 
   // ============================================
@@ -2124,7 +2145,7 @@ export default function AddInventoryItemPage() {
           {/* Pricing & Stock */}
           <div className="border-t border-gray-200 dark:border-gray-700 pt-6">
             <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-4 flex items-center gap-2">
-              <DollarSign className="w-5 h-5 text-success-500" /> Pricing &
+              <Banknote className="w-5 h-5 text-success-500" /> Pricing &
               Stock
             </h3>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
@@ -2134,7 +2155,7 @@ export default function AddInventoryItemPage() {
                 </label>
                 <div className="relative">
                   <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-500 dark:text-gray-400">
-                    $
+                    {ledgerCurrency ?? '—'}
                   </span>
                   <input
                     type="number"
@@ -2145,9 +2166,9 @@ export default function AddInventoryItemPage() {
                     value={formData.unitPrice}
                     onChange={handleChange}
                     onBlur={handleBlur}
-                    className={`${getInputClassName('unitPrice')} pl-8 tabular-nums`}
+                    className={`${getInputClassName('unitPrice')} pl-14 tabular-nums`}
                     placeholder="0.00"
-                    disabled={loading || success}
+                    disabled={loading || success || !ledgerCurrency}
                   />
                 </div>
                 {getFieldError('unitPrice') && (
@@ -2163,7 +2184,7 @@ export default function AddInventoryItemPage() {
                 </label>
                 <div className="relative">
                   <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-500 dark:text-gray-400">
-                    $
+                    {ledgerCurrency ?? '—'}
                   </span>
                   <input
                     type="number"
@@ -2173,9 +2194,9 @@ export default function AddInventoryItemPage() {
                     value={formData.costPrice}
                     onChange={handleChange}
                     onBlur={handleBlur}
-                    className={`${getInputClassName('costPrice')} pl-8 tabular-nums`}
+                    className={`${getInputClassName('costPrice')} pl-14 tabular-nums`}
                     placeholder="0.00"
-                    disabled={loading || success}
+                    disabled={loading || success || !ledgerCurrency}
                   />
                 </div>
                 {getFieldError('costPrice') && (

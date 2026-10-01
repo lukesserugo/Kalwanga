@@ -13,7 +13,7 @@ import {
   type UpdateOrderInput,
   type UpdateOrderItemInput,
   type UpdateOrderStatusInput,
-} from "../schemas/order";
+} from "../../../shared/src/schemas/order";
 
 export class OrderValidation {
   static validateCreateOrder(data: unknown): CreateOrderInput {

@@ -1,13 +1,25 @@
+// D:\Projects\Kalwanga\packages\web\components\business-units\BusinessUnitForm.tsx
+
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
-import { Save, X, Building, MapPin, Phone, Mail, Loader2 } from 'lucide-react';
+import {
+  Save,
+  X,
+  Building,
+  MapPin,
+  Phone,
+  Mail,
+  Loader2,
+  Coins,
+} from 'lucide-react';
 import {
   businessUnitService,
   setBusinessUnitId,
 } from '../../services/businessUnitService';
 import { companyService } from '../../services/companyService';
+import { api } from '../../services/api';
 import { toast } from '../../utils/toast-manager';
 import type {
   BusinessUnit,
@@ -28,12 +40,30 @@ interface FormData {
   email: string | null;
   type?: BusinessUnitType;
   isActive?: boolean;
+  /**
+   * ISO 4217 settlement currency for this BU's ledger.
+   *
+   * Set at creation time. On edit, the field is read-only — a
+   * currency change must go through the dedicated endpoint
+   * (`PATCH /business-units/:id/currency`) so the dirty-record
+   * check and optional conversion run. See the JSDoc on the
+   * `<select>` below.
+   */
+  currency?: string;
 }
 
 interface FormErrors {
   name?: string;
   code?: string;
   email?: string;
+  currency?: string;
+}
+
+interface SettlementCurrencyOption {
+  code: string;
+  name: string;
+  symbol: string;
+  isDefault?: boolean;
 }
 
 export function BusinessUnitForm({ id }: BusinessUnitFormProps) {
@@ -48,20 +78,68 @@ export function BusinessUnitForm({ id }: BusinessUnitFormProps) {
     email: null,
     type: 'STORE' as BusinessUnitType,
     isActive: true,
+    currency: undefined,
   });
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [errors, setErrors] = useState<FormErrors>({});
   const [companyId, setCompanyId] = useState<string>('');
 
-  // Load company ID on mount
+  // Settlement currencies — populated from `GET /currencies/settlement`.
+  // The backend already filters to `settlementAllowed: true`, so this
+  // list is exactly the set a BU may use as its ledger currency.
+  const [currencies, setCurrencies] = useState<SettlementCurrencyOption[]>(
+    [],
+  );
+  const [currenciesLoading, setCurrenciesLoading] = useState(true);
+  const [currenciesError, setCurrenciesError] = useState<string | null>(null);
+
+  // ── Load the settlement-currency list once ────────────────────
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        setCurrenciesLoading(true);
+        setCurrenciesError(null);
+
+        const response = await api.get<any>('/currencies/settlement');
+
+        // The `api` wrapper may unwrap the `{ success, data }` envelope
+        // or return the full body. Normalize both shapes.
+        const list: SettlementCurrencyOption[] = Array.isArray(response)
+          ? response
+          : Array.isArray((response as any)?.data)
+            ? (response as any).data
+            : Array.isArray((response as any)?.data?.data)
+              ? (response as any).data.data
+              : [];
+
+        if (!cancelled) setCurrencies(list);
+      } catch (err: any) {
+        if (cancelled) return;
+        console.warn('Failed to load settlement currencies:', err);
+        setCurrenciesError(
+          err?.response?.data?.message ||
+            err?.message ||
+            'Failed to load currencies',
+        );
+      } finally {
+        if (!cancelled) setCurrenciesLoading(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  // ── Load company id ───────────────────────────────────────────
   useEffect(() => {
     const loadCompanyId = async () => {
       try {
-        let id = companyService.getCompanyId();
-        console.log('📦 Company ID from storage:', id);
+        let cid = companyService.getCompanyId();
+        console.log('📦 Company ID from storage:', cid);
 
-        if (!id || id === 'default-company-id' || id.length < 10) {
+        if (!cid || cid === 'default-company-id' || cid.length < 10) {
           try {
             const storedCompany = localStorage.getItem('companyId');
             if (
@@ -69,29 +147,29 @@ export function BusinessUnitForm({ id }: BusinessUnitFormProps) {
               storedCompany !== 'default-company-id' &&
               storedCompany.length >= 10
             ) {
-              id = storedCompany;
-              console.log('📦 Company ID from localStorage:', id);
+              cid = storedCompany;
+              console.log('📦 Company ID from localStorage:', cid);
             }
           } catch (_e) {
             /* ignore */
           }
         }
 
-        if (!id || id === 'default-company-id' || id.length < 10) {
+        if (!cid || cid === 'default-company-id' || cid.length < 10) {
           try {
             const companies = await companyService.getAll();
             if (companies && companies.data && companies.data.length > 0) {
-              id = companies.data[0].id;
-              companyService.setCompanyId(id);
-              console.log('📦 Company ID from API:', id);
+              cid = companies.data[0].id;
+              companyService.setCompanyId(cid);
+              console.log('📦 Company ID from API:', cid);
             }
           } catch (fetchError) {
             console.warn('Failed to fetch companies:', fetchError);
           }
         }
 
-        if (id && id !== 'default-company-id' && id.length >= 10) {
-          setCompanyId(id);
+        if (cid && cid !== 'default-company-id' && cid.length >= 10) {
+          setCompanyId(cid);
         } else {
           console.warn('⚠️ No valid company ID found');
         }
@@ -103,16 +181,12 @@ export function BusinessUnitForm({ id }: BusinessUnitFormProps) {
     loadCompanyId();
   }, []);
 
-  useEffect(() => {
-    if (isEdit && id) {
-      loadBusinessUnit();
-    }
-  }, [id]);
-
-  const loadBusinessUnit = async () => {
+  // ── Load business unit for edit ───────────────────────────────
+  const loadBusinessUnit = useCallback(async () => {
+    if (!id) return;
     try {
       setLoading(true);
-      const data = await businessUnitService.getBusinessUnitById(id!);
+      const data = await businessUnitService.getBusinessUnitById(id);
       setFormData({
         name: data.name || '',
         code: data.code || '',
@@ -123,6 +197,9 @@ export function BusinessUnitForm({ id }: BusinessUnitFormProps) {
           ((data as any).type as BusinessUnitType) ||
           ('STORE' as BusinessUnitType),
         isActive: data.isActive !== undefined ? data.isActive : true,
+        // Read the current currency from the response. The backend
+        // always resolves and returns it via the registry walk.
+        currency: (data as any).currency ?? undefined,
       });
     } catch (error) {
       console.error('Failed to load business unit:', error);
@@ -130,7 +207,13 @@ export function BusinessUnitForm({ id }: BusinessUnitFormProps) {
     } finally {
       setLoading(false);
     }
-  };
+  }, [id]);
+
+  useEffect(() => {
+    if (isEdit && id) {
+      void loadBusinessUnit();
+    }
+  }, [isEdit, id, loadBusinessUnit]);
 
   const handleChange = (
     e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>
@@ -147,6 +230,8 @@ export function BusinessUnitForm({ id }: BusinessUnitFormProps) {
         (newData as any)[name] = value.trim() || null;
       } else if (name === 'type') {
         (newData as any)[name] = value ? (value as BusinessUnitType) : undefined;
+      } else if (name === 'currency') {
+        (newData as any)[name] = value || undefined;
       } else {
         (newData as any)[name] = value;
       }
@@ -176,6 +261,13 @@ export function BusinessUnitForm({ id }: BusinessUnitFormProps) {
       newErrors.email = 'Please enter a valid email address';
     }
 
+    // On create, currency is required — the admin must make an
+    // explicit choice rather than silently accepting the platform
+    // default. On edit, the field is read-only and cannot fail.
+    if (!isEdit && !formData.currency) {
+      newErrors.currency = 'Please select a settlement currency';
+    }
+
     setErrors(newErrors);
     return Object.keys(newErrors).length === 0;
   };
@@ -201,6 +293,13 @@ export function BusinessUnitForm({ id }: BusinessUnitFormProps) {
 
     try {
       if (isEdit && id) {
+        // ⚠ Do NOT send `currency` on update. A currency change must
+        //   go through `PATCH /business-units/:id/currency`, which
+        //   runs the dirty-record check and offers the conversion
+        //   path. The generic PUT would either silently succeed
+        //   (clean BU) or 409 with no UI to collect a conversion
+        //   rate. The form's currency field is disabled on edit; if
+        //   it somehow contains a different value, we drop it.
         const updatePayload: UpdateBusinessUnitDto = {
           name: formData.name.trim(),
           code: formData.code.trim().toUpperCase(),
@@ -224,6 +323,9 @@ export function BusinessUnitForm({ id }: BusinessUnitFormProps) {
           email: formData.email,
           isActive: formData.isActive !== undefined ? formData.isActive : true,
           type: formData.type || ('STORE' as BusinessUnitType),
+          // The backend validates this against `settlementAllowed`
+          // and rejects unknown or display-only codes with a 400.
+          currency: formData.currency,
         };
 
         console.log('📤 Creating business unit with payload:', createPayload);
@@ -249,6 +351,9 @@ export function BusinessUnitForm({ id }: BusinessUnitFormProps) {
         validationErrors.forEach((err: any) => {
           if (err.field === 'companyId') {
             toast.error('Invalid company ID. Please refresh and try again.');
+          } else if (err.field === 'currency') {
+            setErrors((prev) => ({ ...prev, currency: err.message }));
+            toast.error(err.message);
           } else {
             toast.error(err.message);
           }
@@ -406,6 +511,85 @@ export function BusinessUnitForm({ id }: BusinessUnitFormProps) {
                 <option value="STORE">Store</option>
               </select>
             </div>
+          </div>
+
+          {/* ── Settlement currency ───────────────────────────── */}
+          {/*
+            ⚠ On CREATE: the admin picks the ledger currency. Required
+              so no BU inherits the platform default by accident.
+
+            ⚠ On EDIT: read-only. Changing the currency of an existing
+              BU goes through `/admin/settings/currency`, which runs
+              the dirty-record check and, if the BU is dirty, requires
+              an explicit conversion rate. The generic PUT is not the
+              right endpoint for a currency change.
+          */}
+          <div>
+            <label
+              htmlFor="currency"
+              className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2"
+            >
+              Settlement Currency{' '}
+              {!isEdit && <span className="text-danger-500">*</span>}
+            </label>
+            <div className="relative">
+              <Coins className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 dark:text-gray-500 w-5 h-5 pointer-events-none" />
+              <select
+                id="currency"
+                name="currency"
+                value={formData.currency || ''}
+                onChange={handleChange}
+                className={`w-full pl-10 pr-4 py-2 bg-white dark:bg-gray-900 border rounded-lg focus:ring-2 focus:ring-brand-500 focus:border-transparent text-gray-900 dark:text-white ${
+                  errors.currency
+                    ? 'border-danger-500'
+                    : 'border-gray-300 dark:border-gray-600'
+                } ${isEdit || saving ? 'opacity-60 cursor-not-allowed' : ''}`}
+                disabled={saving || isEdit || currenciesLoading}
+                required={!isEdit}
+              >
+                {currenciesLoading ? (
+                  <option value="">Loading currencies…</option>
+                ) : currenciesError ? (
+                  <option value="">Failed to load currencies</option>
+                ) : (
+                  <>
+                    <option value="">
+                      {isEdit ? '—' : 'Select a currency…'}
+                    </option>
+                    {currencies.map((c) => (
+                      <option key={c.code} value={c.code}>
+                        {c.code} — {c.name} ({c.symbol})
+                        {c.isDefault ? ' (platform default)' : ''}
+                      </option>
+                    ))}
+                  </>
+                )}
+              </select>
+            </div>
+            {errors.currency ? (
+              <p className="mt-1 text-sm text-danger-500">
+                {errors.currency}
+              </p>
+            ) : isEdit ? (
+              <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">
+                To change the currency of an existing business unit, use
+                the{' '}
+                <a
+                  href="/admin/settings/currency"
+                  className="text-brand-600 dark:text-brand-400 hover:underline"
+                >
+                  Currency Settings
+                </a>{' '}
+                page. That page runs the dirty-record check and, if
+                needed, the conversion.
+              </p>
+            ) : (
+              <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">
+                Every sale, receipt, and report for this business unit
+                will be denominated in this currency. It can be changed
+                later from the Currency Settings page.
+              </p>
+            )}
           </div>
 
           <div>

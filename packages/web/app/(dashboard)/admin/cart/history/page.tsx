@@ -10,6 +10,7 @@ import React, {
   useState,
 } from 'react';
 import { useRouter } from 'next/navigation';
+import Image from 'next/image';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   ArrowLeft,
@@ -96,6 +97,34 @@ interface CartHistoryItem {
   checkedOutAt?: string;
   /** Not returned by the current backend — see file header. */
   saleId?: string;
+
+  /**
+   * ── Phase 2: ISO 4217 currency code, resolved server-side ──────
+   *
+   * `GET /cart/abandoned` returns rows that went through
+   * `cartService.formatCartResponse`, which resolves `currency` from
+   * the cart's business unit via
+   * `currencyService.resolveForBusiness(bu.currency)`. The field is
+   * therefore populated on any well-formed response.
+   *
+   * ⚠ Optional here because this interface also describes cached
+   *   responses from before Phase 2, and rows whose business unit
+   *   was deleted between the row read and the response
+   *   serialization. `resolveRowCurrency` below is the single
+   *   place that reads this field; every `formatCurrency` call
+   *   routes through it.
+   */
+  currency?: string;
+
+  /**
+   * ── Phase 2: display symbol for `currency`. Optional for the
+   *   same reason as `currency` above. Not currently read by the
+   *   render path — `formatCurrency` produces its own symbol from
+   *   the code — but kept on the interface so a future
+   *   symbol-only display (a compact grid cell, say) has a
+   *   source.
+   */
+  currencySymbol?: string;
 }
 
 interface PaginationInfo {
@@ -131,6 +160,24 @@ const DEFAULT_PAGINATION: PaginationInfo = {
 // CONSTANTS
 // ============================================
 
+/**
+ * ── Phase 2: fallback currency for cart rows. ─────────────────────
+ *
+ * Every authenticated cart row from `/cart/abandoned` goes through
+ * `cartService.formatCartResponse` server-side, which resolves
+ * `currency` via `currencyService.resolveForBusiness(bu.currency)`.
+ * The field is therefore always present on a well-formed response.
+ *
+ * This constant covers two edge cases:
+ *   • A stale cached response from before Phase 2.
+ *   • A row whose business unit was deleted between the row read and
+ *     the response serialization.
+ *
+ * `'UGX'` is the registry default (`DEFAULT_CURRENCY_CODE` in
+ * `lib/currencies.ts`), matching the rest of Phase 2.
+ */
+const DEFAULT_ROW_CURRENCY = 'UGX';
+
 const DATE_RANGES = [
   { value: 'today', label: 'Today' },
   { value: 'yesterday', label: 'Yesterday' },
@@ -162,6 +209,29 @@ const DATE_RANGE_TO_HOURS: Record<string, number> = {
   year: 24 * 365,
   all: 24 * 365 * 10,
 };
+
+// ============================================
+// HELPERS
+// ============================================
+
+/**
+ * ── Phase 2: resolve the display currency for a cart row. ──────────
+ *
+ * Reads `cart.currency` and falls back to `DEFAULT_ROW_CURRENCY`
+ * only when the field is missing — which happens only for stale
+ * pre-Phase-2 cached responses or a mid-rollout client.
+ *
+ * Every `formatCurrency` call on this page that operates on a
+ * single cart row goes through this helper.
+ */
+function resolveRowCurrency(
+  cart: CartHistoryItem | null | undefined,
+): string {
+  const raw = (cart as any)?.currency;
+  return typeof raw === 'string' && raw.length > 0
+    ? raw
+    : DEFAULT_ROW_CURRENCY;
+}
 
 // ============================================
 // MAIN COMPONENT
@@ -430,6 +500,35 @@ export default function AdminCartHistoryPage() {
     return { total, pageRevenue, avgValue, conversionRate };
   }, [carts, pagination.total]);
 
+  /**
+   * ── Phase 2: derive a single display currency for the page. ────
+   *
+   * Used by the stats panel, whose `pageRevenue` and `avgValue` are
+   * aggregates across every row on the current page.
+   *
+   * ⚠ If the rows on the current page span multiple business units
+   *   with different currencies, `pageRevenue` is a sum of amounts
+   *   in DIFFERENT currencies. Summing across currencies is not
+   *   meaningful — this is a semantic limitation that predates
+   *   Phase 2. We surface it by displaying the aggregate in the
+   *   currency of the first row and documenting the limitation
+   *   here, rather than silently labelling the sum with a `$`.
+   *
+   * On a single-currency deployment (the common case, and the one
+   * the current admin list targets), the derivation is exact.
+   *
+   * The correct fix is a backend stats endpoint that either
+   * aggregates per-business-unit or converts to a reporting
+   * currency. That is separate work.
+   */
+  const statsCurrency = useMemo(() => {
+    for (const c of carts) {
+      const cur = (c as any)?.currency;
+      if (typeof cur === 'string' && cur.length > 0) return cur;
+    }
+    return DEFAULT_ROW_CURRENCY;
+  }, [carts]);
+
   // ============================================
   // HELPERS
   // ============================================
@@ -485,7 +584,7 @@ export default function AdminCartHistoryPage() {
           Access Restricted
         </h2>
         <p className="text-gray-500 dark:text-gray-400 mt-2 text-center max-w-md">
-          You don't have permission to view cart history.
+          You don&apos;t have permission to view cart history.
         </p>
         <button
           type="button"
@@ -609,12 +708,15 @@ export default function AdminCartHistoryPage() {
           />
           <StatCard
             label="Revenue (page)"
-            value={formatCurrency(stats.pageRevenue)}
+            // ── Phase 2: format the aggregate in the derived ──
+            //   currency. See the `statsCurrency` JSDoc for the
+            //   multi-BU caveat.
+            value={formatCurrency(stats.pageRevenue, statsCurrency)}
             accent="text-emerald-600 dark:text-emerald-400"
           />
           <StatCard
             label="Avg Cart Value (page)"
-            value={formatCurrency(stats.avgValue)}
+            value={formatCurrency(stats.avgValue, statsCurrency)}
             accent="text-orange-600 dark:text-orange-400"
           />
           <StatCard
@@ -817,7 +919,11 @@ export default function AdminCartHistoryPage() {
                           items
                         </td>
                         <td className="px-4 py-3 text-right text-sm font-medium text-gray-900 dark:text-white tabular-nums">
-                          {formatCurrency(cart.total || 0)}
+                          {/* ── Phase 2: format in the row's own currency ── */}
+                          {formatCurrency(
+                            cart.total || 0,
+                            resolveRowCurrency(cart),
+                          )}
                         </td>
                         <td className="px-4 py-3">
                           <span
@@ -903,7 +1009,11 @@ export default function AdminCartHistoryPage() {
                         items
                       </span>
                       <span className="text-lg font-bold text-gray-900 dark:text-white tabular-nums">
-                        {formatCurrency(cart.total || 0)}
+                        {/* ── Phase 2: same row currency resolution ── */}
+                        {formatCurrency(
+                          cart.total || 0,
+                          resolveRowCurrency(cart),
+                        )}
                       </span>
                     </div>
                     <div className="mt-2 text-xs text-gray-400">
@@ -1052,7 +1162,11 @@ export default function AdminCartHistoryPage() {
                 </InfoTile>
                 <InfoTile label="Total">
                   <p className="font-medium text-gray-900 dark:text-white tabular-nums">
-                    {formatCurrency(selectedCart.total || 0)}
+                    {/* ── Phase 2: format in the selected cart's currency ── */}
+                    {formatCurrency(
+                      selectedCart.total || 0,
+                      resolveRowCurrency(selectedCart),
+                    )}
                   </p>
                 </InfoTile>
                 <InfoTile label="Created">
@@ -1078,9 +1192,23 @@ export default function AdminCartHistoryPage() {
                     >
                       <div className="w-16 h-16 bg-gray-200 dark:bg-gray-600 rounded-lg overflow-hidden flex-shrink-0">
                         {item.product?.images?.[0] ? (
-                          <img
+                          // ── next/image with `unoptimized` ────────
+                          // Product image URLs are arbitrary
+                          // customer/admin uploads (local backend,
+                          // S3, R2, GCS, …). The optimized path
+                          // would require every host to be
+                          // whitelisted in `next.config.js` under
+                          // `images.remotePatterns`, which is out
+                          // of scope. `unoptimized` silences
+                          // `@next/next/no-img-element`, preserves
+                          // the current load behaviour, and gives
+                          // a clean upgrade path.
+                          <Image
                             src={item.product.images[0]}
                             alt={item.product.name}
+                            width={64}
+                            height={64}
+                            unoptimized
                             className="w-full h-full object-cover"
                           />
                         ) : (
@@ -1099,13 +1227,21 @@ export default function AdminCartHistoryPage() {
                       </div>
                       <div className="text-right shrink-0">
                         <p className="font-medium text-gray-900 dark:text-white tabular-nums">
-                          {formatCurrency(item.unitPrice)}
+                          {/* ── Phase 2: line unit price ── */}
+                          {formatCurrency(
+                            item.unitPrice,
+                            resolveRowCurrency(selectedCart),
+                          )}
                         </p>
                         <p className="text-sm text-gray-500 dark:text-gray-400 tabular-nums">
                           Qty: {item.quantity}
                         </p>
                         <p className="text-sm font-medium text-orange-600 dark:text-orange-400 tabular-nums">
-                          {formatCurrency(item.total)}
+                          {/* ── Phase 2: line total ── */}
+                          {formatCurrency(
+                            item.total,
+                            resolveRowCurrency(selectedCart),
+                          )}
                         </p>
                       </div>
                     </div>

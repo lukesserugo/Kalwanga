@@ -12,7 +12,7 @@ import React, {
 import { useRouter } from 'next/navigation';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
-  Save, X, Package, DollarSign, Barcode, Tag, Layers,
+  Save, X, Package, Banknote, Barcode, Tag, Layers,
   Image as ImageIcon, Plus, Trash2, Loader2, Upload,
   ArrowLeft, AlertCircle, CheckCircle, Lock, Eye,
   Star,
@@ -118,7 +118,7 @@ type TabId =
 
 const TABS: { id: TabId; label: string; icon: React.ElementType }[] = [
   { id: 'basic', label: 'Basic Info', icon: Package },
-  { id: 'pricing', label: 'Pricing', icon: DollarSign },
+  { id: 'pricing', label: 'Pricing', icon: Banknote },
   { id: 'inventory', label: 'Inventory', icon: Layers },
   { id: 'images', label: 'Images', icon: ImageIcon },
   { id: 'variants', label: 'Variants', icon: Layers },
@@ -416,7 +416,7 @@ export function ProductForm({
   businessUnitId: businessUnitIdProp,
 }: ProductFormProps) {
   const router = useRouter();
-  const { canManage } = usePermission();
+  const { canManage, getBusinessUnits } = usePermission();
   const { user } = useAuth();
   const isEdit = mode === 'edit';
 
@@ -435,6 +435,21 @@ export function ProductForm({
 
     return null;
   }, [businessUnitIdProp, user]);
+
+  const availableBusinessUnits = getBusinessUnits();
+  const ledgerCurrency = useMemo(() => {
+    const currency = availableBusinessUnits.find(
+      (unit) => unit.id === resolvedBusinessUnitId,
+    )?.currency;
+    return typeof currency === 'string' && /^[A-Za-z]{3}$/.test(currency.trim())
+      ? currency.trim().toUpperCase()
+      : null;
+  }, [availableBusinessUnits, resolvedBusinessUnitId]);
+  const fmt = useCallback(
+    (amount: number): string =>
+      ledgerCurrency ? formatCurrency(amount, ledgerCurrency) : '—',
+    [ledgerCurrency],
+  );
 
   const [formData, setFormData] = useState<ProductFormData>(EMPTY_FORM);
   const [variants, setVariants] = useState<PartialProductVariant[]>([]);
@@ -866,7 +881,7 @@ export function ProductForm({
                 ? `<img src="${barcodeInfo.qrCodeUrl}" alt="QR Code" class="qr-img" onerror="this.style.display='none'" />`
                 : ''
             }
-            <div class="price">${formatCurrency(formData.unitPrice || 0)}</div>
+            <div class="price">${fmt(formData.unitPrice || 0)}</div>
             <div class="info">
               <p><span class="label">Barcode:</span> <span class="value">${escapeHtml(barcodeInfo.barcode)}</span></p>
               <p><span class="label">Min Stock:</span> <span class="value">${formData.minStock}</span></p>
@@ -879,7 +894,7 @@ export function ProductForm({
       </html>
     `);
     printWindow.document.close();
-  }, [barcodeInfo, formData]);
+  }, [barcodeInfo, formData, fmt]);
 
   const handleDownloadBarcode = useCallback(() => {
     if (!barcodeInfo?.barcodeUrl) return;
@@ -1273,6 +1288,13 @@ export function ProductForm({
       if (!resolvedBusinessUnitId) {
         toast.error(
           'No valid business unit is selected. Please refresh the page and try again.'
+        );
+        return;
+      }
+
+      if (!ledgerCurrency) {
+        toast.error(
+          'The selected business unit has no resolved ledger currency. Update its settings before saving product pricing.',
         );
         return;
       }
@@ -2049,7 +2071,9 @@ export function ProductForm({
                     Unit Price <span className="text-danger-500">*</span>
                   </label>
                   <div className="relative">
-                    <DollarSign className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 dark:text-gray-500 w-5 h-5" />
+                    <span className="absolute left-3 top-1/2 -translate-y-1/2 text-xs font-medium text-gray-500 dark:text-gray-400">
+                      {ledgerCurrency ?? '—'}
+                    </span>
                     <input
                       type="number"
                       name="unitPrice"
@@ -2057,12 +2081,12 @@ export function ProductForm({
                       onChange={handleChange}
                       step="0.01"
                       min="0"
-                      className={`w-full pl-10 pr-4 py-2 border rounded-lg tabular-nums focus:outline-none focus:ring-2 focus:ring-brand-500 transition duration-250 dark:bg-gray-700 dark:text-white ${
+                      className={`w-full pl-14 pr-4 py-2 border rounded-lg tabular-nums focus:outline-none focus:ring-2 focus:ring-brand-500 transition duration-250 dark:bg-gray-700 dark:text-white ${
                         errors.unitPrice
                           ? 'border-danger-500'
                           : 'border-gray-300 dark:border-gray-600'
                       }`}
-                      disabled={saving}
+                      disabled={saving || !ledgerCurrency}
                       placeholder="0.00"
                     />
                   </div>
@@ -2078,7 +2102,9 @@ export function ProductForm({
                     Cost Price
                   </label>
                   <div className="relative">
-                    <DollarSign className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 dark:text-gray-500 w-5 h-5" />
+                    <span className="absolute left-3 top-1/2 -translate-y-1/2 text-xs font-medium text-gray-500 dark:text-gray-400">
+                      {ledgerCurrency ?? '—'}
+                    </span>
                     <input
                       type="number"
                       name="costPrice"
@@ -2086,8 +2112,8 @@ export function ProductForm({
                       onChange={handleChange}
                       step="0.01"
                       min="0"
-                      className="w-full pl-10 pr-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg tabular-nums focus:outline-none focus:ring-2 focus:ring-brand-500 transition duration-250 dark:bg-gray-700 dark:text-white"
-                      disabled={saving}
+                      className="w-full pl-14 pr-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg tabular-nums focus:outline-none focus:ring-2 focus:ring-brand-500 transition duration-250 dark:bg-gray-700 dark:text-white"
+                      disabled={saving || !ledgerCurrency}
                       placeholder="0.00"
                     />
                   </div>
@@ -2122,7 +2148,7 @@ export function ProductForm({
                       Unit Price:
                     </span>
                     <span className="font-medium tabular-nums text-gray-900 dark:text-white ml-2">
-                      {formatCurrency(formData.unitPrice || 0)}
+                      {fmt(formData.unitPrice || 0)}
                     </span>
                   </div>
                   <div>
@@ -2130,7 +2156,7 @@ export function ProductForm({
                       Cost Price:
                     </span>
                     <span className="font-medium tabular-nums text-gray-900 dark:text-white ml-2">
-                      {formatCurrency(formData.costPrice || 0)}
+                      {fmt(formData.costPrice || 0)}
                     </span>
                   </div>
                   <div>
@@ -2370,7 +2396,7 @@ export function ProductForm({
                             <div className="flex flex-wrap items-center gap-4 text-sm text-gray-500 dark:text-gray-400 mt-1">
                               <span className="tabular-nums">SKU: {variant.sku}</span>
                               <span className="tabular-nums">
-                                Price: {formatCurrency(variant.price ?? 0)}
+                                Price: {fmt(variant.price ?? 0)}
                               </span>
                               <span className="tabular-nums">Stock: {variant.stock ?? 0}</span>
                               {variant.images && variant.images.length > 1 && (
@@ -2463,7 +2489,9 @@ export function ProductForm({
                           Price <span className="text-danger-500">*</span>
                         </label>
                         <div className="relative">
-                          <DollarSign className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 dark:text-gray-500 w-4 h-4" />
+                          <span className="absolute left-3 top-1/2 -translate-y-1/2 text-xs font-medium text-gray-500 dark:text-gray-400">
+                            {ledgerCurrency ?? '—'}
+                          </span>
                           <input
                             type="number"
                             value={newVariant.price ?? 0}
@@ -2475,7 +2503,8 @@ export function ProductForm({
                             }
                             step="0.01"
                             min="0"
-                            className="w-full pl-9 pr-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg tabular-nums focus:outline-none focus:ring-2 focus:ring-brand-500 transition duration-250 dark:bg-gray-700 dark:text-white"
+                            className="w-full pl-14 pr-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg tabular-nums focus:outline-none focus:ring-2 focus:ring-brand-500 transition duration-250 dark:bg-gray-700 dark:text-white"
+                            disabled={saving || !ledgerCurrency}
                             placeholder="0.00"
                           />
                         </div>

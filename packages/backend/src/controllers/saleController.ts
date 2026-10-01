@@ -9,6 +9,7 @@ import {
 } from '../utils/validators.js';
 import { prisma } from '../lib/prisma.js';
 import type { DiscountType } from '../generated/prisma/index.js';
+import { currencyService } from '../services/currencyService.js';
 import { z } from 'zod';
 
 const saleService = new SaleService();
@@ -61,6 +62,28 @@ function isDiscountType(value: unknown): value is DiscountType {
   );
 }
 
+/**
+ * Payment methods whose charge currency can differ from the ledger
+ * currency, and which therefore MUST go through the online checkout
+ * path (`checkoutController.processOnlineCheckout`). Attempting a
+ * POS/direct sale with one of these would create a "paid" sale with
+ * no actual gateway charge.
+ *
+ * ⚠ Kept here (not imported from `checkoutService`) because the
+ *   controller is the enforcement boundary — importing from a
+ *   service that the controller itself calls would create a
+ *   circular dependency at module-eval time.
+ */
+const REMOTE_GATEWAY_METHODS = new Set<string>([
+  'CREDIT_CARD',
+  'DEBIT_CARD',
+  'CARD',
+  'PAYPAL',
+  'FLUTTERWAVE',
+  'PAYSTACK',
+  'SQUARE',
+]);
+
 const dateRangeSchema = z.object({
   startDate: z.string().datetime().optional(),
   endDate: z.string().datetime().optional(),
@@ -81,7 +104,7 @@ const refundSchema = z.object({
         variantId: z.string().optional(),
         quantity: z.number().int().positive(),
         reason: z.string().optional(),
-      })
+      }),
     )
     .optional(),
 });
@@ -103,7 +126,7 @@ const returnSchema = z.object({
         variantId: z.string().optional(),
         quantity: z.number().int().positive(),
         reason: z.string().optional(),
-      })
+      }),
     )
     .optional(),
 });
@@ -164,7 +187,10 @@ async function getBusinessUnitId(req: Request): Promise<string> {
 
       return newBusinessUnit.id;
     } catch (error) {
-      console.error('❌ Failed to get/create default business unit:', error);
+      console.error(
+        '❌ Failed to get/create default business unit:',
+        error,
+      );
       throw new AppError('Failed to resolve business unit ID', 500);
     }
   }
@@ -189,7 +215,8 @@ function getIdempotencyKey(req: Request): string | undefined {
     (req.headers['Idempotency-Key'] as string | undefined);
 
   const bodyKey =
-    (req.body && (req.body.idempotencyKey as string | undefined)) || undefined;
+    (req.body && (req.body.idempotencyKey as string | undefined)) ||
+    undefined;
 
   const raw = headerKey || bodyKey;
   if (!raw) return undefined;
@@ -208,6 +235,69 @@ function getUserId(req: Request): string {
     throw new AppError('User ID is required', 400);
   }
   return userId;
+}
+
+/**
+ * Extract the payer's chosen display currency from the request.
+ *
+ * Source order (first non-empty wins):
+ *   1. `X-Display-Currency` HTTP header (canonical)
+ *   2. `x-display-currency` HTTP header (lowercase variant)
+ *   3. `displayCurrency` in the request body (SDK / form clients)
+ *
+ * The value is upper-cased and validated against the registry. An
+ * unknown or malformed code is dropped (returns `undefined`) rather
+ * than rejected — the sale itself must not fail because the display
+ * preference is stale. This mirrors the same decision made in
+ * `cartService.resolveDisplayContext`.
+ *
+ * ⚠ The returned value is an AUDIT FACT. It is recorded on the
+ *   `Payment` row's `displayCurrency` column and in metadata. It
+ *   NEVER mutates the ledger amount, the charge amount, or the
+ *   `Payment.currency` column.
+ */
+function getDisplayCurrency(req: Request): string | null {
+  const headerValue =
+    (req.headers['x-display-currency'] as string | undefined) ??
+    (req.headers['X-Display-Currency'] as string | undefined);
+
+  const bodyValue =
+    (req.body && (req.body.displayCurrency as string | undefined)) ||
+    undefined;
+
+  const raw = headerValue || bodyValue;
+  if (!raw) return null;
+
+  const trimmed = String(raw).trim().toUpperCase();
+  if (trimmed.length === 0) return null;
+
+  // Unknown codes are dropped. The service treats `null` and
+  // `undefined` identically: no display override.
+  if (!currencyService.tryGetCurrency(trimmed)) return null;
+
+  return trimmed;
+}
+
+/**
+ * Reject a POS/direct sale whose payment method requires gateway
+ * authorization.
+ *
+ * ⚠ The POS path (`processCheckout` / `createSale` / …) does not
+ *   call the gateway. A CARD sale created through it would be
+ *   recorded as PAID with no actual charge. The service enforces
+ *   this too, but a controller-level 400 gives the caller a clear
+ *   message pointing at the correct endpoint.
+ */
+function assertNotRemoteGateway(method: string): void {
+  const upper = method.trim().toUpperCase();
+  if (REMOTE_GATEWAY_METHODS.has(upper)) {
+    throw new AppError(
+      `Payment method ${upper} requires gateway authorization. ` +
+        `Use the online checkout endpoint (/checkout/online) instead of ` +
+        `the POS sale endpoint.`,
+      400,
+    );
+  }
 }
 
 /**
@@ -300,14 +390,20 @@ export const saleController = {
         businessUnitId: businessUnitId,
         customerId: customerId as string,
         userId: userId as string,
-        startDate: startDate ? new Date(startDate as string) : undefined,
+        startDate: startDate
+          ? new Date(startDate as string)
+          : undefined,
         endDate: endDate ? new Date(endDate as string) : undefined,
         status: status as string,
         paymentMethod: paymentMethod as string,
         sortBy: sortBy as string,
         sortOrder: sortOrder as 'asc' | 'desc',
-        minAmount: minAmount ? parseFloat(minAmount as string) : undefined,
-        maxAmount: maxAmount ? parseFloat(maxAmount as string) : undefined,
+        minAmount: minAmount
+          ? parseFloat(minAmount as string)
+          : undefined,
+        maxAmount: maxAmount
+          ? parseFloat(maxAmount as string)
+          : undefined,
         includeDeleted: includeDeleted === 'true',
       });
 
@@ -353,10 +449,16 @@ export const saleController = {
    * Get sale by receipt number
    * GET /sales/receipt/:receiptNumber
    */
-  async getSaleByReceiptNumber(req: Request, res: Response, next: NextFunction) {
+  async getSaleByReceiptNumber(
+    req: Request,
+    res: Response,
+    next: NextFunction,
+  ) {
     try {
       const { receiptNumber } = req.params;
-      const sale = await saleService.getSaleByReceiptNumber(receiptNumber);
+      const sale = await saleService.getSaleByReceiptNumber(
+        receiptNumber,
+      );
 
       if (!sale) {
         throw new AppError('Sale not found', 404);
@@ -372,7 +474,8 @@ export const saleController = {
   },
 
   /**
-   * Create a new sale (legacy direct sale)
+   * Create a new sale (legacy direct sale).
+   *
    * POST /sales
    *
    * Idempotent when the client sends an `Idempotency-Key` header (or
@@ -381,32 +484,38 @@ export const saleController = {
    *
    * Promotion / loyalty passthrough fields (`discountType`,
    * `promotionCode`, `promotionDiscount`) are read from the body
-   * and forwarded to the service, which persists them on the `Sale`
-   * row. `discountType` is inferred when omitted; if supplied, it
-   * must be one of the Prisma enum members:
-   *   PERCENTAGE | FIXED | LOYALTY | MANUAL
+   * and forwarded to the service.
+   *
+   * ── Phase 3a ────────────────────────────────────────────────
+   * `X-Display-Currency` header (or `displayCurrency` in the body)
+   * is read and forwarded. It is recorded on the `Payment` row as an
+   * audit fact and NEVER mutates any amount.
+   *
+   * ── Card-backed methods ─────────────────────────────────────
+   * The POS path does not call the gateway. A CARD/PAYPAL/… sale
+   * through this endpoint would be recorded as PAID with no actual
+   * charge. `assertNotRemoteGateway` rejects those at the top of the
+   * handler. Card sales must go through `/checkout/online`.
    */
   async createSale(req: Request, res: Response, next: NextFunction) {
     try {
       const data = createSaleSchema.parse(req.body);
       const userId = getUserId(req);
 
-      // Get the business unit ID
+      // ⚠ Reject gateway-backed methods — the POS path can't
+      //   authorize them. See the method JSDoc.
+      assertNotRemoteGateway(data.paymentMethod);
+
       const businessUnitId = await getBusinessUnitId(req);
-
-      // ✅ Resolve the idempotency key from header (preferred) or body.
       const idempotencyKey = getIdempotencyKey(req);
-
-      // ✅ Promotion / loyalty passthrough. The service infers
-      // `discountType` when omitted and leaves the rest at their
-      // model defaults.
       const promotion = readPromotionFields(req.body);
+      const displayCurrency = getDisplayCurrency(req);
 
-      // Add businessUnitId + idempotencyKey + promotion fields to the data
       const saleData = {
         ...data,
         businessUnitId,
         idempotencyKey,
+        displayCurrency,
         ...promotion,
       };
 
@@ -433,36 +542,40 @@ export const saleController = {
   },
 
   /**
-   * Create sale from cart checkout (POS Integration)
+   * Create sale from cart checkout (POS Integration).
+   *
    * POST /sales/checkout
    *
    * Idempotent when the client sends an `Idempotency-Key` header (or
    * `idempotencyKey` in the body). Retries with the same key return the
    * original sale; see `SaleService.createSaleFromCart`.
    *
-   * Promotion / loyalty passthrough fields are read from the body
-   * and forwarded to the service.
+   * ── Phase 3a ────────────────────────────────────────────────
+   * `X-Display-Currency` is forwarded for audit.
+   *
+   * ── Gateway-backed methods ──────────────────────────────────
+   * Rejected at the top of the handler. Card checkout goes through
+   * `/checkout/online`.
    *
    * ⚠ `tipAmount` is NOT forwarded. `cartCheckoutSchema` does not
    *   declare it, and `SaleService.createSaleFromCart` does not
    *   consume it — the tip would be silently dropped even if we
-   *   passed it through. If tip support is wanted on the cart
-   *   checkout path, that requires (a) declaring `tipAmount` on
-   *   `cartCheckoutSchema`, (b) adding it to the charged total in
-   *   the service, and (c) recording it on the Payment row. Not a
-   *   Phase 3 concern.
+   *   passed it through.
    */
-  async createSaleFromCart(req: Request, res: Response, next: NextFunction) {
+  async createSaleFromCart(
+    req: Request,
+    res: Response,
+    next: NextFunction,
+  ) {
     try {
       const userId = getUserId(req);
-
       const validatedData = cartCheckoutSchema.parse(req.body);
 
-      // ✅ Resolve the idempotency key from header (preferred) or body.
-      const idempotencyKey = getIdempotencyKey(req);
+      assertNotRemoteGateway(validatedData.paymentMethod);
 
-      // ✅ Promotion / loyalty passthrough.
+      const idempotencyKey = getIdempotencyKey(req);
       const promotion = readPromotionFields(req.body);
+      const displayCurrency = getDisplayCurrency(req);
 
       const sale = await saleService.createSaleFromCart(
         validatedData.cartId,
@@ -471,14 +584,14 @@ export const saleController = {
           paymentMethod: validatedData.paymentMethod,
           paidAmount: validatedData.paidAmount,
           cashRegisterId: validatedData.cashRegisterId,
-          cashRegisterSessionId: validatedData.cashRegisterSessionId,
+          cashRegisterSessionId:
+            validatedData.cashRegisterSessionId,
           applyLoyaltyPoints: validatedData.applyLoyaltyPoints,
           // ⚠ No `tipAmount` — see the method JSDoc.
-          // ✅ Forward the key so the sale layer persists / dedupes on it.
           idempotencyKey,
-          // ✅ Forward the promotion / loyalty passthrough.
+          displayCurrency,
           ...promotion,
-        }
+        },
       );
 
       const fullSale = await saleService.getSaleById(sale.id);
@@ -504,26 +617,28 @@ export const saleController = {
   },
 
   /**
-   * Create sale from POS
+   * Create sale from POS.
+   *
    * POST /sales/pos
    *
    * Alias of `createSaleFromCart` for legacy POS clients. Same
-   * idempotency semantics — header (`Idempotency-Key`) or body
-   * (`idempotencyKey`) is honored. Same promotion passthrough.
-   *
-   * ⚠ `tipAmount` is NOT forwarded — see `createSaleFromCart`.
+   * idempotency semantics. Same promotion passthrough. Same
+   * display-currency audit. Same gateway-method rejection.
    */
-  async createSaleFromPos(req: Request, res: Response, next: NextFunction) {
+  async createSaleFromPos(
+    req: Request,
+    res: Response,
+    next: NextFunction,
+  ) {
     try {
       const userId = getUserId(req);
-
       const validatedData = cartCheckoutSchema.parse(req.body);
 
-      // ✅ Resolve the idempotency key from header (preferred) or body.
-      const idempotencyKey = getIdempotencyKey(req);
+      assertNotRemoteGateway(validatedData.paymentMethod);
 
-      // ✅ Promotion / loyalty passthrough.
+      const idempotencyKey = getIdempotencyKey(req);
       const promotion = readPromotionFields(req.body);
+      const displayCurrency = getDisplayCurrency(req);
 
       const sale = await saleService.createSaleFromCart(
         validatedData.cartId,
@@ -532,14 +647,13 @@ export const saleController = {
           paymentMethod: validatedData.paymentMethod,
           paidAmount: validatedData.paidAmount,
           cashRegisterId: validatedData.cashRegisterId,
-          cashRegisterSessionId: validatedData.cashRegisterSessionId,
+          cashRegisterSessionId:
+            validatedData.cashRegisterSessionId,
           applyLoyaltyPoints: validatedData.applyLoyaltyPoints,
-          // ⚠ No `tipAmount` — see `createSaleFromCart`.
-          // ✅ Forward the key so the sale layer persists / dedupes on it.
           idempotencyKey,
-          // ✅ Forward the promotion / loyalty passthrough.
+          displayCurrency,
           ...promotion,
-        }
+        },
       );
 
       const fullSale = await saleService.getSaleById(sale.id);
@@ -574,7 +688,13 @@ export const saleController = {
       const { reason, amount, items } = refundSchema.parse(req.body);
       const userId = getUserId(req);
 
-      const refund = await saleService.refundSale(id, userId, reason, amount, items);
+      const refund = await saleService.refundSale(
+        id,
+        userId,
+        reason,
+        amount,
+        items,
+      );
 
       res.status(200).json({
         success: true,
@@ -606,8 +726,10 @@ export const saleController = {
       const { reason, items } = returnSchema.parse(req.body);
       const userId = getUserId(req);
 
-      // The service already validates sale existence and throws 404.
-      const result = await saleService.processReturn(id, userId, { reason, items });
+      const result = await saleService.processReturn(id, userId, {
+        reason,
+        items,
+      });
 
       res.status(200).json({
         success: true,
@@ -739,13 +861,21 @@ export const saleController = {
    * Send receipt email
    * POST /sales/:id/email-receipt
    */
-  async sendReceiptEmail(req: Request, res: Response, next: NextFunction) {
+  async sendReceiptEmail(
+    req: Request,
+    res: Response,
+    next: NextFunction,
+  ) {
     try {
       const { id } = req.params;
       const { email } = emailReceiptSchema.parse(req.body);
       const userId = getUserId(req);
 
-      const result = await saleService.sendReceiptEmail(id, email, userId);
+      const result = await saleService.sendReceiptEmail(
+        id,
+        email,
+        userId,
+      );
 
       res.status(200).json({
         success: true,
@@ -771,7 +901,11 @@ export const saleController = {
    * Resend receipt email
    * POST /sales/:id/resend-receipt
    */
-  async resendReceiptEmail(req: Request, res: Response, next: NextFunction) {
+  async resendReceiptEmail(
+    req: Request,
+    res: Response,
+    next: NextFunction,
+  ) {
     try {
       const { id } = req.params;
       const userId = getUserId(req);
@@ -799,7 +933,9 @@ export const saleController = {
 
       const stats = await saleService.getSalesStats({
         businessUnitId: businessUnitId,
-        startDate: startDate ? new Date(startDate as string) : undefined,
+        startDate: startDate
+          ? new Date(startDate as string)
+          : undefined,
         endDate: endDate ? new Date(endDate as string) : undefined,
       });
 
@@ -816,14 +952,21 @@ export const saleController = {
    * Get sales by date range
    * GET /sales/date-range
    */
-  async getSalesByDateRange(req: Request, res: Response, next: NextFunction) {
+  async getSalesByDateRange(
+    req: Request,
+    res: Response,
+    next: NextFunction,
+  ) {
     try {
       const businessUnitId = await getBusinessUnitId(req);
       const validatedData = dateRangeSchema.parse(req.query);
       const { startDate, endDate } = validatedData;
 
       if (!startDate || !endDate) {
-        throw new AppError('Start date and end date are required', 400);
+        throw new AppError(
+          'Start date and end date are required',
+          400,
+        );
       }
 
       const sales = await saleService.getSalesByDateRange({
@@ -832,10 +975,23 @@ export const saleController = {
         endDate: new Date(endDate),
       });
 
+      // ── Phase 2: surface the resolved currency ────────────
+      // A date-range report mixes sales from a single BU (the
+      // filter is `businessUnitId`), so a single ledger currency
+      // is correct for every amount in the response.
+      const buRecord = await prisma.businessUnit.findUnique({
+        where: { id: businessUnitId },
+        select: { currency: true },
+      });
+      const currency = currencyService.resolveForBusiness(
+        buRecord?.currency ?? null,
+      );
+
       res.status(200).json({
         success: true,
         data: sales,
         count: sales.length,
+        currency,
       });
     } catch (error) {
       if (error instanceof z.ZodError) {
@@ -856,7 +1012,11 @@ export const saleController = {
    * Get daily sales summary
    * GET /sales/daily-summary
    */
-  async getDailySalesSummary(req: Request, res: Response, next: NextFunction) {
+  async getDailySalesSummary(
+    req: Request,
+    res: Response,
+    next: NextFunction,
+  ) {
     try {
       const businessUnitId = await getBusinessUnitId(req);
       const { date } = req.query;
@@ -870,9 +1030,18 @@ export const saleController = {
         date: new Date(date as string),
       });
 
+      const buRecord = await prisma.businessUnit.findUnique({
+        where: { id: businessUnitId },
+        select: { currency: true },
+      });
+      const currency = currencyService.resolveForBusiness(
+        buRecord?.currency ?? null,
+      );
+
       res.status(200).json({
         success: true,
         data: summary,
+        currency,
       });
     } catch (error) {
       next(error);
@@ -883,7 +1052,11 @@ export const saleController = {
    * Get today's sales summary
    * GET /sales/today
    */
-  async getTodaySalesSummary(req: Request, res: Response, next: NextFunction) {
+  async getTodaySalesSummary(
+    req: Request,
+    res: Response,
+    next: NextFunction,
+  ) {
     try {
       const businessUnitId = await getBusinessUnitId(req);
 
@@ -892,9 +1065,18 @@ export const saleController = {
         date: new Date(),
       });
 
+      const buRecord = await prisma.businessUnit.findUnique({
+        where: { id: businessUnitId },
+        select: { currency: true },
+      });
+      const currency = currencyService.resolveForBusiness(
+        buRecord?.currency ?? null,
+      );
+
       res.status(200).json({
         success: true,
         data: summary,
+        currency,
       });
     } catch (error) {
       next(error);
@@ -911,7 +1093,10 @@ export const saleController = {
       const { startDate, endDate, format = 'json' } = req.query;
 
       if (!startDate || !endDate) {
-        throw new AppError('Start date and end date are required', 400);
+        throw new AppError(
+          'Start date and end date are required',
+          400,
+        );
       }
 
       const sales = await saleService.getSalesByDateRange({
@@ -920,27 +1105,36 @@ export const saleController = {
         endDate: new Date(endDate as string),
       });
 
-      const exportData = sales.map((sale: any) => ({
-        receiptNumber: sale.receiptNumber,
-        date: sale.saleDate.toISOString(),
-        customer: sale.customer
-          ? `${sale.customer.firstName} ${sale.customer.lastName}`
-          : 'Guest',
-        subtotal: sale.subtotal,
-        tax: sale.tax,
-        discount: sale.discount,
-        total: sale.total,
-        paymentMethod: sale.payments[0]?.paymentMethod || 'N/A',
-        status: sale.status,
-        items: sale.items?.length || 0,
+      const exportData = sales.map((sale: any) => {
+        const firstPayment = sale.payments?.[0];
+        return {
+          receiptNumber: sale.receiptNumber,
+          date: sale.saleDate.toISOString(),
+          customer: sale.customer
+            ? `${sale.customer.firstName} ${sale.customer.lastName}`
+            : 'Guest',
+          subtotal: sale.subtotal,
+          tax: sale.tax,
+          discount: sale.discount,
+          total: sale.total,
+          paymentMethod: firstPayment?.paymentMethod || 'N/A',
+          // ── Phase 2 / D1 charge-currency audit ──────────
+          currency: firstPayment?.currency || '',
+          chargeCurrency: firstPayment?.gatewayCurrency || '',
+          chargeAmount: firstPayment?.gatewayAmount ?? null,
+          chargeRate: firstPayment?.exchangeRate ?? null,
+          displayCurrency: firstPayment?.displayCurrency ?? null,
+          status: sale.status,
+          items: sale.items?.length || 0,
 
-        // ── Promotion / loyalty breakdown ──────────────────────
-        discountType: sale.discountType ?? null,
-        promotionCode: sale.promotionCode ?? null,
-        promotionDiscount: sale.promotionDiscount ?? 0,
-        loyaltyPointsUsed: sale.loyaltyPointsUsed ?? 0,
-        loyaltyDiscount: sale.loyaltyDiscount ?? 0,
-      }));
+          // ── Promotion / loyalty breakdown ──────────────
+          discountType: sale.discountType ?? null,
+          promotionCode: sale.promotionCode ?? null,
+          promotionDiscount: sale.promotionDiscount ?? 0,
+          loyaltyPointsUsed: sale.loyaltyPointsUsed ?? 0,
+          loyaltyDiscount: sale.loyaltyDiscount ?? 0,
+        };
+      });
 
       res.status(200).json({
         success: true,
@@ -958,10 +1152,15 @@ export const saleController = {
    * Export sales to CSV
    * GET /sales/export/csv
    *
-   * The CSV now includes the promotion / loyalty breakdown columns so
-   * a downloaded report can be audited end-to-end.
+   * The CSV includes the promotion / loyalty breakdown columns AND
+   * the charge-currency audit columns so a downloaded report can be
+   * audited end-to-end.
    */
-  async exportSalesCsv(req: Request, res: Response, next: NextFunction) {
+  async exportSalesCsv(
+    req: Request,
+    res: Response,
+    next: NextFunction,
+  ) {
     try {
       const businessUnitId = await getBusinessUnitId(req);
       const { startDate, endDate } = req.query;
@@ -987,29 +1186,47 @@ export const saleController = {
         'Loyalty Points Used',
         'Loyalty Discount',
         'Total',
+        'Currency',
+        'Charge Currency',
+        'Charge Amount',
+        'Charge Rate',
+        'Display Currency',
         'Payment',
         'Status',
         'Items',
       ];
-      const rows = sales.map((sale: any) => [
-        sale.receiptNumber,
-        sale.saleDate.toISOString().split('T')[0],
-        sale.customer
-          ? `${sale.customer.firstName} ${sale.customer.lastName}`
-          : 'Guest',
-        sale.subtotal.toFixed(2),
-        sale.tax.toFixed(2),
-        sale.discount.toFixed(2),
-        sale.discountType || '',
-        sale.promotionCode || '',
-        (sale.promotionDiscount ?? 0).toFixed(2),
-        String(sale.loyaltyPointsUsed ?? 0),
-        (sale.loyaltyDiscount ?? 0).toFixed(2),
-        sale.total.toFixed(2),
-        sale.payments[0]?.paymentMethod || 'N/A',
-        sale.status,
-        sale.items?.length || 0,
-      ]);
+
+      const rows = sales.map((sale: any) => {
+        const firstPayment = sale.payments?.[0];
+        return [
+          sale.receiptNumber,
+          sale.saleDate.toISOString().split('T')[0],
+          sale.customer
+            ? `${sale.customer.firstName} ${sale.customer.lastName}`
+            : 'Guest',
+          sale.subtotal.toFixed(2),
+          sale.tax.toFixed(2),
+          sale.discount.toFixed(2),
+          sale.discountType || '',
+          sale.promotionCode || '',
+          (sale.promotionDiscount ?? 0).toFixed(2),
+          String(sale.loyaltyPointsUsed ?? 0),
+          (sale.loyaltyDiscount ?? 0).toFixed(2),
+          sale.total.toFixed(2),
+          firstPayment?.currency || '',
+          firstPayment?.gatewayCurrency || '',
+          firstPayment?.gatewayAmount != null
+            ? firstPayment.gatewayAmount.toFixed(2)
+            : '',
+          firstPayment?.exchangeRate != null
+            ? String(firstPayment.exchangeRate)
+            : '',
+          firstPayment?.displayCurrency || '',
+          firstPayment?.paymentMethod || 'N/A',
+          sale.status,
+          sale.items?.length || 0,
+        ];
+      });
 
       const csvContent = [
         headers.join(','),
@@ -1019,7 +1236,9 @@ export const saleController = {
       res.setHeader('Content-Type', 'text/csv');
       res.setHeader(
         'Content-Disposition',
-        `attachment; filename=sales-${new Date().toISOString().split('T')[0]}.csv`
+        `attachment; filename=sales-${
+          new Date().toISOString().split('T')[0]
+        }.csv`,
       );
       res.send(csvContent);
     } catch (error) {
@@ -1031,7 +1250,11 @@ export const saleController = {
    * Export sales to Excel
    * GET /sales/export/excel
    */
-  async exportSalesExcel(req: Request, res: Response, next: NextFunction) {
+  async exportSalesExcel(
+    req: Request,
+    res: Response,
+    next: NextFunction,
+  ) {
     try {
       const businessUnitId = await getBusinessUnitId(req);
       const { startDate, endDate } = req.query;
@@ -1058,7 +1281,11 @@ export const saleController = {
    * Export sales to PDF
    * GET /sales/export/pdf
    */
-  async exportSalesPdf(req: Request, res: Response, next: NextFunction) {
+  async exportSalesPdf(
+    req: Request,
+    res: Response,
+    next: NextFunction,
+  ) {
     try {
       const businessUnitId = await getBusinessUnitId(req);
       const { startDate, endDate } = req.query;
@@ -1085,7 +1312,11 @@ export const saleController = {
    * Get sales by customer
    * GET /sales/customer/:customerId
    */
-  async getSalesByCustomer(req: Request, res: Response, next: NextFunction) {
+  async getSalesByCustomer(
+    req: Request,
+    res: Response,
+    next: NextFunction,
+  ) {
     try {
       const { customerId } = req.params;
       const businessUnitId = await getBusinessUnitId(req);
@@ -1120,7 +1351,11 @@ export const saleController = {
    * Get customer sales stats
    * GET /sales/customer-stats/:customerId
    */
-  async getCustomerSalesStats(req: Request, res: Response, next: NextFunction) {
+  async getCustomerSalesStats(
+    req: Request,
+    res: Response,
+    next: NextFunction,
+  ) {
     try {
       const { customerId } = req.params;
 
@@ -1166,7 +1401,11 @@ export const saleController = {
    * Get sales by status
    * GET /sales/status/:status
    */
-  async getSalesByStatus(req: Request, res: Response, next: NextFunction) {
+  async getSalesByStatus(
+    req: Request,
+    res: Response,
+    next: NextFunction,
+  ) {
     try {
       const { status } = req.params;
       const businessUnitId = await getBusinessUnitId(req);
@@ -1198,14 +1437,20 @@ export const saleController = {
    * Get sales by payment method
    * GET /sales/payment-methods
    */
-  async getSalesByPaymentMethod(req: Request, res: Response, next: NextFunction) {
+  async getSalesByPaymentMethod(
+    req: Request,
+    res: Response,
+    next: NextFunction,
+  ) {
     try {
       const businessUnitId = await getBusinessUnitId(req);
       const { startDate, endDate } = req.query;
 
       const data = await saleService.getSalesByPaymentMethod({
         businessUnitId: businessUnitId,
-        startDate: startDate ? new Date(startDate as string) : undefined,
+        startDate: startDate
+          ? new Date(startDate as string)
+          : undefined,
         endDate: endDate ? new Date(endDate as string) : undefined,
       });
 
@@ -1222,7 +1467,11 @@ export const saleController = {
    * Get sales by product
    * GET /sales/product/:productId
    */
-  async getSalesByProduct(req: Request, res: Response, next: NextFunction) {
+  async getSalesByProduct(
+    req: Request,
+    res: Response,
+    next: NextFunction,
+  ) {
     try {
       const { productId } = req.params;
       const businessUnitId = await getBusinessUnitId(req);
@@ -1231,7 +1480,9 @@ export const saleController = {
       const data = await saleService.getSalesByProduct(productId, {
         businessUnitId: businessUnitId,
         variantId: variantId as string,
-        startDate: startDate ? new Date(startDate as string) : undefined,
+        startDate: startDate
+          ? new Date(startDate as string)
+          : undefined,
         endDate: endDate ? new Date(endDate as string) : undefined,
         limit: limit ? parseInt(limit as string) : 10,
       });
@@ -1249,7 +1500,11 @@ export const saleController = {
    * Get dashboard sales data
    * GET /sales/dashboard
    */
-  async getDashboardSalesData(req: Request, res: Response, next: NextFunction) {
+  async getDashboardSalesData(
+    req: Request,
+    res: Response,
+    next: NextFunction,
+  ) {
     try {
       const businessUnitId = await getBusinessUnitId(req);
 
@@ -1260,9 +1515,13 @@ export const saleController = {
       });
 
       const weekStart = new Date(today);
-      weekStart.setDate(weekStart.getDate() - weekStart.getDay());
+      weekStart.setDate(
+        weekStart.getDate() - weekStart.getDay(),
+      );
       const weekEnd = new Date(today);
-      weekEnd.setDate(weekEnd.getDate() + (6 - weekEnd.getDay()));
+      weekEnd.setDate(
+        weekEnd.getDate() + (6 - weekEnd.getDay()),
+      );
       weekEnd.setHours(23, 59, 59, 999);
 
       const weekSales = await saleService.getSalesByDateRange({
@@ -1271,8 +1530,16 @@ export const saleController = {
         endDate: weekEnd,
       });
 
-      const monthStart = new Date(today.getFullYear(), today.getMonth(), 1);
-      const monthEnd = new Date(today.getFullYear(), today.getMonth() + 1, 0);
+      const monthStart = new Date(
+        today.getFullYear(),
+        today.getMonth(),
+        1,
+      );
+      const monthEnd = new Date(
+        today.getFullYear(),
+        today.getMonth() + 1,
+        0,
+      );
       monthEnd.setHours(23, 59, 59, 999);
 
       const monthSales = await saleService.getSalesByDateRange({
@@ -1287,16 +1554,26 @@ export const saleController = {
 
       const weekRevenue = weekSales.reduce(
         (sum: number, sale: any) => sum + sale.total,
-        0
+        0,
       );
       const monthRevenue = monthSales.reduce(
         (sum: number, sale: any) => sum + sale.total,
-        0
+        0,
+      );
+
+      // ── Phase 2: dashboard currency ──────────────────────
+      const buRecord = await prisma.businessUnit.findUnique({
+        where: { id: businessUnitId },
+        select: { currency: true },
+      });
+      const currency = currencyService.resolveForBusiness(
+        buRecord?.currency ?? null,
       );
 
       res.status(200).json({
         success: true,
         data: {
+          currency,
           today: {
             totalSales: todaySummary.totalSales,
             totalRevenue: todaySummary.totalRevenue,
@@ -1322,13 +1599,19 @@ export const saleController = {
    * Get sales analytics
    * GET /sales/analytics
    */
-  async getSalesAnalytics(req: Request, res: Response, next: NextFunction) {
+  async getSalesAnalytics(
+    req: Request,
+    res: Response,
+    next: NextFunction,
+  ) {
     try {
       const businessUnitId = await getBusinessUnitId(req);
       const { startDate, endDate, view } = req.query;
 
       const analytics = await saleService.getSalesAnalytics({
-        startDate: startDate ? new Date(startDate as string) : undefined,
+        startDate: startDate
+          ? new Date(startDate as string)
+          : undefined,
         endDate: endDate ? new Date(endDate as string) : undefined,
         view: view as any,
         businessUnitId: businessUnitId,
@@ -1347,13 +1630,20 @@ export const saleController = {
    * Get aggregated sales data
    * GET /sales/aggregate
    */
-  async getAggregatedSales(req: Request, res: Response, next: NextFunction) {
+  async getAggregatedSales(
+    req: Request,
+    res: Response,
+    next: NextFunction,
+  ) {
     try {
       const businessUnitId = await getBusinessUnitId(req);
       const { startDate, endDate, groupBy = 'day' } = req.query;
 
       if (!startDate || !endDate) {
-        throw new AppError('Start date and end date are required', 400);
+        throw new AppError(
+          'Start date and end date are required',
+          400,
+        );
       }
 
       const data = await saleService.getAggregatedSales({
@@ -1376,12 +1666,26 @@ export const saleController = {
    * Get sales comparison
    * GET /sales/compare
    */
-  async getSalesComparison(req: Request, res: Response, next: NextFunction) {
+  async getSalesComparison(
+    req: Request,
+    res: Response,
+    next: NextFunction,
+  ) {
     try {
       const businessUnitId = await getBusinessUnitId(req);
-      const { period1Start, period1End, period2Start, period2End } = req.query;
+      const {
+        period1Start,
+        period1End,
+        period2Start,
+        period2End,
+      } = req.query;
 
-      if (!period1Start || !period1End || !period2Start || !period2End) {
+      if (
+        !period1Start ||
+        !period1End ||
+        !period2Start ||
+        !period2End
+      ) {
         throw new AppError('All period dates are required', 400);
       }
 
@@ -1406,7 +1710,11 @@ export const saleController = {
    * Get sales forecast
    * GET /sales/forecast
    */
-  async getSalesForecast(req: Request, res: Response, next: NextFunction) {
+  async getSalesForecast(
+    req: Request,
+    res: Response,
+    next: NextFunction,
+  ) {
     try {
       const businessUnitId = await getBusinessUnitId(req);
       const { days = 7 } = req.query;
@@ -1429,7 +1737,11 @@ export const saleController = {
    * Get sales summary by period
    * GET /sales/summary
    */
-  async getSalesSummary(req: Request, res: Response, next: NextFunction) {
+  async getSalesSummary(
+    req: Request,
+    res: Response,
+    next: NextFunction,
+  ) {
     try {
       const businessUnitId = await getBusinessUnitId(req);
       const { period = 'monthly', date } = req.query;
@@ -1453,7 +1765,11 @@ export const saleController = {
    * Get sales report by period
    * GET /sales/reports/period
    */
-  async getSalesReportByPeriod(req: Request, res: Response, next: NextFunction) {
+  async getSalesReportByPeriod(
+    req: Request,
+    res: Response,
+    next: NextFunction,
+  ) {
     try {
       const businessUnitId = await getBusinessUnitId(req);
       const { period = 'monthly' } = req.query;
@@ -1495,13 +1811,16 @@ export const saleController = {
 
       const totalRevenue = sales.reduce(
         (sum: number, sale: any) => sum + sale.total,
-        0
+        0,
       );
       const totalSales = sales.length;
-      const averageTicket = totalSales > 0 ? totalRevenue / totalSales : 0;
+      const averageTicket =
+        totalSales > 0 ? totalRevenue / totalSales : 0;
 
       const previousPeriodStart = new Date(startDate);
-      previousPeriodStart.setMonth(previousPeriodStart.getMonth() - 1);
+      previousPeriodStart.setMonth(
+        previousPeriodStart.getMonth() - 1,
+      );
       const previousPeriodEnd = new Date(startDate);
       previousPeriodEnd.setHours(0, 0, 0, 0);
 
@@ -1513,11 +1832,12 @@ export const saleController = {
 
       const previousRevenue = previousSales.reduce(
         (sum: number, sale: any) => sum + sale.total,
-        0
+        0,
       );
       const growthRate =
         previousRevenue > 0
-          ? ((totalRevenue - previousRevenue) / previousRevenue) * 100
+          ? ((totalRevenue - previousRevenue) / previousRevenue) *
+            100
           : 0;
 
       res.status(200).json({
@@ -1540,10 +1860,16 @@ export const saleController = {
    * Get sales settings
    * GET /sales/settings
    */
-  async getSalesSettings(req: Request, res: Response, next: NextFunction) {
+  async getSalesSettings(
+    req: Request,
+    res: Response,
+    next: NextFunction,
+  ) {
     try {
       const { companyId } = req.query;
-      const settings = await saleService.getSalesSettings(companyId as string);
+      const settings = await saleService.getSalesSettings(
+        companyId as string,
+      );
       res.status(200).json({
         success: true,
         data: settings,
@@ -1557,12 +1883,16 @@ export const saleController = {
    * Update sales settings
    * PUT /sales/settings
    */
-  async updateSalesSettings(req: Request, res: Response, next: NextFunction) {
+  async updateSalesSettings(
+    req: Request,
+    res: Response,
+    next: NextFunction,
+  ) {
     try {
       const { companyId } = req.query;
       const settings = await saleService.updateSalesSettings(
         req.body,
-        companyId as string
+        companyId as string,
       );
       res.status(200).json({
         success: true,
@@ -1791,12 +2121,20 @@ export const saleController = {
    * Bulk update sales status
    * PATCH /sales/bulk-status
    */
-  async bulkUpdateStatus(req: Request, res: Response, next: NextFunction) {
+  async bulkUpdateStatus(
+    req: Request,
+    res: Response,
+    next: NextFunction,
+  ) {
     try {
       const { saleIds, status } = bulkStatusSchema.parse(req.body);
       const userId = getUserId(req);
 
-      const result = await saleService.bulkUpdateStatus(saleIds, status, userId);
+      const result = await saleService.bulkUpdateStatus(
+        saleIds,
+        status,
+        userId,
+      );
 
       res.status(200).json({
         success: true,
@@ -1828,7 +2166,11 @@ export const saleController = {
       const updates = req.body;
       const userId = getUserId(req);
 
-      const result = await saleService.updateSale(id, updates, userId);
+      const result = await saleService.updateSale(
+        id,
+        updates,
+        userId,
+      );
 
       res.status(200).json({
         success: true,
@@ -1844,13 +2186,21 @@ export const saleController = {
    * Update sale status
    * PATCH /sales/:id/status
    */
-  async updateSaleStatus(req: Request, res: Response, next: NextFunction) {
+  async updateSaleStatus(
+    req: Request,
+    res: Response,
+    next: NextFunction,
+  ) {
     try {
       const { id } = req.params;
       const { status } = updateStatusSchema.parse(req.body);
       const userId = getUserId(req);
 
-      const result = await saleService.updateSaleStatus(id, status, userId);
+      const result = await saleService.updateSaleStatus(
+        id,
+        status,
+        userId,
+      );
 
       res.status(200).json({
         success: true,
@@ -1876,7 +2226,11 @@ export const saleController = {
    * Update sale notes
    * PATCH /sales/:id/notes
    */
-  async updateSaleNotes(req: Request, res: Response, next: NextFunction) {
+  async updateSaleNotes(
+    req: Request,
+    res: Response,
+    next: NextFunction,
+  ) {
     try {
       const { id } = req.params;
       const { notes } = req.body;
@@ -1886,7 +2240,11 @@ export const saleController = {
         throw new AppError('Notes are required', 400);
       }
 
-      const result = await saleService.updateSaleNotes(id, notes, userId);
+      const result = await saleService.updateSaleNotes(
+        id,
+        notes,
+        userId,
+      );
 
       res.status(200).json({
         success: true,
@@ -1923,16 +2281,27 @@ export const saleController = {
    * Bulk delete sales
    * DELETE /sales/bulk
    */
-  async bulkDeleteSales(req: Request, res: Response, next: NextFunction) {
+  async bulkDeleteSales(
+    req: Request,
+    res: Response,
+    next: NextFunction,
+  ) {
     try {
       const { saleIds } = req.body;
       const userId = getUserId(req);
 
-      if (!saleIds || !Array.isArray(saleIds) || saleIds.length === 0) {
+      if (
+        !saleIds ||
+        !Array.isArray(saleIds) ||
+        saleIds.length === 0
+      ) {
         throw new AppError('Sale IDs are required', 400);
       }
 
-      const result = await saleService.bulkDeleteSales(saleIds, userId);
+      const result = await saleService.bulkDeleteSales(
+        saleIds,
+        userId,
+      );
 
       res.status(200).json({
         success: true,
@@ -1949,9 +2318,14 @@ export const saleController = {
    * GET /sales/abandoned-carts
    *
    * A cart is "abandoned" if it has items and hasn't been updated
-   * since `now - hours`. The `minValue` filter excludes trivial carts.
+   * since `now - hours`. The `minValue` filter excludes trivial
+   * carts.
    */
-  async getAbandonedCarts(req: Request, res: Response, next: NextFunction) {
+  async getAbandonedCarts(
+    req: Request,
+    res: Response,
+    next: NextFunction,
+  ) {
     try {
       const businessUnitId = await getBusinessUnitId(req);
       const { hours = 24, minValue, page, limit } = req.query;
@@ -1959,13 +2333,16 @@ export const saleController = {
       // Carts not touched since this moment are abandoned.
       const olderThan = new Date();
       olderThan.setHours(
-        olderThan.getHours() - (parseInt(hours as string) || 24)
+        olderThan.getHours() -
+          (parseInt(hours as string) || 24),
       );
 
       const carts = await saleService.getAbandonedCarts({
         businessUnitId,
         olderThan,
-        minValue: minValue ? parseFloat(minValue as string) : undefined,
+        minValue: minValue
+          ? parseFloat(minValue as string)
+          : undefined,
       });
 
       // The service returns an array directly; paginate in-memory.
@@ -1976,9 +2353,19 @@ export const saleController = {
       const endIndex = startIndex + limitNum;
       const paginatedCarts = safeCarts.slice(startIndex, endIndex);
 
+      // ── Phase 2: abandoned-cart currency ─────────────────
+      const buRecord = await prisma.businessUnit.findUnique({
+        where: { id: businessUnitId },
+        select: { currency: true },
+      });
+      const currency = currencyService.resolveForBusiness(
+        buRecord?.currency ?? null,
+      );
+
       res.status(200).json({
         success: true,
         data: paginatedCarts,
+        currency,
         pagination: {
           total: safeCarts.length,
           page: pageNum,

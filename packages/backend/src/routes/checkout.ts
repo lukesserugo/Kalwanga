@@ -123,6 +123,38 @@ const exportCheckoutsSchema = z
   })
   .strict();
 
+/**
+ * Body for `POST /checkout/charge-preview`.
+ *
+ * ⚠ Phase D1 — the pre-payment charge preview. Called by the
+ *   frontend when the payer picks a payment method, to resolve
+ *   the exact amount the gateway will bill in the gateway's own
+ *   currency before the payer confirms.
+ *
+ * Mirrors `chargePreviewSchema` in `checkoutController.ts`. Kept
+ * as a route-local schema because it's only used by this single
+ * route and the controller re-parses the body anyway — running
+ * `validateRequest` first would produce a transformed object the
+ * controller then re-parses, which has historically produced
+ * "Required (undefined)" 400s on the sibling checkout routes.
+ *
+ * `mobileMoneyProvider` is required when `paymentMethod` is
+ * `MOBILE_MONEY` — the resolver routes to MTN or Airtel based on
+ * the provider's country config, and needs to know which one the
+ * payer picked. The controller's `superRefine` doesn't currently
+ * enforce this at the controller boundary (it validates provider
+ * names elsewhere), so the route does not either — the resolver
+ * falls back to MTN when the field is absent, matching the
+ * service's default.
+ */
+const chargePreviewSchema = z
+  .object({
+    cartId: z.string().min(1, 'Cart ID is required'),
+    paymentMethod: paymentMethodSchema,
+    mobileMoneyProvider: mobileMoneyProviderSchema.optional(),
+  })
+  .strict();
+
 // ============================================
 // CHECKOUT ROUTES
 // ============================================
@@ -130,11 +162,12 @@ const exportCheckoutsSchema = z
 // ⚠ ROUTE ORDER MATTERS.
 //
 // Express matches routes in the order they are registered. Any
-// literal-prefix route (`/online`, `/summary/...`, `/stats/...`,
-// `/history`, `/payment-methods`, `/settings`, `/export`,
-// `/customer/...`, `/receipt/...`) MUST be registered BEFORE the
-// `/:id` wildcard, otherwise `/:id` will swallow the literal segment
-// as if it were an ID and the more specific handler will never run.
+// literal-prefix route (`/online`, `/charge-preview`,
+// `/summary/...`, `/stats/...`, `/history`, `/payment-methods`,
+// `/settings`, `/export`, `/customer/...`, `/receipt/...`) MUST be
+// registered BEFORE the `/:id` wildcard, otherwise `/:id` will
+// swallow the literal segment as if it were an ID and the more
+// specific handler will never run.
 //
 // This file follows a stricter convention than Express requires:
 //   • All literal-prefix routes first.
@@ -148,6 +181,49 @@ const exportCheckoutsSchema = z
 // ============================================
 // CREATE
 // ============================================
+
+/**
+ * POST /checkout/charge-preview
+ * Resolve the charge-currency preview for a cart + payment method.
+ *
+ * Phase D1 — the pre-payment charge preview. Called by the frontend
+ * when the payer selects a payment method, to show them the exact
+ * amount the gateway will bill, in the gateway's own currency,
+ * before they confirm.
+ *
+ * Returns a `ChargePreviewResponse`:
+ *
+ *   { available: true,  ledger: {...}, charge: {...},
+ *     rate: {...}, disclosure: "...",
+ *     requiresPayerConfirmation: boolean }
+ *
+ * or, when no FX rate is resolvable for the pair:
+ *
+ *   { available: false, reason: "...", ledger: {...} }
+ *
+ * ⚠ `available: false` is NOT a 5xx. The controller returns it
+ *   with a 200 so the frontend can render the reason and disable
+ *   the payment method. A missing rate must not abort the payer's
+ *   flow with a server error.
+ *
+ * ⚠ Read-only. Nothing is written server-side. Repeated calls are
+ *   free and safe.
+ *
+ * ⚠ MUST be registered before `/:id` so Express doesn't match
+ *   `charge-preview` as a sale ID.
+ *
+ * ⚠ Validation is performed by the controller's own
+ *   `chargePreviewSchema` parse — same reasoning as `/online`
+ *   above. Do NOT add `validateRequest(chargePreviewSchema)` here.
+ *
+ * @auth Required (any authenticated user — this is the payer's
+ *       pre-payment screen)
+ */
+router.post(
+  '/charge-preview',
+  requireAuth,
+  checkoutController.chargePreview,
+);
 
 /**
  * POST /checkout/online
@@ -173,6 +249,13 @@ const exportCheckoutsSchema = z
  *   applyLoyaltyPoints defaulted) and the controller then re-parses
  *   that transformed shape — a double-parse that has historically
  *   produced "Required (undefined)" 400s.
+ *
+ * ⚠ Phase D1: When the resolved charge currency differs from the
+ *   ledger currency, the controller requires
+ *   `chargeContextAcknowledged: true` on the body and rejects the
+ *   checkout with a 409 `CHARGE_CONTEXT_REQUIRED` otherwise. The
+ *   frontend gets the acknowledgement from the
+ *   `POST /checkout/charge-preview` response.
  *
  * @auth Required (any authenticated user — this is the public web
  *       checkout)
@@ -423,7 +506,7 @@ router.put(
  * Process an ADDITIONAL payment for a checkout (split / partial).
  *
  * ⚠ This is NOT the gateway-call entry point. The initial card /
- *   PayPal / Flutterwave / Paystack / Mobile Money charge happens on
+ *   PayPal / Flutterwave / Mobile Money charge happens on
  *   `POST /checkout/online`. Use this route only to record a second
  *   tender against the same sale.
  *
