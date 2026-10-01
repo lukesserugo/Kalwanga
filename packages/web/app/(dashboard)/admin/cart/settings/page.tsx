@@ -690,7 +690,9 @@ export default function CartSettingsPage() {
           Access Restricted
         </h2>
         <p className="text-gray-500 dark:text-gray-400 mt-2 text-center max-w-md">
-          You don't have permission to manage cart settings.
+          {/* ── `don&apos;t` — the literal `'` tripped
+                 `react/no-unescaped-entities`. Use the HTML entity. ── */}
+          You don&apos;t have permission to manage cart settings.
         </p>
         <button
           type="button"

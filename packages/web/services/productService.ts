@@ -1151,6 +1151,7 @@ export const productService = {
   async searchProducts(params: {
     query: string;
     category?: string;
+    limit?: number;
     businessUnitId?: string;
   }): Promise<Product[]> {
     if (!isClient) return [];

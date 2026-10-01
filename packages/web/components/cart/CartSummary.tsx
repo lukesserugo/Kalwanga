@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useMemo, useState } from 'react';
 import Link from 'next/link';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
@@ -19,13 +19,22 @@ import {
 import type { Cart } from '../../services/cartService';
 import { toast } from '../../utils/toast-manager';
 import { formatCurrency } from '../../utils/formatters';
+import { CurrencyPicker } from '../CurrencyPicker';
+import { useDisplayCurrency } from '../../hooks/useDisplayCurrency';
+import { CartDiscountInput } from './CartDiscountInput';
+import { CartLoyaltyPoints } from './CartLoyaltyPoints';
 
 interface CartSummaryProps {
-  cart: Cart;
-  /**
-   * Apply a numeric discount. The `type` is explicit — this component
-   * no longer guesses between PERCENTAGE and FIXED from the raw input.
-   */
+  cart: Cart & {
+    displayCurrency?: string | null;
+    displayRate?: number | null;
+    displaySubtotal?: number;
+    displayTax?: number;
+    displayDiscount?: number;
+    displayTotal?: number;
+    displayPromotionDiscount?: number;
+    displayLoyaltyDiscount?: number;
+  };
   onApplyDiscountValue: (
     value: number,
     type: 'PERCENTAGE' | 'FIXED',
@@ -37,6 +46,7 @@ interface CartSummaryProps {
   customerId?: string;
   loyaltyPoints?: number;
   isAuthenticated?: boolean;
+  freeShippingThreshold?: number;
 }
 
 export const CartSummary: React.FC<CartSummaryProps> = ({
@@ -49,17 +59,67 @@ export const CartSummary: React.FC<CartSummaryProps> = ({
   customerId,
   loyaltyPoints = 0,
   isAuthenticated = true,
+  freeShippingThreshold,
 }) => {
   const [discountValue, setDiscountValue] = useState('');
-  const [discountType, setDiscountType] = useState<
-    'PERCENTAGE' | 'FIXED'
-  >('FIXED');
+  const [discountType, setDiscountType] = useState<'PERCENTAGE' | 'FIXED'>(
+    'FIXED',
+  );
   const [promotionCode, setPromotionCode] = useState('');
   const [loyaltyPointsToUse, setLoyaltyPointsToUse] = useState(0);
   const [showDiscountInput, setShowDiscountInput] = useState(false);
   const [showPromotionInput, setShowPromotionInput] = useState(false);
   const [showLoyaltyInput, setShowLoyaltyInput] = useState(false);
   const [applying, setApplying] = useState(false);
+
+  // ── Phase 2: resolve the ledger currency ────────────────────
+  const ledgerCurrency = cart.currency ?? 'UGX';
+  const ledgerSymbol = cart.currencySymbol ?? ledgerCurrency;
+
+  // ── Phase 3a: resolve the display currency ──────────────────
+  // `useDisplayCurrency` tracks the payer's selection (localStorage
+  // for guests, `Customer.preferredDisplayCurrency` for authenticated
+  // customers). The `cart.display*` fields are populated by the
+  // backend when a display currency is set — but if the payer just
+  // changed the picker on this page, the cart may still hold stale
+  // display values. In that case, we prefer the hook's current value
+  // and the picker re-fetches on the next `cart:updated`.
+  const { displayCurrency } = useDisplayCurrency(ledgerCurrency);
+
+  // What currency to actually render. If the payer chose a display
+  // currency AND the cart has been re-fetched with display fields,
+  // use those. Otherwise use ledger amounts.
+  const useDisplay = Boolean(
+    displayCurrency &&
+      cart.displayCurrency &&
+      cart.displayCurrency.toUpperCase() === displayCurrency.toUpperCase() &&
+      typeof cart.displayTotal === 'number',
+  );
+
+  const renderCurrency = useDisplay
+    ? (cart.displayCurrency as string)
+    : ledgerCurrency;
+
+  const format = (ledgerAmount: number, displayAmount?: number): string => {
+    const value =
+      useDisplay && typeof displayAmount === 'number'
+        ? displayAmount
+        : ledgerAmount;
+    return formatCurrency(value, renderCurrency);
+  };
+
+  const subtotal = format(cart.subtotal, cart.displaySubtotal);
+  const tax = format(cart.tax, cart.displayTax);
+  const discount = format(cart.discount || 0, cart.displayDiscount);
+  const promotionDiscount = format(
+    cart.promotionDiscount || 0,
+    cart.displayPromotionDiscount,
+  );
+  const loyaltyDiscount = format(
+    cart.loyaltyDiscount || 0,
+    cart.displayLoyaltyDiscount,
+  );
+  const total = format(cart.total, cart.displayTotal);
 
   const handleApplyDiscount = async () => {
     const parsed = parseFloat(discountValue);
@@ -141,11 +201,23 @@ export const CartSummary: React.FC<CartSummaryProps> = ({
   const canUseLoyalty =
     isAuthenticated && Boolean(customerId) && loyaltyPoints > 0;
 
+  // ── Free shipping line ──────────────────────────────────────
+  // The threshold comes from settings (preferred) or a fallback.
+  const threshold = freeShippingThreshold ?? null;
+  const subtotalForShipping = useDisplay
+    ? cart.displaySubtotal ?? cart.subtotal
+    : cart.subtotal;
+
   return (
     <div className="card-brand sticky top-24">
       <h2 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">
         Order Summary
       </h2>
+
+      {/* ── Currency picker (Phase 3a) ─────────────────────── */}
+      <div className="mb-4">
+        <CurrencyPicker variant="inline" />
+      </div>
 
       {!isAuthenticated && (
         <div className="mb-4 flex items-start gap-2 p-3 rounded-lg bg-brand-50 dark:bg-brand-900/20 border border-brand-200 dark:border-brand-800">
@@ -163,43 +235,37 @@ export const CartSummary: React.FC<CartSummaryProps> = ({
             Subtotal
           </span>
           <span className="font-medium text-gray-900 dark:text-white tabular-nums">
-            {formatCurrency(cart.subtotal)}
+            {subtotal}
           </span>
         </div>
         <div className="flex justify-between text-sm">
           <span className="text-gray-600 dark:text-gray-400">Tax</span>
           <span className="font-medium text-gray-900 dark:text-white tabular-nums">
-            {formatCurrency(cart.tax)}
+            {tax}
           </span>
         </div>
         {(cart.discount || 0) > 0 && (
           <div className="flex justify-between text-sm text-success-600 dark:text-success-400">
             <span>Discount</span>
-            <span className="tabular-nums">
-              -{formatCurrency(cart.discount)}
-            </span>
+            <span className="tabular-nums">-{discount}</span>
           </div>
         )}
         {(cart.promotionDiscount || 0) > 0 && (
           <div className="flex justify-between text-sm text-secondary-600 dark:text-secondary-400">
             <span>Promotion</span>
-            <span className="tabular-nums">
-              -{formatCurrency(cart.promotionDiscount || 0)}
-            </span>
+            <span className="tabular-nums">-{promotionDiscount}</span>
           </div>
         )}
         {(cart.loyaltyDiscount || 0) > 0 && (
           <div className="flex justify-between text-sm text-secondary-600 dark:text-secondary-400">
             <span>Loyalty Points</span>
-            <span className="tabular-nums">
-              -{formatCurrency(cart.loyaltyDiscount || 0)}
-            </span>
+            <span className="tabular-nums">-{loyaltyDiscount}</span>
           </div>
         )}
         <div className="flex justify-between text-base font-bold pt-2 border-t border-gray-200 dark:border-gray-700">
           <span className="text-gray-900 dark:text-white">Total</span>
           <span className="text-brand-600 dark:text-brand-400 tabular-nums">
-            {formatCurrency(cart.total)}
+            {total}
           </span>
         </div>
       </div>
@@ -243,7 +309,7 @@ export const CartSummary: React.FC<CartSummaryProps> = ({
                   placeholder={
                     discountType === 'PERCENTAGE'
                       ? 'Discount %'
-                      : 'Discount amount'
+                      : `Discount (${ledgerSymbol})`
                   }
                   inputMode="decimal"
                   className="flex-1 px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-brand-500 focus:border-transparent dark:bg-gray-700 dark:text-white text-sm tabular-nums"
@@ -260,7 +326,7 @@ export const CartSummary: React.FC<CartSummaryProps> = ({
                   className="px-3 py-2 bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-lg text-sm dark:text-white"
                   aria-label="Discount type"
                 >
-                  <option value="FIXED">$</option>
+                  <option value="FIXED">{ledgerSymbol}</option>
                   <option value="PERCENTAGE">%</option>
                 </select>
                 <button
@@ -369,7 +435,11 @@ export const CartSummary: React.FC<CartSummaryProps> = ({
                 >
                   <input
                     type="number"
-                    value={Number.isFinite(loyaltyPointsToUse) ? loyaltyPointsToUse : ''}
+                    value={
+                      Number.isFinite(loyaltyPointsToUse)
+                        ? loyaltyPointsToUse
+                        : ''
+                    }
                     onChange={(e) => {
                       const parsed = parseInt(e.target.value, 10);
                       setLoyaltyPointsToUse(
@@ -445,7 +515,14 @@ export const CartSummary: React.FC<CartSummaryProps> = ({
         </div>
         <div className="flex items-center gap-1">
           <Truck className="w-4 h-4" />
-          <span>Free shipping on orders over $50</span>
+          <span>
+            {threshold
+              ? `Free shipping on orders over ${formatCurrency(
+                  threshold,
+                  ledgerCurrency,
+                )}`
+              : 'Free shipping on qualifying orders'}
+          </span>
         </div>
         {hasDiscounts && (
           <div className="flex items-center gap-1 text-success-600 dark:text-success-400">

@@ -92,6 +92,25 @@ const DEFAULT_PAGINATION: PaginationState = {
 };
 
 /**
+ * ── Phase 2: fallback currency for admin rows. ─────────────────────
+ *
+ * Every authenticated cart row from `/cart/abandoned` goes through
+ * `cartService.formatCartResponse` server-side, which resolves
+ * `currency` via `currencyService.resolveForBusiness(bu.currency)`.
+ * The field is therefore always present on a well-formed response.
+ *
+ * This constant covers two edge cases:
+ *   • A stale cached response from before Phase 2.
+ *   • A row whose business unit was deleted between the row read and
+ *     the response serialization (the resolver degrades rather than
+ *     throwing, but a mid-rollout client could still see undefined).
+ *
+ * `'UGX'` is the registry default (`DEFAULT_CURRENCY_CODE` in
+ * `lib/currencies.ts`), matching the rest of Phase 2.
+ */
+const DEFAULT_ROW_CURRENCY = 'UGX';
+
+/**
  * The backend `/cart/abandoned` endpoint uses `hours` to determine the
  * cutoff. `computeDateRange` on the backend supports
  * `today | yesterday | week | month | quarter | year | custom`, and has
@@ -106,6 +125,28 @@ const DATE_RANGE_TO_HOURS: Record<string, number> = {
   year: 24 * 365,
   all: 24 * 365 * 10,
 };
+
+// ============================================
+// HELPERS
+// ============================================
+
+/**
+ * ── Phase 2: resolve the display currency for a cart row. ──────────
+ *
+ * Reads `cart.currency` (required on the canonical `Cart` type,
+ * populated server-side) and falls back to `DEFAULT_ROW_CURRENCY`
+ * only when the field is missing — which happens only for stale
+ * pre-Phase-2 cached responses or a mid-rollout client.
+ *
+ * Every `formatCurrency` call on this page that operates on a
+ * single cart row must go through this helper.
+ */
+function resolveRowCurrency(cart: Cart | null | undefined): string {
+  const raw = (cart as any)?.currency;
+  return typeof raw === 'string' && raw.length > 0
+    ? raw
+    : DEFAULT_ROW_CURRENCY;
+}
 
 // ============================================
 // MAIN COMPONENT
@@ -396,6 +437,14 @@ export default function AdminCartPage() {
    *
    * When the backend adds the endpoint, uncomment the `cartService`
    * call and re-enable the button.
+   *
+   * ⚠ `fetchCarts` is intentionally NOT in the dependency array.
+   *   It was removed because this handler does not call it in live
+   *   code — the only reference is in a commented-out line below.
+   *   Adding it back would trip `react-hooks/exhaustive-deps` with
+   *   "unnecessary dependency". When deletion is wired up, the
+   *   `fetchCarts('silent')` call is re-enabled AND `fetchCarts` is
+   *   added back to the array.
    */
   const handleDeleteCart = useCallback(
     async (cartId: string) => {
@@ -425,7 +474,7 @@ export default function AdminCartPage() {
         if (isMountedRef.current) setDeletingId(null);
       }
     },
-    [canManageCart, confirm, fetchCarts],
+    [canManageCart, confirm],
   );
 
   const handleCheckout = useCallback(
@@ -480,6 +529,35 @@ export default function AdminCartPage() {
     ],
   );
 
+  /**
+   * ── Phase 2: derive a single display currency for the page. ────
+   *
+   * Used by the stats panel, whose `totalValue` is an aggregate
+   * across every row on the current page.
+   *
+   * ⚠ If the rows on the current page span multiple business units
+   *   with different currencies, `totalValue` is a sum of amounts
+   *   in DIFFERENT currencies. Summing across currencies is not
+   *   meaningful — this is a semantic limitation that predates
+   *   Phase 2. We surface it by displaying the sum in the currency
+   *   of the first row and documenting the limitation here, rather
+   *   than silently labelling the sum with a `$`.
+   *
+   * On a single-currency deployment (the common case, and the one
+   * the current admin list targets), the derivation is exact.
+   *
+   * The correct fix is a backend stats endpoint that either
+   * aggregates per-business-unit or converts to a reporting
+   * currency. That is separate work.
+   */
+  const statsCurrency = useMemo(() => {
+    for (const c of carts) {
+      const cur = (c as any)?.currency;
+      if (typeof cur === 'string' && cur.length > 0) return cur;
+    }
+    return DEFAULT_ROW_CURRENCY;
+  }, [carts]);
+
   // ============================================
   // PERMISSION GUARD
   // ============================================
@@ -499,8 +577,10 @@ export default function AdminCartPage() {
           <h2 className="text-2xl font-bold text-gray-700 dark:text-gray-300">
             Access Restricted
           </h2>
+          {/* ── `don&apos;t` — the literal `'` tripped
+                 `react/no-unescaped-entities`. Use the HTML entity. ── */}
           <p className="text-gray-500 dark:text-gray-400 mt-2">
-            You don't have permission to view cart management.
+            You don&apos;t have permission to view cart management.
           </p>
           <button
             type="button"
@@ -617,7 +697,10 @@ export default function AdminCartPage() {
           <StatCard label="Total Items" value={stats.totalItems} />
           <StatCard
             label="Total Value"
-            value={formatCurrency(stats.totalValue)}
+            // ── Phase 2: format the aggregate in the derived ──
+            //   currency. See the `statsCurrency` JSDoc for the
+            //   multi-BU caveat.
+            value={formatCurrency(stats.totalValue, statsCurrency)}
           />
           <StatCard
             label="Conversion Rate"
@@ -831,7 +914,11 @@ export default function AdminCartPage() {
                       {cart.itemCount || 0}
                     </td>
                     <td className="px-4 py-3 text-right text-sm font-medium text-gray-900 dark:text-white tabular-nums">
-                      {formatCurrency(cart.total || 0)}
+                      {/* ── Phase 2: format in the row's own currency ── */}
+                      {formatCurrency(
+                        cart.total || 0,
+                        resolveRowCurrency(cart),
+                      )}
                     </td>
                     <td className="px-4 py-3">
                       <span
@@ -1000,7 +1087,11 @@ export default function AdminCartPage() {
                 </InfoTile>
                 <InfoTile label="Total">
                   <p className="font-medium text-gray-900 dark:text-white tabular-nums">
-                    {formatCurrency(selectedCart.total || 0)}
+                    {/* ── Phase 2: format in the selected cart's currency ── */}
+                    {formatCurrency(
+                      selectedCart.total || 0,
+                      resolveRowCurrency(selectedCart),
+                    )}
                   </p>
                 </InfoTile>
                 <InfoTile label="Created">
@@ -1025,6 +1116,7 @@ export default function AdminCartPage() {
                     >
                       <div className="w-16 h-16 bg-gray-200 dark:bg-gray-600 rounded-lg overflow-hidden flex-shrink-0">
                         {item.product?.images?.[0] ? (
+                          // eslint-disable-next-line @next/next/no-img-element
                           <img
                             src={item.product.images[0]}
                             alt={item.product.name}
@@ -1051,13 +1143,21 @@ export default function AdminCartPage() {
                       </div>
                       <div className="text-right shrink-0">
                         <p className="font-medium text-gray-900 dark:text-white tabular-nums">
-                          {formatCurrency(item.unitPrice)}
+                          {/* ── Phase 2: line unit price ── */}
+                          {formatCurrency(
+                            item.unitPrice,
+                            resolveRowCurrency(selectedCart),
+                          )}
                         </p>
                         <p className="text-sm text-gray-500 dark:text-gray-400 tabular-nums">
                           Qty: {item.quantity}
                         </p>
                         <p className="text-sm font-medium text-orange-600 dark:text-orange-400 tabular-nums">
-                          {formatCurrency(item.total)}
+                          {/* ── Phase 2: line total ── */}
+                          {formatCurrency(
+                            item.total,
+                            resolveRowCurrency(selectedCart),
+                          )}
                         </p>
                       </div>
                     </div>

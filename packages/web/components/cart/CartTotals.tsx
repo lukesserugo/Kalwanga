@@ -28,7 +28,57 @@ export interface CartTotalsProps {
    * checkout amount.
    */
   alwaysShowShipping?: boolean;
+
+  /**
+   * ── Phase 2: ISO 4217 currency code for every amount. ─────────
+   *
+   * Every number on this component — `subtotal`, `tax`, `discount`,
+   * `promotionDiscount`, `loyaltyDiscount`, `shippingCost`, `total`,
+   * and `amountUntilFreeShipping` — is denominated in this currency.
+   * Every `formatCurrency` call threads it through as the second
+   * argument.
+   *
+   * ⚠ OPTIONAL, defaulting to `'UGX'` (the registry default).
+   *   `CartTotals` is a standalone component that may be mounted
+   *   from outside the cart flow (POS previews, saved-order
+   *   summaries, checkout review screens). Making the prop required
+   *   would force every such caller to be updated in lockstep;
+   *   making it optional lets a caller that has not yet been
+   *   migrated still compile. A migrated caller passes
+   *   `cart.currency`.
+   *
+   * ⚠ `'UGX'` is the platform default, NOT a claim that the amount
+   *   is in USD. A caller that does not know the currency should
+   *   pass the value it has in hand rather than relying on this
+   *   default. See `Cart.currency` in `packages/web/types/cart.ts`.
+   */
+  currency?: string;
 }
+
+/**
+ * ── Phase 2: the `freeShippingThreshold = 50` default ─────────────
+ *
+ * The default `50` is a currency-agnostic constant that predates
+ * Phase 2. It is meaningful only on a USD deployment — on a UGX
+ * deployment, "50 UGX away from free shipping" is worth less than
+ * a cent.
+ *
+ * ⚠ This component does NOT change the default value, because a
+ *   silent change would alter behaviour on every consumer that
+ *   relies on the current default. What Phase 2 DOES do is format
+ *   the number in the caller-supplied `currency`, so the display
+ *   is at least honest (`UGX 50`, not `$50`).
+ *
+ * ⚠ The correct long-term fix is for the cart page to fetch
+ *   `CartSettings.freeShippingThreshold` via `GET /cart/settings`
+ *   and pass it down. That is a separate piece of work flagged in
+ *   the Phase 2 follow-up list. Until then, the display is honest
+ *   and the value is only correct on USD deployments.
+ *
+ *   When the settings-fetch lands, this default should be removed
+ *   entirely — the threshold should be required, so a caller
+ *   cannot silently use a currency-agnostic number.
+ */
 
 export function CartTotals({
   subtotal,
@@ -44,6 +94,10 @@ export function CartTotals({
   isTaxInclusive = false,
   taxRate = 10,
   alwaysShowShipping = false,
+  // ── Phase 2: currency code for every amount on this panel ──
+  // Optional, defaults to the registry default. See the prop
+  // JSDoc for the reasoning.
+  currency = 'UGX',
 }: CartTotalsProps) {
   const safeSubtotal = Number.isFinite(subtotal) ? subtotal : 0;
   const safeTax = Number.isFinite(tax) ? tax : 0;
@@ -97,14 +151,21 @@ export function CartTotals({
       <div className="flex justify-between text-sm text-gray-600 dark:text-gray-400">
         <span>Subtotal</span>
         <span className="tabular-nums">
-          {formatCurrency(safeSubtotal)}
+          {/*
+            ── Phase 2: format in the caller-supplied currency ──
+            `currency` defaults to 'UGX' — see the prop JSDoc.
+            A migrated caller passes `cart.currency`.
+          */}
+          {formatCurrency(safeSubtotal, currency)}
         </span>
       </div>
 
       {!isTaxInclusive && (
         <div className="flex justify-between text-sm text-gray-600 dark:text-gray-400">
           <span>Tax ({safeTaxRate}%)</span>
-          <span className="tabular-nums">{formatCurrency(safeTax)}</span>
+          <span className="tabular-nums">
+            {formatCurrency(safeTax, currency)}
+          </span>
         </div>
       )}
 
@@ -112,7 +173,7 @@ export function CartTotals({
         <div className="flex justify-between text-sm text-success-600 dark:text-success-400">
           <span>Discount</span>
           <span className="tabular-nums">
-            -{formatCurrency(safeDiscount)}
+            -{formatCurrency(safeDiscount, currency)}
           </span>
         </div>
       )}
@@ -121,7 +182,7 @@ export function CartTotals({
         <div className="flex justify-between text-sm text-secondary-600 dark:text-secondary-400">
           <span>Promotion ({promotionCode})</span>
           <span className="tabular-nums">
-            -{formatCurrency(safePromotionDiscount)}
+            -{formatCurrency(safePromotionDiscount, currency)}
           </span>
         </div>
       )}
@@ -130,7 +191,7 @@ export function CartTotals({
         <div className="flex justify-between text-sm text-secondary-600 dark:text-secondary-400">
           <span>Loyalty Points ({safeLoyaltyPointsUsed})</span>
           <span className="tabular-nums">
-            -{formatCurrency(safeLoyaltyDiscount)}
+            -{formatCurrency(safeLoyaltyDiscount, currency)}
           </span>
         </div>
       )}
@@ -151,7 +212,7 @@ export function CartTotals({
                 Free
               </span>
             ) : (
-              formatCurrency(safeShippingCost)
+              formatCurrency(safeShippingCost, currency)
             )}
           </span>
         </div>
@@ -159,13 +220,15 @@ export function CartTotals({
 
       <div className="flex justify-between text-lg font-bold text-gray-900 dark:text-white pt-2">
         <span>Total</span>
-        <span className="tabular-nums">{formatCurrency(grandTotal)}</span>
+        <span className="tabular-nums">
+          {formatCurrency(grandTotal, currency)}
+        </span>
       </div>
 
       {amountUntilFreeShipping > 0 && (
         <p className="text-xs text-gray-500 dark:text-gray-400 text-center mt-2 tabular-nums">
-          Add {formatCurrency(amountUntilFreeShipping)} more for free
-          shipping
+          Add {formatCurrency(amountUntilFreeShipping, currency)} more
+          for free shipping
         </p>
       )}
     </div>

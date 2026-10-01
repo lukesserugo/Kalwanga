@@ -1,4 +1,4 @@
-// D:\Projects\Kalwanga\packages\backend\src\services\mobileMoneyService.ts
+// packages/backend/src/services/mobileMoneyService.ts
 
 import axios, { AxiosInstance } from 'axios';
 import { logger } from '../lib/logger.js';
@@ -39,15 +39,26 @@ interface MobileMoneyPaymentRequest {
   phoneNumber: string;
   amount: number;
   /**
-   * Optional. MTN and Airtel derive their currency from their own
-   * country config (`MTN_COUNTRY`, `AIRTEL_COUNTRY`). A caller
-   * cannot force a currency here — the value is logged and
-   * discarded when it disagrees with the country-derived one.
+   * The currency the caller expects the charge to settle in.
    *
-   * Declared optional so callers can omit it (or pass `undefined`
-   * explicitly) without a TS2322. This is the intended usage from
-   * `checkoutService.invokeGateway`, which passes `undefined`
-   * deliberately to signal "let the country config decide".
+   * ⚠ Phase D1: MTN and Airtel derive their settlement currency
+   *   from their own country config (`MTN_COUNTRY`,
+   *   `AIRTEL_COUNTRY`) via the registry. This service is the
+   *   LAST mile — the currency decision MUST have been made
+   *   before calling `initiatePayment`. The `chargeCurrencyService`
+   *   resolves the correct currency for the caller (which for
+   *   mobile money is the provider's country currency), and the
+   *   caller passes it here.
+   *
+   *   Passing a currency that does NOT match the country-derived
+   *   one is a bug, not a payer error. It means the caller skipped
+   *   the resolver. The service REJECTS the request with a 400
+   *   explaining how to fix it (see `assertCurrencyMatches`).
+   *
+   *   Declared optional so callers who genuinely have no currency
+   *   (health probes, admin tools) can omit it and let the
+   *   provider's country currency apply. In that case the
+   *   country currency wins and no reject fires.
    */
   currency?: string;
   reference: string;
@@ -86,6 +97,15 @@ interface MobileMoneyRefundResponse {
 }
 
 const DEFAULT_REQUEST_TIMEOUT_MS = 30_000;
+
+/**
+ * TTL for the credential cache. Credentials are read from
+ * `process.env` once and reused for this long. In practice the
+ * values never change at runtime (env is fixed at boot), so a
+ * long TTL is safe. A TTL exists so that a hot-reloaded dev
+ * environment picks up `.env` edits without a full restart.
+ */
+const CREDENTIAL_CACHE_TTL_MS = 5 * 60_000; // 5 minutes
 
 // ============================================
 // SHARED HELPERS
@@ -126,17 +146,85 @@ function stringifyBody(body: unknown, maxLen = 500): string {
   }
 }
 
+/**
+ * ⚠ Phase D1 — assert that the caller-supplied currency matches
+ * the provider's country-derived settlement currency.
+ *
+ * The provider's country currency is authoritative. The caller
+ * MUST have resolved the charge currency via
+ * `chargeCurrencyService.resolve(...)` before calling here — that
+ * resolver returns the provider's country currency for mobile
+ * money by construction. A mismatch means the caller bypassed the
+ * resolver.
+ *
+ * Behaviour:
+ *   • Caller omits `currency` → OK. The country currency applies.
+ *   • Caller passes the country currency → OK.
+ *   • Caller passes a different currency → REJECT with a 400
+ *     that explains where the resolver lives.
+ *
+ * This replaces the previous "log a warning and silently
+ * override" behaviour. Silent overrides hide resolver bugs in
+ * production; the charge is written to the provider in a currency
+ * the caller did not expect, and nothing in the logs is loud
+ * enough to notice.
+ */
+function assertCurrencyMatches(
+  provider: 'MTN' | 'AIRTEL',
+  callerCurrency: string | undefined,
+  countryCurrency: string,
+  country: string,
+): void {
+  if (!callerCurrency) return;
+
+  const caller = callerCurrency.trim().toUpperCase();
+  const countryCode = countryCurrency.trim().toUpperCase();
+
+  if (caller === countryCode) return;
+
+  throw new AppError(
+    `[${provider}] Currency mismatch: caller passed ${caller}, but ` +
+      `${provider === 'MTN' ? 'MTN_COUNTRY' : 'AIRTEL_COUNTRY'}=${country} ` +
+      `requires ${countryCode}. The charge currency must be resolved via ` +
+      `chargeCurrencyService.resolve() BEFORE calling initiatePayment — ` +
+      `that resolver returns the provider's country currency for mobile money.`,
+    400,
+  );
+}
+
 // ============================================
-// LAZY ENV READERS
+// CACHED CONFIG READERS
 // ============================================
 //
-// Currency and country are derived from the registry via
-// `currencyService`, driven by `MTN_COUNTRY` / `AIRTEL_COUNTRY`.
-// No hardcoded COUNTRY_CONFIGS table anywhere — the registry is
-// the single source of truth. Nothing in this file hardcodes a
-// currency; the registry decides, per deployment.
+// These are the SINGLE point where MTN / Airtel credentials are
+// read from `process.env`. Every other part of the codebase —
+// including `checkoutService` — must go through these readers or
+// through the `isMtnConfigured()` / `isAirtelConfigured()`
+// helpers below.
+//
+// Caching rationale:
+//   - Env is fixed at boot. Reading it on every call is waste.
+//   - A TTL (rather than a one-shot cache) lets dev hot-reload
+//     pick up `.env` edits without a full restart.
+//   - The cache key is the provider name; there is no
+//     per-company variant because MTN / Airtel config is
+//     currently global (env-driven). If per-company credentials
+//     are added later, this key must be extended.
+
+interface CachedConfig<T> {
+  value: T;
+  loadedAt: number;
+}
+
+let mtnConfigCache: CachedConfig<MTNConfig> | null = null;
+let airtelConfigCache: CachedConfig<AirtelConfig> | null = null;
 
 function readMtnConfig(): MTNConfig {
+  const now = Date.now();
+  if (mtnConfigCache && now - mtnConfigCache.loadedAt < CREDENTIAL_CACHE_TTL_MS) {
+    return mtnConfigCache.value;
+  }
+
   const country = (process.env.MTN_COUNTRY || 'UG').toUpperCase();
   // Resolve the currency from the country via the registry.
   // Throws if the country isn't supported by the registry — a
@@ -144,7 +232,7 @@ function readMtnConfig(): MTNConfig {
   // at first checkout.
   const currency = currencyService.resolveForCountry(country);
 
-  return {
+  const value: MTNConfig = {
     apiUserId: process.env.MTN_API_USER_ID || '',
     apiKey: process.env.MTN_API_KEY || '',
     subscriptionKey: process.env.MTN_SUBSCRIPTION_KEY || '',
@@ -159,13 +247,24 @@ function readMtnConfig(): MTNConfig {
     currency,
     apiSecret: process.env.MTN_API_SECRET || '',
   };
+
+  mtnConfigCache = { value, loadedAt: now };
+  return value;
 }
 
 function readAirtelConfig(): AirtelConfig {
+  const now = Date.now();
+  if (
+    airtelConfigCache &&
+    now - airtelConfigCache.loadedAt < CREDENTIAL_CACHE_TTL_MS
+  ) {
+    return airtelConfigCache.value;
+  }
+
   const country = (process.env.AIRTEL_COUNTRY || 'UG').toUpperCase();
   const currency = currencyService.resolveForCountry(country);
 
-  return {
+  const value: AirtelConfig = {
     clientId: process.env.AIRTEL_CLIENT_ID || '',
     clientSecret: process.env.AIRTEL_CLIENT_SECRET || '',
     country,
@@ -178,11 +277,98 @@ function readAirtelConfig(): AirtelConfig {
     apiKey: process.env.AIRTEL_API_KEY || '',
     apiSecret: process.env.AIRTEL_API_SECRET || '',
   };
+
+  airtelConfigCache = { value, loadedAt: now };
+  return value;
+}
+
+/**
+ * Force-invalidate the credential cache. Call this after editing
+ * `.env` in development, or from an admin config-update handler
+ * once per-company credentials are introduced.
+ *
+ * Also used by tests to guarantee a fresh read between cases.
+ */
+export function clearMobileMoneyCredentialCache(): void {
+  mtnConfigCache = null;
+  airtelConfigCache = null;
+}
+
+// ============================================
+// PUBLIC CONFIGURATION PROBES
+// ============================================
+//
+// `checkoutService` (and anything else that needs to know whether
+// a provider is usable) should call these instead of reading
+// `process.env` directly. They hit the cache, so asking them 10
+// times in one request costs one env read.
+
+/**
+ * True when MTN's required credentials are present.
+ *
+ * Required: apiUserId, apiKey, subscriptionKey.
+ * (apiSecret is not used by the collection flow; it is kept in
+ * the config for future use but is not part of the gate.)
+ */
+export function isMtnConfigured(): boolean {
+  const cfg = readMtnConfig();
+  return Boolean(
+    cfg.apiUserId &&
+      cfg.apiKey &&
+      cfg.subscriptionKey &&
+      cfg.apiUserId.trim() !== '' &&
+      cfg.apiKey.trim() !== '' &&
+      cfg.subscriptionKey.trim() !== '',
+  );
+}
+
+/**
+ * True when Airtel's required credentials are present.
+ *
+ * Required: clientId, clientSecret.
+ */
+export function isAirtelConfigured(): boolean {
+  const cfg = readAirtelConfig();
+  return Boolean(
+    cfg.clientId &&
+      cfg.clientSecret &&
+      cfg.clientId.trim() !== '' &&
+      cfg.clientSecret.trim() !== '',
+  );
+}
+
+/**
+ * Return the names of the MTN env vars that are currently missing,
+ * for use in error messages and logs. Empty array when configured.
+ */
+export function missingMtnKeys(): string[] {
+  const cfg = readMtnConfig();
+  const missing: string[] = [];
+  if (!cfg.apiUserId) missing.push('MTN_API_USER_ID');
+  if (!cfg.apiKey) missing.push('MTN_API_KEY');
+  if (!cfg.subscriptionKey) missing.push('MTN_SUBSCRIPTION_KEY');
+  return missing;
+}
+
+/**
+ * Return the names of the Airtel env vars that are currently
+ * missing. Empty array when configured.
+ */
+export function missingAirtelKeys(): string[] {
+  const cfg = readAirtelConfig();
+  const missing: string[] = [];
+  if (!cfg.clientId) missing.push('AIRTEL_CLIENT_ID');
+  if (!cfg.clientSecret) missing.push('AIRTEL_CLIENT_SECRET');
+  return missing;
 }
 
 // ============================================
 // ENV PRESENCE LOGGING
 // ============================================
+//
+// These still read `process.env` directly because their entire
+// purpose is to report what is (or is not) set. They run once at
+// startup per provider, so the extra reads are irrelevant.
 
 function logMtnEnvPresence(): void {
   const names = [
@@ -259,9 +445,15 @@ export class MTNMobileMoneyService {
   }
 
   private get config(): MTNConfig {
+    // Cached — see readMtnConfig(). This getter no longer hits
+    // `process.env` on every access.
     return readMtnConfig();
   }
 
+  /**
+   * Names of the MTN config keys that are empty in the cached
+   * config. Reads the cache, not env.
+   */
   private missingRequiredKeys(): (keyof MTNConfig)[] {
     const cfg = this.config;
     const required: (keyof MTNConfig)[] = [
@@ -387,17 +579,17 @@ export class MTNMobileMoneyService {
 
     const cfg = this.config;
 
-    // The country determines the currency. Any caller-supplied
-    // currency is logged and discarded when it disagrees.
+    // The country determines the currency. A caller-supplied
+    // currency MUST match — a mismatch means the caller bypassed
+    // `chargeCurrencyService.resolve()`. Reject loudly.
+    assertCurrencyMatches(
+      'MTN',
+      request.currency,
+      cfg.currency,
+      cfg.country,
+    );
+
     const currency = cfg.currency;
-    if (
-      request.currency &&
-      request.currency.toUpperCase() !== currency.toUpperCase()
-    ) {
-      logger.warn(
-        `[MTN] Caller passed currency=${request.currency} but country=${cfg.country} requires ${currency}. Overriding.`,
-      );
-    }
 
     currencyService.assertValidAmount(request.amount, currency);
 
@@ -727,16 +919,18 @@ export class MTNMobileMoneyService {
     }
 
     const cfg = this.config;
-    const currency = cfg.currency;
 
-    if (
-      params.currency &&
-      params.currency.toUpperCase() !== currency.toUpperCase()
-    ) {
-      logger.warn(
-        `[MTN] Transfer caller passed currency=${params.currency} but country=${cfg.country} requires ${currency}. Overriding.`,
-      );
-    }
+    // Same rule as initiatePayment — the country currency is
+    // authoritative, and a mismatched caller-supplied currency
+    // means the resolver was skipped.
+    assertCurrencyMatches(
+      'MTN',
+      params.currency,
+      cfg.currency,
+      cfg.country,
+    );
+
+    const currency = cfg.currency;
 
     currencyService.assertValidAmount(params.amount, currency);
 
@@ -868,7 +1062,8 @@ export class MTNMobileMoneyService {
 // ============================================
 //
 // Same structure as MTN — currency is derived from
-// `AIRTEL_COUNTRY` via the registry.
+// `AIRTEL_COUNTRY` via the registry, and a mismatched caller-
+// supplied currency is REJECTED (see `assertCurrencyMatches`).
 
 export class AirtelMobileMoneyService {
   private static instance: AirtelMobileMoneyService;
@@ -892,6 +1087,7 @@ export class AirtelMobileMoneyService {
   }
 
   private get config(): AirtelConfig {
+    // Cached — see readAirtelConfig().
     return readAirtelConfig();
   }
 
@@ -993,16 +1189,17 @@ export class AirtelMobileMoneyService {
     }
 
     const cfg = this.config;
-    const currency = cfg.currency;
 
-    if (
-      request.currency &&
-      request.currency.toUpperCase() !== currency.toUpperCase()
-    ) {
-      logger.warn(
-        `[Airtel] Caller passed currency=${request.currency} but country=${cfg.country} requires ${currency}. Overriding.`,
-      );
-    }
+    // Same rule as MTN — country currency is authoritative, and a
+    // mismatched caller-supplied currency is a resolver bug.
+    assertCurrencyMatches(
+      'AIRTEL',
+      request.currency,
+      cfg.currency,
+      cfg.country,
+    );
+
+    const currency = cfg.currency;
 
     currencyService.assertValidAmount(request.amount, currency);
 
@@ -1231,6 +1428,15 @@ export class AirtelMobileMoneyService {
       throw new AppError('Airtel Mobile Money is not configured.', 503);
     }
     const cfg = this.config;
+
+    // Same rule — country currency is authoritative.
+    assertCurrencyMatches(
+      'AIRTEL',
+      params.currency,
+      cfg.currency,
+      cfg.country,
+    );
+
     const currency = cfg.currency;
     currencyService.assertValidAmount(params.amount, currency);
 

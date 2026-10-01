@@ -52,73 +52,7 @@ import { PermissionResource } from '../../../../types/enums';
 import type { Sale, SaleItem } from '../../../../types/sale';
 import { api } from '../../../../services/api';
 
-// ============================================
-// LOCAL SERVICE EXTENSIONS
-// ============================================
-//
-// The frontend `saleService` object does not yet declare `exportSales`
-// or `refundSale`. Both routes exist on the backend
-// (`saleController.exportSales`, `saleController.refundSale`), so
-// rather than mutate the shared service (which is out of scope here),
-// we call those endpoints through the same `api` client the service
-// itself uses. When the service gains these methods, swap the local
-// helpers for direct service calls.
-//
-// Backend contract:
-//
-//   GET    /sales/export?startDate=…&endDate=…&format=…  → JSON envelope
-//   POST   /sales/:id/refund                              → JSON envelope
-//
-// Both respond with `{ success, data, … }`.
-
-async function exportSalesRemote(params: {
-  startDate: string;
-  endDate: string;
-  format?: 'json' | 'csv' | 'excel' | 'pdf';
-  status?: string;
-  businessUnitId?: string;
-}): Promise<{ data: any[]; total?: number; format?: string }> {
-  const response = await api.get<any>('/sales/export', { params });
-  const body =
-    response && typeof response === 'object' && 'data' in response
-      ? (response as any).data
-      : response;
-
-  if (body && typeof body === 'object' && Array.isArray(body.data)) {
-    return {
-      data: body.data,
-      total: typeof body.total === 'number' ? body.total : body.data.length,
-      format: typeof body.format === 'string' ? body.format : params.format,
-    };
-  }
-
-  if (Array.isArray(body)) {
-    return { data: body, total: body.length, format: params.format };
-  }
-
-  return { data: [], total: 0, format: params.format };
-}
-
-async function refundSaleRemote(
-  id: string,
-  reason: string,
-): Promise<{ success: boolean; data?: any; message?: string }> {
-  if (!id) throw new Error('Sale ID is required');
-  const response = await api.post<any>(`/sales/${id}/refund`, { reason });
-  const body =
-    response && typeof response === 'object' && 'data' in response
-      ? (response as any).data
-      : response;
-
-  if (body && typeof body === 'object' && 'success' in body) {
-    return body as { success: boolean; data?: any; message?: string };
-  }
-  return { success: true, data: body };
-}
-
-// ============================================
-// TYPES
-// ============================================
+const DEFAULT_CURRENCY = 'USD';
 
 type UserRole =
   | 'SUPER_ADMIN'
@@ -142,13 +76,87 @@ interface SalesStats {
   totalDiscount?: number;
   totalCustomers?: number;
   averageItemsPerSale?: number;
+  currency?: string;
 }
 
 type DiscountFilter = 'all' | 'discounted';
 
-// ============================================
-// SUB-COMPONENTS
-// ============================================
+function pickCurrency(...candidates: Array<unknown>): string {
+  for (const c of candidates) {
+    if (typeof c === 'string' && c.trim().length > 0) {
+      return c.trim().toUpperCase();
+    }
+  }
+  return DEFAULT_CURRENCY;
+}
+
+function resolveSaleCurrency(sale: Sale, fallback: string): string {
+  const payment = (sale as any).payments?.[0];
+
+  return pickCurrency(
+    (sale as any).currency,
+    payment?.displayCurrency,
+    payment?.currency,
+    fallback,
+  );
+}
+
+async function exportSalesRemote(params: {
+  startDate: string;
+  endDate: string;
+  format?: 'json' | 'csv' | 'excel' | 'pdf';
+  status?: string;
+  businessUnitId?: string;
+}): Promise<{ data: any[]; total?: number; format?: string; currency?: string }> {
+  const response = await api.get<any>('/sales/export', { params });
+  const body =
+    response && typeof response === 'object' && 'data' in response
+      ? (response as any).data
+      : response;
+
+  const envelopeCurrency =
+    response && typeof response === 'object' && 'currency' in response
+      ? (response as any).currency
+      : undefined;
+
+  if (body && typeof body === 'object' && Array.isArray(body.data)) {
+    return {
+      data: body.data,
+      total: typeof body.total === 'number' ? body.total : body.data.length,
+      format: typeof body.format === 'string' ? body.format : params.format,
+      currency:
+        typeof body.currency === 'string' ? body.currency : envelopeCurrency,
+    };
+  }
+
+  if (Array.isArray(body)) {
+    return {
+      data: body,
+      total: body.length,
+      format: params.format,
+      currency: envelopeCurrency,
+    };
+  }
+
+  return { data: [], total: 0, format: params.format };
+}
+
+async function refundSaleRemote(
+  id: string,
+  reason: string,
+): Promise<{ success: boolean; data?: any; message?: string }> {
+  if (!id) throw new Error('Sale ID is required');
+  const response = await api.post<any>(`/sales/${id}/refund`, { reason });
+  const body =
+    response && typeof response === 'object' && 'data' in response
+      ? (response as any).data
+      : response;
+
+  if (body && typeof body === 'object' && 'success' in body) {
+    return body as { success: boolean; data?: any; message?: string };
+  }
+  return { success: true, data: body };
+}
 
 const StatCard: React.FC<{
   label: string;
@@ -176,7 +184,9 @@ const StatCard: React.FC<{
     >
       <div className="flex items-center justify-between">
         <p className="text-sm text-gray-500 dark:text-gray-400">{label}</p>
-        {Icon && <Icon className="w-4 h-4 text-gray-400" />}
+        {Icon && (
+          <Icon className="w-4 h-4 text-gray-400" aria-hidden="true" />
+        )}
       </div>
       <p className="text-xl font-bold text-gray-900 dark:text-white mt-1 tabular-nums">
         {value}
@@ -252,7 +262,7 @@ const StatusBadge: React.FC<{ status: string }> = ({ status }) => {
     <span
       className={`px-2.5 py-1 rounded-full text-xs font-medium flex items-center gap-1 ${config.color}`}
     >
-      <Icon className="w-3 h-3" />
+      <Icon className="w-3 h-3" aria-hidden="true" />
       {config.label}
     </span>
   );
@@ -271,16 +281,24 @@ const BreakdownHint: React.FC<{ sale: Sale }> = ({ sale }) => {
       className="inline-flex items-center gap-1 text-xs text-gray-500 dark:text-gray-400 mt-1"
       title={label}
     >
-      {hasPromotion && <Tag className="w-3 h-3 text-brand-500 shrink-0" />}
+      {hasPromotion && (
+        <Tag className="w-3 h-3 text-brand-500 shrink-0" aria-hidden="true" />
+      )}
       {hasLoyalty && (
-        <Star className="w-3 h-3 text-warning-500 fill-current shrink-0" />
+        <Star
+          className="w-3 h-3 text-warning-500 fill-current shrink-0"
+          aria-hidden="true"
+        />
       )}
       <span className="truncate max-w-[200px]">{label}</span>
     </span>
   );
 };
 
-const BreakdownPanel: React.FC<{ sale: Sale }> = ({ sale }) => {
+const BreakdownPanel: React.FC<{
+  sale: Sale;
+  currency: string;
+}> = ({ sale, currency }) => {
   if (!saleService.hasBreakdown(sale)) return null;
 
   const breakdown = saleService.extractBreakdown(sale);
@@ -297,14 +315,17 @@ const BreakdownPanel: React.FC<{ sale: Sale }> = ({ sale }) => {
       aria-label="Discount breakdown"
     >
       <p className="text-xs font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400 flex items-center gap-1.5">
-        <Sparkles className="w-3 h-3 text-brand-500" />
+        <Sparkles className="w-3 h-3 text-brand-500" aria-hidden="true" />
         Discount Breakdown
       </p>
 
       {hasPromotion && (
         <div className="flex items-center justify-between text-sm">
           <span className="flex items-center gap-2 text-gray-600 dark:text-gray-400">
-            <Tag className="w-3.5 h-3.5 text-brand-500 shrink-0" />
+            <Tag
+              className="w-3.5 h-3.5 text-brand-500 shrink-0"
+              aria-hidden="true"
+            />
             <span>{promotionLabel}</span>
             {breakdown.promotionCode && (
               <code className="px-1.5 py-0.5 rounded bg-gray-200 dark:bg-gray-700 text-[10px] font-mono tabular-nums">
@@ -313,7 +334,7 @@ const BreakdownPanel: React.FC<{ sale: Sale }> = ({ sale }) => {
             )}
           </span>
           <span className="tabular-nums font-medium text-success-600 dark:text-success-400 shrink-0">
-            -{formatCurrency(breakdown.promotionDiscount ?? 0)}
+            -{formatCurrency(breakdown.promotionDiscount ?? 0, currency)}
           </span>
         </div>
       )}
@@ -321,23 +342,22 @@ const BreakdownPanel: React.FC<{ sale: Sale }> = ({ sale }) => {
       {hasLoyalty && (
         <div className="flex items-center justify-between text-sm">
           <span className="flex items-center gap-2 text-gray-600 dark:text-gray-400">
-            <Star className="w-3.5 h-3.5 text-warning-500 fill-current shrink-0" />
+            <Star
+              className="w-3.5 h-3.5 text-warning-500 fill-current shrink-0"
+              aria-hidden="true"
+            />
             <span className="tabular-nums">
               {breakdown.loyaltyPointsUsed} loyalty points
             </span>
           </span>
           <span className="tabular-nums font-medium text-success-600 dark:text-success-400 shrink-0">
-            -{formatCurrency(breakdown.loyaltyDiscount ?? 0)}
+            -{formatCurrency(breakdown.loyaltyDiscount ?? 0, currency)}
           </span>
         </div>
       )}
     </section>
   );
 };
-
-// ============================================
-// MAIN COMPONENT
-// ============================================
 
 export default function SalesPage() {
   const { user: clerkUser, isLoaded } = useUser();
@@ -363,6 +383,10 @@ export default function SalesPage() {
     refundedOrders: 0,
     totalItemsSold: 0,
   });
+  const [statsCurrency, setStatsCurrency] = useState<string | undefined>(
+    undefined,
+  );
+  const [listCurrency, setListCurrency] = useState<string>(DEFAULT_CURRENCY);
   const [showStats, setShowStats] = useState(true);
   const [selectedSale, setSelectedSale] = useState<Sale | null>(null);
   const [showDetailModal, setShowDetailModal] = useState(false);
@@ -380,10 +404,6 @@ export default function SalesPage() {
   const userRole = (authUser?.role ||
     clerkUser?.publicMetadata?.role ||
     'VIEWER') as UserRole;
-
-  // ============================================
-  // PERMISSIONS
-  // ============================================
 
   const canViewSales = useCallback(() => {
     return (
@@ -415,9 +435,8 @@ export default function SalesPage() {
     );
   }, [userRole, canView]);
 
-  // ============================================
-  // NAVIGATION
-  // ============================================
+  const displayCurrency =
+    statsCurrency ?? listCurrency ?? DEFAULT_CURRENCY;
 
   const goToPos = () => {
     router.push('/admin/sales/pos');
@@ -426,10 +445,6 @@ export default function SalesPage() {
   const goToDashboard = () => {
     router.push('/admin/sales/dashboard');
   };
-
-  // ============================================
-  // REDIRECT / ACCESS
-  // ============================================
 
   useEffect(() => {
     if (isLoaded && !clerkUser) {
@@ -441,20 +456,6 @@ export default function SalesPage() {
       toast.error('You do not have permission to view sales');
     }
   }, [isLoaded, clerkUser, router, canViewSales]);
-
-  // ============================================
-  // DATA FETCHING
-  // ============================================
-
-  useEffect(() => {
-    if (authUser && canViewSales()) {
-      fetchOrders();
-      if (canViewStats()) {
-        fetchStats();
-      }
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [authUser, page, filter, searchQuery, dateRange]);
 
   const fetchOrders = useCallback(
     async (silent = false) => {
@@ -489,6 +490,9 @@ export default function SalesPage() {
           setOrders(result.data);
           setTotalPages(result.totalPages || 1);
           setTotalOrders(result.total || result.data.length);
+          if (result.currency) {
+            setListCurrency(result.currency);
+          }
         } else {
           setOrders([]);
           setTotalPages(1);
@@ -571,16 +575,28 @@ export default function SalesPage() {
           totalDiscount: response.totalDiscount || 0,
           totalCustomers: response.totalCustomers || 0,
           averageItemsPerSale: response.averageItemsPerSale || 0,
+          currency: (response as any).currency,
         });
+
+        const cur = (response as any).currency;
+        if (typeof cur === 'string' && cur.trim().length > 0) {
+          setStatsCurrency(cur.trim().toUpperCase());
+        }
       }
     } catch (error) {
       console.error('Failed to fetch stats:', error);
     }
   }, [authUser, userRole, canViewStats, orders]);
 
-  // ============================================
-  // HANDLERS
-  // ============================================
+  useEffect(() => {
+    if (authUser && canViewSales()) {
+      void fetchOrders();
+      if (canViewStats()) {
+        void fetchStats();
+      }
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [authUser, page, filter, searchQuery, dateRange]);
 
   const handleSearch = (e: React.ChangeEvent<HTMLInputElement>) => {
     setSearchQuery(e.target.value);
@@ -617,6 +633,10 @@ export default function SalesPage() {
       return;
     }
 
+    const currency = resolveSaleCurrency(order, listCurrency);
+    const fmt = (amount: number | null | undefined): string =>
+      formatCurrency(amount ?? 0, currency);
+
     const breakdown = saleService.extractBreakdown(order);
     const promotionDiscount = breakdown.promotionDiscount ?? 0;
     const promotionCode = breakdown.promotionCode ?? null;
@@ -627,17 +647,17 @@ export default function SalesPage() {
       promotionDiscount > 0
         ? `<div class="row"><span>Promotion${
             promotionCode ? ` (${promotionCode})` : ''
-          }</span><span>-${formatCurrency(promotionDiscount)}</span></div>`
+          }</span><span>-${fmt(promotionDiscount)}</span></div>`
         : '';
 
     const loyaltyLine =
       loyaltyPointsUsed > 0
-        ? `<div class="row"><span>${loyaltyPointsUsed} loyalty points</span><span>-${formatCurrency(loyaltyDiscount)}</span></div>`
+        ? `<div class="row"><span>${loyaltyPointsUsed} loyalty points</span><span>-${fmt(loyaltyDiscount)}</span></div>`
         : '';
 
     const rawDiscountLine =
       order.discount > 0 && promotionDiscount === 0 && loyaltyDiscount === 0
-        ? `<div class="row"><span>Discount</span><span>-${formatCurrency(order.discount)}</span></div>`
+        ? `<div class="row"><span>Discount</span><span>-${fmt(order.discount)}</span></div>`
         : '';
 
     printWindow.document.write(`
@@ -674,19 +694,19 @@ export default function SalesPage() {
                 (item) => `
               <div class="item">
                 <span>${item.product?.name || 'Item'} × ${item.quantity}</span>
-                <span>${formatCurrency(item.total)}</span>
+                <span>${fmt(item.total)}</span>
               </div>
             `,
               )
               .join('')}
           </div>
           <div>
-            <div class="row"><span>Subtotal</span><span>${formatCurrency(order.subtotal)}</span></div>
-            <div class="row"><span>Tax</span><span>${formatCurrency(order.tax)}</span></div>
+            <div class="row"><span>Subtotal</span><span>${fmt(order.subtotal)}</span></div>
+            <div class="row"><span>Tax</span><span>${fmt(order.tax)}</span></div>
             ${promotionLine}
             ${loyaltyLine}
             ${rawDiscountLine}
-            <div class="row grand"><span>Total</span><span>${formatCurrency(order.total)}</span></div>
+            <div class="row grand"><span>Total</span><span>${fmt(order.total)}</span></div>
           </div>
         </body>
       </html>
@@ -724,10 +744,17 @@ export default function SalesPage() {
         return;
       }
 
+      const exportCurrency = pickCurrency(
+        result.currency,
+        listCurrency,
+        displayCurrency,
+      );
+
       const headers = [
         'Receipt',
         'Date',
         'Customer',
+        'Currency',
         'Subtotal',
         'Tax',
         'Discount',
@@ -741,12 +768,18 @@ export default function SalesPage() {
         'Status',
         'Items',
       ];
+
       const rows = rowsData.map((sale: any) => {
         const b = saleService.extractBreakdown(sale);
+        const saleCurrency = pickCurrency(
+          sale.currency,
+          exportCurrency,
+        );
         return [
           sale.receiptNumber || sale.id,
           sale.date || sale.saleDate || '',
           sale.customer || 'Guest',
+          saleCurrency,
           sale.subtotal || 0,
           sale.tax || 0,
           sale.discount || 0,
@@ -799,8 +832,8 @@ export default function SalesPage() {
     try {
       await refundSaleRemote(order.id, 'Customer requested refund');
       toast.success('Order refunded successfully');
-      fetchOrders(true);
-      fetchStats();
+      void fetchOrders(true);
+      void fetchStats();
     } catch (error: any) {
       console.error('Failed to refund:', error);
       toast.error(
@@ -811,10 +844,6 @@ export default function SalesPage() {
     }
   };
 
-  // ============================================
-  // DERIVED
-  // ============================================
-
   const visibleOrders =
     discountFilter === 'all'
       ? orders
@@ -823,10 +852,6 @@ export default function SalesPage() {
   const discountedCount = orders.filter((order) =>
     saleService.hasBreakdown(order),
   ).length;
-
-  // ============================================
-  // LOADING
-  // ============================================
 
   if (!isLoaded || loading) {
     return (
@@ -854,14 +879,9 @@ export default function SalesPage() {
     return null;
   }
 
-  // ============================================
-  // RENDER
-  // ============================================
-
   return (
     <div className="min-h-screen bg-gray-50 dark:bg-gray-900">
       <div className="max-w-7xl mx-auto px-4 pt-8 pb-12">
-        {/* Header */}
         <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-8">
           <div>
             <h1 className="text-3xl font-bold text-gray-900 dark:text-white">
@@ -881,7 +901,7 @@ export default function SalesPage() {
               onClick={goToPos}
               className="flex items-center gap-2 px-4 py-2 bg-success-600 text-white rounded-lg hover:bg-success-700 transition-colors focus-ring"
             >
-              <ShoppingCart className="w-4 h-4" />
+              <ShoppingCart className="w-4 h-4" aria-hidden="true" />
               POS
             </button>
 
@@ -889,19 +909,22 @@ export default function SalesPage() {
               onClick={goToDashboard}
               className="flex items-center gap-2 px-4 py-2 bg-secondary-600 text-white rounded-lg hover:bg-secondary-700 transition-colors focus-ring"
             >
-              <LayoutDashboard className="w-4 h-4" />
+              <LayoutDashboard className="w-4 h-4" aria-hidden="true" />
               Dashboard
             </button>
 
             <button
-              onClick={() => fetchOrders(true)}
+              onClick={() => void fetchOrders(true)}
               className="flex items-center gap-2 px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors focus-ring"
               disabled={isRefreshing}
             >
               {isRefreshing ? (
-                <Loader2 className="w-4 h-4 animate-spin text-brand-600" />
+                <Loader2
+                  className="w-4 h-4 animate-spin text-brand-600"
+                  aria-hidden="true"
+                />
               ) : (
-                <RefreshCw className="w-4 h-4" />
+                <RefreshCw className="w-4 h-4" aria-hidden="true" />
               )}
               Refresh
             </button>
@@ -909,10 +932,10 @@ export default function SalesPage() {
             {canViewStats() && (
               <>
                 <button
-                  onClick={handleExport}
+                  onClick={() => void handleExport()}
                   className="flex items-center gap-2 px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors focus-ring"
                 >
-                  <Download className="w-4 h-4" />
+                  <Download className="w-4 h-4" aria-hidden="true" />
                   Export
                 </button>
                 <button
@@ -923,7 +946,7 @@ export default function SalesPage() {
                       : 'border-gray-300 dark:border-gray-600 text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700'
                   }`}
                 >
-                  <BarChart3 className="w-4 h-4" />
+                  <BarChart3 className="w-4 h-4" aria-hidden="true" />
                   Stats
                 </button>
               </>
@@ -939,7 +962,10 @@ export default function SalesPage() {
                 }`}
                 aria-label="List view"
               >
-                <FileText className="w-5 h-5 text-gray-600 dark:text-gray-400" />
+                <FileText
+                  className="w-5 h-5 text-gray-600 dark:text-gray-400"
+                  aria-hidden="true"
+                />
               </button>
               <button
                 onClick={() => setViewMode('grid')}
@@ -950,7 +976,10 @@ export default function SalesPage() {
                 }`}
                 aria-label="Grid view"
               >
-                <Package className="w-5 h-5 text-gray-600 dark:text-gray-400" />
+                <Package
+                  className="w-5 h-5 text-gray-600 dark:text-gray-400"
+                  aria-hidden="true"
+                />
               </button>
             </div>
             <Link
@@ -962,10 +991,9 @@ export default function SalesPage() {
           </div>
         </div>
 
-        {/* Role-based info banner */}
         {!canViewAllSales() && (
           <div className="bg-brand-50 dark:bg-brand-900/20 border border-brand-200 dark:border-brand-800 rounded-lg p-3 mb-4 text-sm text-brand-700 dark:text-brand-300 flex items-center gap-2">
-            <Users className="w-4 h-4" />
+            <Users className="w-4 h-4" aria-hidden="true" />
             <span>
               {userRole === 'CASHIER'
                 ? 'Showing only your sales. You can view your transaction history here.'
@@ -978,7 +1006,6 @@ export default function SalesPage() {
           </div>
         )}
 
-        {/* Stats Cards */}
         {showStats && canViewStats() && (
           <motion.div
             initial={{ opacity: 0, y: 20 }}
@@ -987,7 +1014,7 @@ export default function SalesPage() {
           >
             <StatCard
               label="Total Revenue"
-              value={formatCurrency(stats.totalRevenue)}
+              value={formatCurrency(stats.totalRevenue, displayCurrency)}
               color="success"
               icon={DollarSign}
             />
@@ -999,13 +1026,13 @@ export default function SalesPage() {
             />
             <StatCard
               label="Average Ticket"
-              value={formatCurrency(stats.averageTicket)}
+              value={formatCurrency(stats.averageTicket, displayCurrency)}
               color="secondary"
               icon={TrendingUp}
             />
             <StatCard
               label="Today's Revenue"
-              value={formatCurrency(stats.todayRevenue)}
+              value={formatCurrency(stats.todayRevenue, displayCurrency)}
               color="brand-accent"
               icon={Calendar}
             />
@@ -1030,11 +1057,13 @@ export default function SalesPage() {
           </motion.div>
         )}
 
-        {/* Filters */}
         <div className="card-brand p-4 mb-6">
           <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
             <div className="relative">
-              <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-5 h-5" />
+              <Search
+                className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-5 h-5"
+                aria-hidden="true"
+              />
               <input
                 type="text"
                 placeholder="Search by receipt number..."
@@ -1062,7 +1091,7 @@ export default function SalesPage() {
               onChange={(e) =>
                 setDateRange({ ...dateRange, start: e.target.value })
               }
-              className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-brand-500 focus:outline-none bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+              className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-brand-500 focus:outline-none bg-white dark:bg-gray-700 text-gray-900 dark:text-white tabular-nums"
             />
             <input
               type="date"
@@ -1070,12 +1099,15 @@ export default function SalesPage() {
               onChange={(e) =>
                 setDateRange({ ...dateRange, end: e.target.value })
               }
-              className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-brand-500 focus:outline-none bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+              className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-brand-500 focus:outline-none bg-white dark:bg-gray-700 text-gray-900 dark:text-white tabular-nums"
             />
           </div>
 
           <div className="flex items-center gap-2 mt-3 pt-3 border-t border-gray-100 dark:border-gray-700">
-            <Sparkles className="w-3.5 h-3.5 text-gray-400 shrink-0" />
+            <Sparkles
+              className="w-3.5 h-3.5 text-gray-400 shrink-0"
+              aria-hidden="true"
+            />
             <button
               type="button"
               onClick={() => setDiscountFilter('all')}
@@ -1096,7 +1128,7 @@ export default function SalesPage() {
                   : 'bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-400 hover:bg-gray-200 dark:hover:bg-gray-600'
               }`}
             >
-              <Tag className="w-3.5 h-3.5" />
+              <Tag className="w-3.5 h-3.5" aria-hidden="true" />
               Discounted
               {discountedCount > 0 && (
                 <span
@@ -1113,7 +1145,6 @@ export default function SalesPage() {
           </div>
         </div>
 
-        {/* Sales List */}
         {orders.length === 0 ? (
           <div className="card-brand p-12 text-center">
             <div className="text-6xl mb-4">📦</div>
@@ -1130,14 +1161,14 @@ export default function SalesPage() {
                 onClick={goToPos}
                 className="bg-success-600 text-white px-6 py-2 rounded-lg hover:bg-success-700 transition-colors flex items-center gap-2 focus-ring"
               >
-                <ShoppingCart className="w-4 h-4" />
+                <ShoppingCart className="w-4 h-4" aria-hidden="true" />
                 Open POS
               </button>
               <button
                 onClick={goToDashboard}
                 className="bg-secondary-600 text-white px-6 py-2 rounded-lg hover:bg-secondary-700 transition-colors flex items-center gap-2 focus-ring"
               >
-                <LayoutDashboard className="w-4 h-4" />
+                <LayoutDashboard className="w-4 h-4" aria-hidden="true" />
                 View Dashboard
               </button>
               <Link
@@ -1150,7 +1181,10 @@ export default function SalesPage() {
           </div>
         ) : visibleOrders.length === 0 ? (
           <div className="card-brand p-12 text-center">
-            <Tag className="w-12 h-12 text-gray-300 dark:text-gray-600 mx-auto mb-3" />
+            <Tag
+              className="w-12 h-12 text-gray-300 dark:text-gray-600 mx-auto mb-3"
+              aria-hidden="true"
+            />
             <h2 className="text-xl font-semibold text-gray-700 dark:text-gray-300 mb-2">
               No discounted orders on this page
             </h2>
@@ -1175,141 +1209,165 @@ export default function SalesPage() {
               }`}
             >
               <AnimatePresence>
-                {visibleOrders.map((order, index) => (
-                  <motion.div
-                    key={order.id}
-                    initial={{ opacity: 0, y: 20 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    transition={{ delay: index * 0.05 }}
-                    className="card-brand p-0 overflow-hidden hover:shadow-card-hover transition-all"
-                  >
-                    <div
-                      className={`px-6 py-4 border-b border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800/50 flex flex-wrap items-center justify-between gap-3 ${
-                        viewMode === 'grid'
-                          ? 'flex-col items-start'
-                          : ''
-                      }`}
+                {visibleOrders.map((order, index) => {
+                  const orderCurrency = resolveSaleCurrency(
+                    order,
+                    listCurrency,
+                  );
+
+                  return (
+                    <motion.div
+                      key={order.id}
+                      initial={{ opacity: 0, y: 20 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      transition={{ delay: index * 0.05 }}
+                      className="card-brand p-0 overflow-hidden hover:shadow-card-hover transition-all"
                     >
                       <div
-                        className={`flex items-center gap-3 ${
+                        className={`px-6 py-4 border-b border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800/50 flex flex-wrap items-center justify-between gap-3 ${
                           viewMode === 'grid'
-                            ? 'w-full justify-between'
+                            ? 'flex-col items-start'
                             : ''
                         }`}
                       >
-                        <span className="font-mono font-bold text-brand-600 dark:text-brand-400 tabular-nums">
-                          #{order.receiptNumber}
-                        </span>
-                        <span className="text-sm text-gray-500 dark:text-gray-400">
-                          {safeFormatDate(order.saleDate || order.createdAt)}
-                        </span>
-                      </div>
-                      <div
-                        className={`flex items-center gap-3 ${
-                          viewMode === 'grid'
-                            ? 'w-full justify-between'
-                            : ''
-                        }`}
-                      >
-                        <StatusBadge status={order.status} />
-                        <span className="font-bold text-gray-900 dark:text-white tabular-nums">
-                          {formatCurrency(order.total)}
-                        </span>
-                      </div>
-                    </div>
-
-                    <div className="p-6">
-                      <div className="flex flex-wrap gap-4 mb-4 text-sm text-gray-500 dark:text-gray-400">
-                        <span className="flex items-center gap-1">
-                          <User className="w-3.5 h-3.5" />
-                          {order.customer
-                            ? `${order.customer.firstName} ${order.customer.lastName}`
-                            : 'Guest'}
-                        </span>
-                        <span className="flex items-center gap-1">
-                          <CreditCard className="w-3.5 h-3.5" />
-                          {order.payments?.[0]?.paymentMethod || 'N/A'}
-                        </span>
-                        {canViewAllSales() && (
-                          <span className="flex items-center gap-1">
-                            <Users className="w-3.5 h-3.5" />
-                            Cashier:{' '}
-                            {order.user
-                              ? `${order.user.firstName} ${order.user.lastName}`
-                              : 'Unknown'}
+                        <div
+                          className={`flex items-center gap-3 ${
+                            viewMode === 'grid'
+                              ? 'w-full justify-between'
+                              : ''
+                          }`}
+                        >
+                          <span className="font-mono font-bold text-brand-600 dark:text-brand-400 tabular-nums">
+                            #{order.receiptNumber}
                           </span>
-                        )}
-                      </div>
-
-                      <BreakdownHint sale={order} />
-
-                      <div className="space-y-2 mt-3">
-                        {order.items &&
-                          order.items
-                            .slice(0, viewMode === 'grid' ? 2 : 3)
-                            .map((item: SaleItem) => (
-                              <div
-                                key={item.id}
-                                className="flex justify-between text-sm"
-                              >
-                                <span className="text-gray-600 dark:text-gray-300 truncate max-w-[150px]">
-                                  {item.product?.name || 'Product'} ×{' '}
-                                  {item.quantity}
-                                </span>
-                                <span className="font-medium text-gray-900 dark:text-white tabular-nums">
-                                  {formatCurrency(item.total)}
-                                </span>
-                              </div>
-                            ))}
-                        {order.items &&
-                          order.items.length >
-                            (viewMode === 'grid' ? 2 : 3) && (
-                            <p className="text-sm text-gray-500 dark:text-gray-400 tabular-nums">
-                              +{' '}
-                              {order.items.length -
-                                (viewMode === 'grid' ? 2 : 3)}{' '}
-                              more items
-                            </p>
-                          )}
-                      </div>
-
-                      <div className="mt-4 pt-4 border-t border-gray-200 dark:border-gray-700 flex flex-wrap justify-between items-center gap-2">
-                        <span className="text-xs text-gray-400 dark:text-gray-500 tabular-nums">
-                          {order.items?.length || 0} items
-                        </span>
-                        <div className="flex gap-2">
-                          <button
-                            onClick={() => {
-                              setSelectedSale(order);
-                              setShowDetailModal(true);
-                            }}
-                            className="text-brand-600 dark:text-brand-400 hover:text-brand-800 dark:hover:text-brand-300 text-sm font-medium flex items-center gap-1 focus-ring rounded"
-                          >
-                            <Eye className="w-4 h-4" />
-                            Details
-                          </button>
-                          <button
-                            onClick={() => handlePrintReceipt(order)}
-                            className="text-gray-600 dark:text-gray-400 hover:text-gray-800 dark:hover:text-gray-200 text-sm font-medium flex items-center gap-1 focus-ring rounded"
-                          >
-                            <Printer className="w-4 h-4" />
-                            Print
-                          </button>
-                          {canManageSales() &&
-                            order.status === 'COMPLETED' && (
-                              <button
-                                onClick={() => handleRefund(order)}
-                                className="text-danger-600 dark:text-danger-400 hover:text-danger-800 dark:hover:text-danger-300 text-sm font-medium flex items-center gap-1 focus-ring rounded"
-                              >
-                                <XCircle className="w-4 h-4" />
-                                Refund
-                              </button>
+                          <span className="text-sm text-gray-500 dark:text-gray-400">
+                            {safeFormatDate(
+                              order.saleDate || order.createdAt,
                             )}
+                          </span>
+                        </div>
+                        <div
+                          className={`flex items-center gap-3 ${
+                            viewMode === 'grid'
+                              ? 'w-full justify-between'
+                              : ''
+                          }`}
+                        >
+                          <StatusBadge status={order.status} />
+                          <span className="font-bold text-gray-900 dark:text-white tabular-nums">
+                            {formatCurrency(order.total, orderCurrency)}
+                          </span>
                         </div>
                       </div>
-                    </div>
-                  </motion.div>
-                ))}
+
+                      <div className="p-6">
+                        <div className="flex flex-wrap gap-4 mb-4 text-sm text-gray-500 dark:text-gray-400">
+                          <span className="flex items-center gap-1">
+                            <User
+                              className="w-3.5 h-3.5"
+                              aria-hidden="true"
+                            />
+                            {order.customer
+                              ? `${order.customer.firstName} ${order.customer.lastName}`
+                              : 'Guest'}
+                          </span>
+                          <span className="flex items-center gap-1">
+                            <CreditCard
+                              className="w-3.5 h-3.5"
+                              aria-hidden="true"
+                            />
+                            {order.payments?.[0]?.paymentMethod || 'N/A'}
+                          </span>
+                          {canViewAllSales() && (
+                            <span className="flex items-center gap-1">
+                              <Users
+                                className="w-3.5 h-3.5"
+                                aria-hidden="true"
+                              />
+                              Cashier:{' '}
+                              {order.user
+                                ? `${order.user.firstName} ${order.user.lastName}`
+                                : 'Unknown'}
+                            </span>
+                          )}
+                        </div>
+
+                        <BreakdownHint sale={order} />
+
+                        <div className="space-y-2 mt-3">
+                          {order.items &&
+                            order.items
+                              .slice(0, viewMode === 'grid' ? 2 : 3)
+                              .map((item: SaleItem) => (
+                                <div
+                                  key={item.id}
+                                  className="flex justify-between text-sm"
+                                >
+                                  <span className="text-gray-600 dark:text-gray-300 truncate max-w-[150px]">
+                                    {item.product?.name || 'Product'} ×{' '}
+                                    {item.quantity}
+                                  </span>
+                                  <span className="font-medium text-gray-900 dark:text-white tabular-nums">
+                                    {formatCurrency(
+                                      item.total,
+                                      orderCurrency,
+                                    )}
+                                  </span>
+                                </div>
+                              ))}
+                          {order.items &&
+                            order.items.length >
+                              (viewMode === 'grid' ? 2 : 3) && (
+                              <p className="text-sm text-gray-500 dark:text-gray-400 tabular-nums">
+                                +{' '}
+                                {order.items.length -
+                                  (viewMode === 'grid' ? 2 : 3)}{' '}
+                                more items
+                              </p>
+                            )}
+                        </div>
+
+                        <div className="mt-4 pt-4 border-t border-gray-200 dark:border-gray-700 flex flex-wrap justify-between items-center gap-2">
+                          <span className="text-xs text-gray-400 dark:text-gray-500 tabular-nums">
+                            {order.items?.length || 0} items
+                          </span>
+                          <div className="flex gap-2">
+                            <button
+                              onClick={() => {
+                                setSelectedSale(order);
+                                setShowDetailModal(true);
+                              }}
+                              className="text-brand-600 dark:text-brand-400 hover:text-brand-800 dark:hover:text-brand-300 text-sm font-medium flex items-center gap-1 focus-ring rounded"
+                            >
+                              <Eye className="w-4 h-4" aria-hidden="true" />
+                              Details
+                            </button>
+                            <button
+                              onClick={() => handlePrintReceipt(order)}
+                              className="text-gray-600 dark:text-gray-400 hover:text-gray-800 dark:hover:text-gray-200 text-sm font-medium flex items-center gap-1 focus-ring rounded"
+                            >
+                              <Printer className="w-4 h-4" aria-hidden="true" />
+                              Print
+                            </button>
+                            {canManageSales() &&
+                              order.status === 'COMPLETED' && (
+                                <button
+                                  onClick={() => void handleRefund(order)}
+                                  className="text-danger-600 dark:text-danger-400 hover:text-danger-800 dark:hover:text-danger-300 text-sm font-medium flex items-center gap-1 focus-ring rounded"
+                                >
+                                  <XCircle
+                                    className="w-4 h-4"
+                                    aria-hidden="true"
+                                  />
+                                  Refund
+                                </button>
+                              )}
+                          </div>
+                        </div>
+                      </div>
+                    </motion.div>
+                  );
+                })}
               </AnimatePresence>
             </div>
 
@@ -1320,7 +1378,7 @@ export default function SalesPage() {
                   disabled={page === 1}
                   className="px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg text-sm hover:bg-gray-50 dark:hover:bg-gray-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors text-gray-700 dark:text-gray-300 focus-ring"
                 >
-                  <ChevronLeft className="w-4 h-4 inline" />
+                  <ChevronLeft className="w-4 h-4 inline" aria-hidden="true" />
                   Previous
                 </button>
                 <div className="flex items-center gap-1">
@@ -1361,7 +1419,10 @@ export default function SalesPage() {
                   className="px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg text-sm hover:bg-gray-50 dark:hover:bg-gray-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors text-gray-700 dark:text-gray-300 focus-ring"
                 >
                   Next
-                  <ChevronRight className="w-4 h-4 inline" />
+                  <ChevronRight
+                    className="w-4 h-4 inline"
+                    aria-hidden="true"
+                  />
                 </button>
               </div>
             )}
@@ -1369,7 +1430,6 @@ export default function SalesPage() {
         )}
       </div>
 
-      {/* Sale Detail Modal */}
       <AnimatePresence>
         {showDetailModal && selectedSale && (
           <motion.div
@@ -1386,257 +1446,330 @@ export default function SalesPage() {
               className="bg-white dark:bg-gray-800 rounded-xl w-full max-w-2xl max-h-[90vh] overflow-y-auto shadow-2xl border border-gray-200 dark:border-gray-700 sidebar-scroll"
               onClick={(e) => e.stopPropagation()}
             >
-              <div className="sticky top-0 bg-white dark:bg-gray-800 p-6 border-b border-gray-200 dark:border-gray-700 flex items-center justify-between">
-                <div>
-                  <h2 className="text-xl font-bold text-gray-900 dark:text-white tabular-nums">
-                    Sale #{selectedSale.receiptNumber}
-                  </h2>
-                  <p className="text-sm text-gray-500 dark:text-gray-400">
-                    {safeFormatDate(
-                      selectedSale.saleDate || selectedSale.createdAt,
-                    )}{' '}
-                    at{' '}
-                    {safeFormatTime(
-                      selectedSale.saleDate || selectedSale.createdAt,
-                    )}
-                  </p>
-                </div>
-                <button
-                  onClick={() => setShowDetailModal(false)}
-                  className="p-2 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-colors focus-ring"
-                  aria-label="Close"
-                >
-                  <XCircle className="w-6 h-6 text-gray-500" />
-                </button>
-              </div>
-
-              <div className="p-6 space-y-6">
-                <div className="flex items-center justify-between">
-                  <StatusBadge status={selectedSale.status} />
-                  <span className="text-2xl font-bold text-gray-900 dark:text-white tabular-nums">
-                    {formatCurrency(selectedSale.total)}
-                  </span>
-                </div>
-
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4 p-4 bg-gray-50 dark:bg-gray-700/50 rounded-lg">
-                  <div>
-                    <p className="text-sm text-gray-500 dark:text-gray-400">
-                      Customer
-                    </p>
-                    <p className="font-medium text-gray-900 dark:text-white">
-                      {selectedSale.customer
-                        ? `${selectedSale.customer.firstName} ${selectedSale.customer.lastName}`
-                        : 'Guest'}
-                    </p>
-                  </div>
-                  <div>
-                    <p className="text-sm text-gray-500 dark:text-gray-400">
-                      Payment Method
-                    </p>
-                    <p className="font-medium text-gray-900 dark:text-white">
-                      {selectedSale.payments?.[0]?.paymentMethod || 'N/A'}
-                    </p>
-                  </div>
-                  <div>
-                    <p className="text-sm text-gray-500 dark:text-gray-400">
-                      Cashier
-                    </p>
-                    <p className="font-medium text-gray-900 dark:text-white">
-                      {selectedSale.user
-                        ? `${selectedSale.user.firstName} ${selectedSale.user.lastName}`
-                        : 'Unknown'}
-                    </p>
-                  </div>
-                  {selectedSale.customer?.email && (
-                    <div>
-                      <p className="text-sm text-gray-500 dark:text-gray-400">
-                        Email
-                      </p>
-                      <p className="font-medium text-gray-900 dark:text-white">
-                        {selectedSale.customer.email}
-                      </p>
-                    </div>
-                  )}
-                  {selectedSale.customer?.phoneNumber && (
-                    <div>
-                      <p className="text-sm text-gray-500 dark:text-gray-400">
-                        Phone
-                      </p>
-                      <p className="font-medium text-gray-900 dark:text-white">
-                        {selectedSale.customer.phoneNumber}
-                      </p>
-                    </div>
-                  )}
-                </div>
-
-                <div>
-                  <h3 className="font-semibold text-gray-900 dark:text-white mb-4">
-                    Items
-                  </h3>
-                  <div className="space-y-2">
-                    {selectedSale.items?.map((item: SaleItem) => (
-                      <div
-                        key={item.id}
-                        className="flex justify-between items-center p-3 border border-gray-200 dark:border-gray-700 rounded-lg"
+              {(() => {
+                const detailCurrency = resolveSaleCurrency(
+                  selectedSale,
+                  listCurrency,
+                );
+                return (
+                  <>
+                    <div className="sticky top-0 bg-white dark:bg-gray-800 p-6 border-b border-gray-200 dark:border-gray-700 flex items-center justify-between">
+                      <div>
+                        <h2 className="text-xl font-bold text-gray-900 dark:text-white tabular-nums">
+                          Sale #{selectedSale.receiptNumber}
+                        </h2>
+                        <p className="text-sm text-gray-500 dark:text-gray-400">
+                          {safeFormatDate(
+                            selectedSale.saleDate ||
+                              selectedSale.createdAt,
+                          )}{' '}
+                          at{' '}
+                          {safeFormatTime(
+                            selectedSale.saleDate ||
+                              selectedSale.createdAt,
+                          )}
+                        </p>
+                      </div>
+                      <button
+                        onClick={() => setShowDetailModal(false)}
+                        className="p-2 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-colors focus-ring"
+                        aria-label="Close"
                       >
-                        <div>
-                          <p className="font-medium text-gray-900 dark:text-white">
-                            {item.product?.name || 'Product'}
-                          </p>
-                          <p className="text-sm text-gray-500 dark:text-gray-400 tabular-nums">
-                            × {item.quantity} @{' '}
-                            {formatCurrency(item.unitPrice)}
-                          </p>
-                        </div>
-                        <span className="font-bold text-gray-900 dark:text-white tabular-nums">
-                          {formatCurrency(item.total)}
+                        <XCircle
+                          className="w-6 h-6 text-gray-500"
+                          aria-hidden="true"
+                        />
+                      </button>
+                    </div>
+
+                    <div className="p-6 space-y-6">
+                      <div className="flex items-center justify-between">
+                        <StatusBadge status={selectedSale.status} />
+                        <span className="text-2xl font-bold text-gray-900 dark:text-white tabular-nums">
+                          {formatCurrency(
+                            selectedSale.total,
+                            detailCurrency,
+                          )}
                         </span>
                       </div>
-                    ))}
-                  </div>
-                </div>
 
-                <BreakdownPanel sale={selectedSale} />
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4 p-4 bg-gray-50 dark:bg-gray-700/50 rounded-lg">
+                        <div>
+                          <p className="text-sm text-gray-500 dark:text-gray-400">
+                            Customer
+                          </p>
+                          <p className="font-medium text-gray-900 dark:text-white">
+                            {selectedSale.customer
+                              ? `${selectedSale.customer.firstName} ${selectedSale.customer.lastName}`
+                              : 'Guest'}
+                          </p>
+                        </div>
+                        <div>
+                          <p className="text-sm text-gray-500 dark:text-gray-400">
+                            Payment Method
+                          </p>
+                          <p className="font-medium text-gray-900 dark:text-white">
+                            {selectedSale.payments?.[0]?.paymentMethod ||
+                              'N/A'}
+                          </p>
+                        </div>
+                        <div>
+                          <p className="text-sm text-gray-500 dark:text-gray-400">
+                            Cashier
+                          </p>
+                          <p className="font-medium text-gray-900 dark:text-white">
+                            {selectedSale.user
+                              ? `${selectedSale.user.firstName} ${selectedSale.user.lastName}`
+                              : 'Unknown'}
+                          </p>
+                        </div>
+                        {selectedSale.customer?.email && (
+                          <div>
+                            <p className="text-sm text-gray-500 dark:text-gray-400">
+                              Email
+                            </p>
+                            <p className="font-medium text-gray-900 dark:text-white truncate">
+                              {selectedSale.customer.email}
+                            </p>
+                          </div>
+                        )}
+                        {selectedSale.customer?.phoneNumber && (
+                          <div>
+                            <p className="text-sm text-gray-500 dark:text-gray-400">
+                              Phone
+                            </p>
+                            <p className="font-medium text-gray-900 dark:text-white">
+                              {selectedSale.customer.phoneNumber}
+                            </p>
+                          </div>
+                        )}
+                      </div>
 
-                <div className="border-t border-gray-200 dark:border-gray-700 pt-4">
-                  <div className="space-y-2 max-w-xs ml-auto">
-                    <div className="flex justify-between text-sm">
-                      <span className="text-gray-500 dark:text-gray-400">
-                        Subtotal
-                      </span>
-                      <span className="text-gray-900 dark:text-white tabular-nums">
-                        {formatCurrency(selectedSale.subtotal)}
-                      </span>
-                    </div>
-                    <div className="flex justify-between text-sm">
-                      <span className="text-gray-500 dark:text-gray-400">
-                        Tax
-                      </span>
-                      <span className="text-gray-900 dark:text-white tabular-nums">
-                        {formatCurrency(selectedSale.tax)}
-                      </span>
-                    </div>
-
-                    {(() => {
-                      const b = saleService.extractBreakdown(selectedSale);
-                      const hasPromotion = (b.promotionDiscount ?? 0) > 0;
-                      const hasLoyalty = (b.loyaltyPointsUsed ?? 0) > 0;
-                      const hasBreakdown = hasPromotion || hasLoyalty;
-                      return (
-                        <>
-                          {hasPromotion && (
-                            <div className="flex justify-between text-sm text-success-600 dark:text-success-400">
-                              <span className="flex items-center gap-1.5">
-                                <Tag className="w-3.5 h-3.5" />
-                                Promotion
-                                {b.promotionCode && (
-                                  <code className="px-1.5 py-0.5 rounded bg-success-100 dark:bg-success-950/40 text-[10px] font-mono">
-                                    {b.promotionCode}
-                                  </code>
+                      <div>
+                        <h3 className="font-semibold text-gray-900 dark:text-white mb-4">
+                          Items
+                        </h3>
+                        <div className="space-y-2">
+                          {selectedSale.items?.map((item: SaleItem) => (
+                            <div
+                              key={item.id}
+                              className="flex justify-between items-center p-3 border border-gray-200 dark:border-gray-700 rounded-lg"
+                            >
+                              <div>
+                                <p className="font-medium text-gray-900 dark:text-white">
+                                  {item.product?.name || 'Product'}
+                                </p>
+                                <p className="text-sm text-gray-500 dark:text-gray-400 tabular-nums">
+                                  × {item.quantity} @{' '}
+                                  {formatCurrency(
+                                    item.unitPrice,
+                                    detailCurrency,
+                                  )}
+                                </p>
+                              </div>
+                              <span className="font-bold text-gray-900 dark:text-white tabular-nums">
+                                {formatCurrency(
+                                  item.total,
+                                  detailCurrency,
                                 )}
                               </span>
-                              <span className="tabular-nums">
-                                -{formatCurrency(b.promotionDiscount ?? 0)}
-                              </span>
                             </div>
-                          )}
-                          {hasLoyalty && (
-                            <div className="flex justify-between text-sm text-success-600 dark:text-success-400">
-                              <span className="flex items-center gap-1.5">
-                                <Star className="w-3.5 h-3.5 fill-current" />
-                                <span className="tabular-nums">
-                                  {b.loyaltyPointsUsed} loyalty points
-                                </span>
-                              </span>
-                              <span className="tabular-nums">
-                                -{formatCurrency(b.loyaltyDiscount ?? 0)}
-                              </span>
-                            </div>
-                          )}
-                          {selectedSale.discount > 0 && !hasBreakdown && (
-                            <div className="flex justify-between text-sm text-success-600 dark:text-success-400">
-                              <span>Discount</span>
-                              <span className="tabular-nums">
-                                -{formatCurrency(selectedSale.discount)}
-                              </span>
-                            </div>
-                          )}
-                        </>
-                      );
-                    })()}
+                          ))}
+                        </div>
+                      </div>
 
-                    <div className="flex justify-between font-bold text-lg pt-2 border-t border-gray-200 dark:border-gray-700">
-                      <span className="text-gray-900 dark:text-white">
-                        Total
-                      </span>
-                      <span className="text-brand-600 dark:text-brand-400 tabular-nums">
-                        {formatCurrency(selectedSale.total)}
-                      </span>
-                    </div>
+                      <BreakdownPanel
+                        sale={selectedSale}
+                        currency={detailCurrency}
+                      />
 
-                    {selectedSale.payments &&
-                      selectedSale.payments.length > 0 && (
-                        <div className="mt-2">
-                          <p className="text-sm text-gray-500 dark:text-gray-400">
-                            Payment Details
-                          </p>
-                          {selectedSale.payments.map(
-                            (payment: any, idx: number) => (
-                              <div
-                                key={idx}
-                                className="flex justify-between text-sm"
-                              >
-                                <span className="text-gray-600 dark:text-gray-300">
-                                  {payment.paymentMethod}
-                                </span>
-                                <span className="text-gray-900 dark:text-white tabular-nums">
-                                  {formatCurrency(payment.amount)}
-                                </span>
+                      <div className="border-t border-gray-200 dark:border-gray-700 pt-4">
+                        <div className="space-y-2 max-w-xs ml-auto">
+                          <div className="flex justify-between text-sm">
+                            <span className="text-gray-500 dark:text-gray-400">
+                              Subtotal
+                            </span>
+                            <span className="text-gray-900 dark:text-white tabular-nums">
+                              {formatCurrency(
+                                selectedSale.subtotal,
+                                detailCurrency,
+                              )}
+                            </span>
+                          </div>
+                          <div className="flex justify-between text-sm">
+                            <span className="text-gray-500 dark:text-gray-400">
+                              Tax
+                            </span>
+                            <span className="text-gray-900 dark:text-white tabular-nums">
+                              {formatCurrency(
+                                selectedSale.tax,
+                                detailCurrency,
+                              )}
+                            </span>
+                          </div>
+
+                          {(() => {
+                            const b = saleService.extractBreakdown(
+                              selectedSale,
+                            );
+                            const hasPromotion =
+                              (b.promotionDiscount ?? 0) > 0;
+                            const hasLoyalty =
+                              (b.loyaltyPointsUsed ?? 0) > 0;
+                            const hasBreakdown =
+                              hasPromotion || hasLoyalty;
+                            return (
+                              <>
+                                {hasPromotion && (
+                                  <div className="flex justify-between text-sm text-success-600 dark:text-success-400">
+                                    <span className="flex items-center gap-1.5">
+                                      <Tag
+                                        className="w-3.5 h-3.5"
+                                        aria-hidden="true"
+                                      />
+                                      Promotion
+                                      {b.promotionCode && (
+                                        <code className="px-1.5 py-0.5 rounded bg-success-100 dark:bg-success-950/40 text-[10px] font-mono">
+                                          {b.promotionCode}
+                                        </code>
+                                      )}
+                                    </span>
+                                    <span className="tabular-nums">
+                                      -
+                                      {formatCurrency(
+                                        b.promotionDiscount ?? 0,
+                                        detailCurrency,
+                                      )}
+                                    </span>
+                                  </div>
+                                )}
+                                {hasLoyalty && (
+                                  <div className="flex justify-between text-sm text-success-600 dark:text-success-400">
+                                    <span className="flex items-center gap-1.5">
+                                      <Star
+                                        className="w-3.5 h-3.5 fill-current"
+                                        aria-hidden="true"
+                                      />
+                                      <span className="tabular-nums">
+                                        {b.loyaltyPointsUsed} loyalty points
+                                      </span>
+                                    </span>
+                                    <span className="tabular-nums">
+                                      -
+                                      {formatCurrency(
+                                        b.loyaltyDiscount ?? 0,
+                                        detailCurrency,
+                                      )}
+                                    </span>
+                                  </div>
+                                )}
+                                {selectedSale.discount > 0 &&
+                                  !hasBreakdown && (
+                                    <div className="flex justify-between text-sm text-success-600 dark:text-success-400">
+                                      <span>Discount</span>
+                                      <span className="tabular-nums">
+                                        -
+                                        {formatCurrency(
+                                          selectedSale.discount,
+                                          detailCurrency,
+                                        )}
+                                      </span>
+                                    </div>
+                                  )}
+                              </>
+                            );
+                          })()}
+
+                          <div className="flex justify-between font-bold text-lg pt-2 border-t border-gray-200 dark:border-gray-700">
+                            <span className="text-gray-900 dark:text-white">
+                              Total
+                            </span>
+                            <span className="text-brand-600 dark:text-brand-400 tabular-nums">
+                              {formatCurrency(
+                                selectedSale.total,
+                                detailCurrency,
+                              )}
+                            </span>
+                          </div>
+
+                          {selectedSale.payments &&
+                            selectedSale.payments.length > 0 && (
+                              <div className="mt-2">
+                                <p className="text-sm text-gray-500 dark:text-gray-400">
+                                  Payment Details
+                                </p>
+                                {selectedSale.payments.map(
+                                  (payment: any, idx: number) => (
+                                    <div
+                                      key={idx}
+                                      className="flex justify-between text-sm"
+                                    >
+                                      <span className="text-gray-600 dark:text-gray-300">
+                                        {payment.paymentMethod}
+                                      </span>
+                                      <span className="text-gray-900 dark:text-white tabular-nums">
+                                        {formatCurrency(
+                                          payment.amount,
+                                          pickCurrency(
+                                            payment.currency,
+                                            detailCurrency,
+                                          ),
+                                        )}
+                                      </span>
+                                    </div>
+                                  ),
+                                )}
                               </div>
-                            ),
-                          )}
+                            )}
+                        </div>
+                      </div>
+
+                      {selectedSale.notes && (
+                        <div className="p-3 bg-warning-50 dark:bg-warning-900/20 border border-warning-200 dark:border-warning-800 rounded-lg">
+                          <p className="text-sm font-medium text-warning-800 dark:text-warning-200">
+                            Notes
+                          </p>
+                          <p className="text-sm text-warning-700 dark:text-warning-300 whitespace-pre-wrap">
+                            {selectedSale.notes}
+                          </p>
                         </div>
                       )}
-                  </div>
-                </div>
 
-                {selectedSale.notes && (
-                  <div className="p-3 bg-warning-50 dark:bg-warning-900/20 border border-warning-200 dark:border-warning-800 rounded-lg">
-                    <p className="text-sm font-medium text-warning-800 dark:text-warning-200">
-                      Notes
-                    </p>
-                    <p className="text-sm text-warning-700 dark:text-warning-300 whitespace-pre-wrap">
-                      {selectedSale.notes}
-                    </p>
-                  </div>
-                )}
-
-                <div className="flex flex-wrap gap-3 pt-4 border-t border-gray-200 dark:border-gray-700">
-                  <button
-                    onClick={() => handlePrintReceipt(selectedSale)}
-                    className="px-4 py-2 bg-brand-500 text-white rounded-lg hover:bg-brand-600 flex items-center gap-2 focus-ring"
-                  >
-                    <Printer className="w-4 h-4" />
-                    Print Receipt
-                  </button>
-                  {canManageSales() &&
-                    selectedSale.status === 'COMPLETED' && (
-                      <button
-                        onClick={() => handleRefund(selectedSale)}
-                        className="px-4 py-2 bg-danger-600 text-white rounded-lg hover:bg-danger-700 flex items-center gap-2 focus-ring"
-                      >
-                        <XCircle className="w-4 h-4" />
-                        Refund
-                      </button>
-                    )}
-                  <button
-                    onClick={() => setShowDetailModal(false)}
-                    className="px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors text-gray-700 dark:text-gray-300 focus-ring"
-                  >
-                    Close
-                  </button>
-                </div>
-              </div>
+                      <div className="flex flex-wrap gap-3 pt-4 border-t border-gray-200 dark:border-gray-700">
+                        <button
+                          onClick={() => handlePrintReceipt(selectedSale)}
+                          className="px-4 py-2 bg-brand-500 text-white rounded-lg hover:bg-brand-600 flex items-center gap-2 focus-ring"
+                        >
+                          <Printer
+                            className="w-4 h-4"
+                            aria-hidden="true"
+                          />
+                          Print Receipt
+                        </button>
+                        {canManageSales() &&
+                          selectedSale.status === 'COMPLETED' && (
+                            <button
+                              onClick={() => void handleRefund(selectedSale)}
+                              className="px-4 py-2 bg-danger-600 text-white rounded-lg hover:bg-danger-700 flex items-center gap-2 focus-ring"
+                            >
+                              <XCircle
+                                className="w-4 h-4"
+                                aria-hidden="true"
+                              />
+                              Refund
+                            </button>
+                          )}
+                        <button
+                          onClick={() => setShowDetailModal(false)}
+                          className="px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors text-gray-700 dark:text-gray-300 focus-ring"
+                        >
+                          Close
+                        </button>
+                      </div>
+                    </div>
+                  </>
+                );
+              })()}
             </motion.div>
           </motion.div>
         )}

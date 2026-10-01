@@ -5,6 +5,7 @@ import { BaseService } from './BaseService.js';
 import { AppError } from '../middleware/errorHandler.js';
 import { Prisma } from '../generated/prisma/index.js';
 import { persistImages, persistVariantImages } from '../lib/imageStorage.js';
+import { realtimeService } from './realtimeService.js';
 import { generateSlug } from '../../../shared/src/helpers.js';
 
 // ============================================
@@ -697,9 +698,7 @@ export class ProductService extends BaseService {
 
   private safeEmitProductUpdate(product: any, businessUnitId: string): void {
     try {
-      console.log(
-        `📦 Product updated: ${product?.name || product?.id} - ${businessUnitId}`
-      );
+      realtimeService.emitProductUpdated(product, businessUnitId);
     } catch (error) {
       console.warn('Failed to emit product update:', error);
     }
@@ -707,7 +706,7 @@ export class ProductService extends BaseService {
 
   private safeEmitInventoryUpdate(inventory: any, businessUnitId: string): void {
     try {
-      console.log(`📦 Inventory updated: ${inventory?.id} - ${businessUnitId}`);
+      realtimeService.emitInventoryUpdated(inventory, businessUnitId);
     } catch (error) {
       console.warn('Failed to emit inventory update:', error);
     }
@@ -1835,6 +1834,7 @@ export class ProductService extends BaseService {
         updateData.supplierId = data.supplierId || null;
       }
 
+      let updatedInventoryForRealtime: any = null;
       const raw = await this.prisma.$transaction(
         async (tx: Prisma.TransactionClient) => {
           const updated = await tx.product.update({
@@ -1849,7 +1849,9 @@ export class ProductService extends BaseService {
               data.maxStock !== undefined ||
               data.notes !== undefined ||
               data.location !== undefined ||
-              data.supplier !== undefined)
+              data.supplier !== undefined ||
+              data.unitPrice !== undefined ||
+              data.costPrice !== undefined)
           ) {
             let resolvedLocationId: string | null | undefined = undefined;
             if (data.location !== undefined) {
@@ -1859,7 +1861,7 @@ export class ProductService extends BaseService {
               );
             }
 
-            await tx.inventory.update({
+            updatedInventoryForRealtime = await tx.inventory.update({
               where: { id: existing.inventory.id },
               data: {
                 ...(data.minStock !== undefined && {
@@ -1875,6 +1877,12 @@ export class ProductService extends BaseService {
                 }),
                 ...(data.supplier !== undefined && {
                   supplier: data.supplier ?? null,
+                }),
+                ...(data.unitPrice !== undefined && {
+                  unitPrice: Number(data.unitPrice),
+                }),
+                ...(data.costPrice !== undefined && {
+                  costPrice: Number(data.costPrice),
                 }),
               },
             });
@@ -1969,11 +1977,17 @@ export class ProductService extends BaseService {
             console.warn('Audit log creation skipped:', auditError);
           }
 
-          this.safeEmitProductUpdate(updated, existing.businessUnitId);
-
           return updated;
         }
       );
+
+      this.safeEmitProductUpdate(raw, existing.businessUnitId);
+      if (updatedInventoryForRealtime) {
+        this.safeEmitInventoryUpdate(
+          updatedInventoryForRealtime,
+          existing.businessUnitId,
+        );
+      }
 
       const product = normalizeProduct(raw);
       if (!product) {

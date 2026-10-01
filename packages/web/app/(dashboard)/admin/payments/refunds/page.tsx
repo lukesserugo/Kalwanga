@@ -47,6 +47,55 @@ import { useThemeStore } from '../../../../stores/themeStore';
 import { PaymentReceipt } from '../../../../../components/payments/PaymentReceipt';
 
 // ============================================
+// CURRENCY RESOLUTION
+// ============================================
+//
+// `formatCurrency` requires a currency code by design — the platform
+// invariant is that every amount is rendered in a code that came
+// from the backend at request time.
+//
+// Refund rows are re-shaped from Payment rows (the backend does not
+// expose a dedicated refunds endpoint), and every Payment row carries
+// its own `currency` column. The mapping in `loadRefunds` copies it
+// onto the view-model. The helpers below pick the right code per row.
+//
+// For the "Refunded on This Page" summary card — a sum across
+// multiple rows that may in theory be denominated differently — we
+// use the deployment's settlement currency from env. A multi-currency
+// sum would be numerically meaningless; the deployment's own currency
+// is the only honest label. When the env is unset, `formatCurrency`
+// receives an empty code and renders a bare number — never a
+// fabricated symbol.
+
+/**
+ * Resolve the currency code for a single refund row. Reads the
+ * row's own `currency` first (the ledger code the backend wrote on
+ * the Payment), then the deployment default from env, then `''`.
+ */
+function resolveRefundCurrency(
+  refund:
+    | { currency?: string | null; payment?: { currency?: string | null } }
+    | null
+    | undefined,
+): string {
+  return (
+    refund?.currency ||
+    refund?.payment?.currency ||
+    process.env.NEXT_PUBLIC_DEFAULT_CURRENCY ||
+    ''
+  );
+}
+
+/**
+ * Resolve the currency code for a page-level aggregate (sum across
+ * refunds). No single row's currency is authoritative for a sum, so
+ * the deployment default is the only honest choice.
+ */
+function resolveAggregateCurrency(): string {
+  return process.env.NEXT_PUBLIC_DEFAULT_CURRENCY || '';
+}
+
+// ============================================
 // TYPES
 // ============================================
 
@@ -54,6 +103,15 @@ interface Refund {
   id: string;
   paymentId: string;
   amount: number;
+  /**
+   * Ledger currency code for `amount`. Copied from the source
+   * Payment row's `currency` column during the mapping step.
+   *
+   * ⚠ This is the ONLY authoritative code for a refund row. Every
+   *   `formatCurrency` call that renders `refund.amount` must use
+   *   it, not the env default.
+   */
+  currency?: string | null;
   reason?: string;
   status: string;
   refundedAt: string;
@@ -62,6 +120,8 @@ interface Refund {
     id: string;
     reference: string;
     amount: number;
+    /** Ledger currency code for `amount`. */
+    currency?: string | null;
     paymentMethod: string;
     /**
      * The concrete gateway name the backend recorded for this
@@ -152,48 +212,35 @@ function ProviderLogo({
 // ============================================
 // CONSTANTS
 // ============================================
+//
+// ⚠ All provider logos are LOCAL asset paths under
+//   `packages/web/public/`. No external CDN dependency — every
+//   request stays on the deployment's own origin. Add one SVG per
+//   code to restore the images. Until then, the `ProviderLogo`
+//   component's `failed` state renders the method emoji.
 
 const PROVIDER_IMAGE_URLS: Record<string, string> = {
-  STRIPE: 'https://stripe.com/img/v3/home/social.png',
-  PAYPAL:
-    'https://www.paypalobjects.com/webstatic/mktg/logo/pp_cc_mark_111x69.jpg',
-  FLUTTERWAVE: 'https://flutterwave.com/images/logo/flyer.png',
-  SQUARE: 'https://squareup.com/icons/square_logo.svg',
-  MTN: 'https://www.mtn.co.ug/wp-content/uploads/2023/05/mtn-logo.png',
-  AIRTEL:
-    'https://www.airtel.in/static-assets/new-home/img/airtel-red-logo.svg',
-  TIGO: 'https://www.tigo.com.tz/sites/default/files/tigo-logo.png',
-  VODAFONE:
-    'https://www.vodafone.com/content/dam/vodcom/Images/Logo/vodafone_logo_red.png',
-  CASH: 'https://cdn-icons-png.flaticon.com/512/2331/2331970.png',
-  MOBILE_MONEY: 'https://cdn-icons-png.flaticon.com/512/545/545245.png',
-  BANK_TRANSFER:
-    'https://cdn-icons-png.flaticon.com/512/2845/2845813.png',
-  GIFT_CARD: 'https://cdn-icons-png.flaticon.com/512/3144/3144456.png',
-  LOYALTY_POINTS:
-    'https://cdn-icons-png.flaticon.com/512/1828/1828665.png',
+  STRIPE: '/icons/payments/stripe.svg',
+  PAYPAL: '/icons/payments/paypal.svg',
+  FLUTTERWAVE: '/icons/payments/flutterwave.svg',
+  SQUARE: '/icons/payments/square.svg',
+  MPESA: '/icons/payments/mpesa.svg',
+  MTN: '/icons/payments/mtn.svg',
+  AIRTEL: '/icons/payments/airtel.svg',
+  CASH: '/icons/payments/cash.svg',
+  MOBILE_MONEY: '/icons/payments/mobile-money.svg',
+  BANK_TRANSFER: '/icons/payments/bank-transfer.svg',
+  GIFT_CARD: '/icons/payments/gift-card.svg',
+  LOYALTY_POINTS: '/icons/payments/loyalty-points.svg',
 };
 
-const PROVIDER_DARK_IMAGE_URLS: Record<string, string> = {
-  STRIPE: 'https://stripe.com/img/v3/home/social.png',
-  PAYPAL:
-    'https://www.paypalobjects.com/webstatic/mktg/logo/pp_cc_mark_111x69.jpg',
-  FLUTTERWAVE: 'https://flutterwave.com/images/logo/flyer.png',
-  SQUARE: 'https://squareup.com/icons/square_logo.svg',
-  MTN: 'https://www.mtn.co.ug/wp-content/uploads/2023/05/mtn-logo.png',
-  AIRTEL:
-    'https://www.airtel.in/static-assets/new-home/img/airtel-red-logo.svg',
-  TIGO: 'https://www.tigo.com.tz/sites/default/files/tigo-logo.png',
-  VODAFONE:
-    'https://www.vodafone.com/content/dam/vodcom/Images/Logo/vodafone_logo_red.png',
-  CASH: 'https://cdn-icons-png.flaticon.com/512/2331/2331970.png',
-  MOBILE_MONEY: 'https://cdn-icons-png.flaticon.com/512/545/545245.png',
-  BANK_TRANSFER:
-    'https://cdn-icons-png.flaticon.com/512/2845/2845813.png',
-  GIFT_CARD: 'https://cdn-icons-png.flaticon.com/512/3144/3144456.png',
-  LOYALTY_POINTS:
-    'https://cdn-icons-png.flaticon.com/512/1828/1828665.png',
-};
+/**
+ * @deprecated The dark-mode image map is intentionally empty. If
+ *   you later add dark-mode-specific logos, add them here — the
+ *   lookup helper falls through to `PROVIDER_IMAGE_URLS` for any
+ *   code not present in this map.
+ */
+const PROVIDER_DARK_IMAGE_URLS: Record<string, string> = {};
 
 const PAYMENT_METHOD_ICONS: Record<string, any> = {
   CASH: Banknote,
@@ -207,6 +254,9 @@ const PAYMENT_METHOD_ICONS: Record<string, any> = {
   PAYPAL: Globe,
   FLUTTERWAVE: Globe,
   SQUARE: CreditCard,
+  MPESA: Smartphone,
+  MTN: Smartphone,
+  AIRTEL: Smartphone,
 };
 
 const PAYMENT_METHOD_EMOJI: Record<string, string> = {
@@ -221,6 +271,9 @@ const PAYMENT_METHOD_EMOJI: Record<string, string> = {
   PAYPAL: '💸',
   FLUTTERWAVE: '🌊',
   SQUARE: '⬜',
+  MPESA: '📱',
+  MTN: '📱',
+  AIRTEL: '📱',
 };
 
 const REFUND_STATUS_COLORS: Record<string, string> = {
@@ -271,6 +324,9 @@ const PROVIDER_NAMES: Record<string, string> = {
   PAYPAL: 'PayPal',
   FLUTTERWAVE: 'Flutterwave',
   SQUARE: 'Square',
+  MPESA: 'M-Pesa',
+  MTN: 'MTN',
+  AIRTEL: 'Airtel',
 };
 
 // ============================================
@@ -305,6 +361,9 @@ export default function AdminPaymentRefundsPage() {
     canView(PermissionResource.PAYMENT) ||
     canManage(PermissionResource.PAYMENT);
 
+  // Stable for the lifetime of the page.
+  const aggregateCurrency = useMemo(() => resolveAggregateCurrency(), []);
+
   // ── Data loading ─────────────────────────────────────────────
 
   const loadRefunds = useCallback(async () => {
@@ -335,6 +394,10 @@ export default function AdminPaymentRefundsPage() {
           id: payment.id,
           paymentId: payment.id,
           amount: payment.amount,
+          // Copy the ledger currency off the Payment row. Falls
+          // back to the joined Sale's currency when present.
+          currency:
+            payment.currency ?? payment.sale?.currency ?? null,
           reason:
             payment.refundReason ||
             payment.notes ||
@@ -346,6 +409,7 @@ export default function AdminPaymentRefundsPage() {
             id: payment.id,
             reference: payment.reference || payment.id,
             amount: payment.amount,
+            currency: payment.currency ?? null,
             paymentMethod: payment.paymentMethod,
             provider: resolvePaymentProvider(payment),
             gatewayId: payment.gatewayId,
@@ -540,6 +604,18 @@ export default function AdminPaymentRefundsPage() {
       });
   }, []);
 
+  /**
+   * Format a refund amount in its own ledger currency. When the
+   * row carries no `currency`, `resolveRefundCurrency` falls back
+   * to the deployment env; if that is also unset, `formatCurrency`
+   * renders a bare number — never a fabricated symbol.
+   */
+  const fmtRefundAmount = useCallback(
+    (refund: Refund): string =>
+      formatCurrency(refund.amount, resolveRefundCurrency(refund)),
+    [],
+  );
+
   // ── Render gates ─────────────────────────────────────────────
 
   if (permissionLoading) {
@@ -696,7 +772,7 @@ export default function AdminPaymentRefundsPage() {
                     isDark ? 'text-white' : 'text-gray-900'
                   }`}
                 >
-                  {formatCurrency(pageRefundTotal)}
+                  {formatCurrency(pageRefundTotal, aggregateCurrency)}
                 </p>
                 <p
                   className={`text-xs mt-1 ${
@@ -933,9 +1009,8 @@ export default function AdminPaymentRefundsPage() {
                       ].map((label, i) => (
                         <th
                           key={label}
-                          className={`px-4 py-3 text-${
-                            i === 4 || i === 6 ? 'right' : 'left'
-                          } text-2xs font-medium uppercase tracking-wider eyebrow ${
+                          className={`px-4 py-3 text-$
+                          {i === 4 || i === 6 ? 'right' : 'left'} text-2xs font-medium uppercase tracking-wider eyebrow ${
                             isDark ? 'text-gray-400' : 'text-gray-500'
                           }`}
                         >
@@ -1061,7 +1136,7 @@ export default function AdminPaymentRefundsPage() {
                             <p
                               className={`text-sm font-bold tabular-nums text-danger-600 dark:text-danger-400`}
                             >
-                              -{formatCurrency(refund.amount)}
+                              -{fmtRefundAmount(refund)}
                             </p>
                           </td>
                           <td className="px-4 py-3">
@@ -1282,7 +1357,7 @@ export default function AdminPaymentRefundsPage() {
                     <p
                       className={`text-2xl font-bold tabular-nums text-danger-600 dark:text-danger-400`}
                     >
-                      -{formatCurrency(selectedRefund.amount)}
+                      -{fmtRefundAmount(selectedRefund)}
                     </p>
                   </div>
                   <div
@@ -1451,6 +1526,9 @@ export default function AdminPaymentRefundsPage() {
                     selectedRefund.payment.reference ||
                     selectedRefund.payment.id,
                   amount: selectedRefund.payment.amount,
+                  // Pass the ledger currency through. The receipt
+                  // renders every amount in this code.
+                  currency: resolveRefundCurrency(selectedRefund),
                   paymentMethod: selectedRefund.payment.paymentMethod,
                   // Prefer the refund's own status on this page —
                   // the payment's status is always REFUNDED (that's

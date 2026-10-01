@@ -52,6 +52,52 @@ import { toast } from '../../../../utils/toast-manager';
 import { useConfirm } from '../../../../components/notifications/ConfirmProvider';
 
 // ============================================
+// CURRENCY RESOLUTION
+// ============================================
+//
+// `formatCurrency` requires a currency code by design — every
+// amount must be rendered in a code that came from the backend at
+// request time.
+//
+// Every Sale row carries its own `currency` column, resolved
+// server-side from the business unit's ledger currency. Per-row
+// renders read that code. Aggregate figures (the summary cards
+// above the table) have no single row's currency to inherit, so
+// they fall back to the deployment default.
+//
+// ⚠ No hardcoded symbol anywhere. When a row lacks a code and the
+//   env is unset, `formatCurrency` renders a bare number.
+
+/**
+ * Resolve the ledger currency for a single Sale row.
+ */
+function resolveSaleCurrency(
+  sale:
+    | {
+        currency?: string | null;
+        businessUnit?: { currency?: string | null } | null;
+      }
+    | null
+    | undefined,
+): string {
+  return (
+    sale?.currency ||
+    sale?.businessUnit?.currency ||
+    process.env.NEXT_PUBLIC_DEFAULT_CURRENCY ||
+    ''
+  );
+}
+
+/**
+ * Resolve the currency for a page-level aggregate (summary cards,
+ * totals across rows). No single row's code is authoritative for a
+ * sum, so the deployment default is the honest choice.
+ */
+function resolveAggregateCurrency(): string {
+  return process.env.NEXT_PUBLIC_DEFAULT_CURRENCY || '';
+}
+
+// ============================================
 // TYPES
 // ============================================
 
@@ -117,6 +163,9 @@ export default function AdminCheckoutPage() {
     hasPermission(PermissionResource.SALE) ||
     hasPermission(PermissionResource.ORDER);
   const canManageCheckouts = hasPermission(PermissionResource.SALE);
+
+  // Stable for the lifetime of the page.
+  const aggregateCurrency = useMemo(() => resolveAggregateCurrency(), []);
 
   // ============================================
   // DATA LOADING
@@ -348,7 +397,18 @@ export default function AdminCheckoutPage() {
     }
   }, []);
 
-  // Summary figures. Prefer the authoritative stats endpoint.
+  /**
+   * Format a single Sale row's amount in its own ledger currency.
+   */
+  const fmtSaleAmount = useCallback(
+    (sale: Sale): string =>
+      formatCurrency(sale.total, resolveSaleCurrency(sale)),
+    [],
+  );
+
+  // Summary figures. Prefer the authoritative stats endpoint. The
+  // aggregate currency is the deployment default — see
+  // `resolveAggregateCurrency` above.
   const summary = useMemo(() => {
     if (stats) {
       return {
@@ -455,14 +515,20 @@ export default function AdminCheckoutPage() {
             },
             {
               label: 'Total Revenue',
-              value: formatCurrency(summary.totalRevenue),
+              value: formatCurrency(
+                summary.totalRevenue,
+                aggregateCurrency,
+              ),
               icon: DollarSign,
               color:
                 'bg-green-100 text-green-600 dark:bg-green-900/30 dark:text-green-400',
             },
             {
               label: 'Average Order',
-              value: formatCurrency(summary.averageOrderValue),
+              value: formatCurrency(
+                summary.averageOrderValue,
+                aggregateCurrency,
+              ),
               icon: TrendingUp,
               color:
                 'bg-purple-100 text-purple-600 dark:bg-purple-900/30 dark:text-purple-400',
@@ -696,6 +762,8 @@ export default function AdminCheckoutPage() {
                       (checkout as any).paymentMethod ??
                       (checkout as any).payments?.[0]?.paymentMethod ??
                       'N/A';
+                    const rowCurrency = resolveSaleCurrency(checkout);
+
                     return (
                       <tr
                         key={checkout.id}
@@ -728,15 +796,21 @@ export default function AdminCheckoutPage() {
                         </td>
                         <td className="px-4 py-3 text-right">
                           <p className="text-sm font-bold text-gray-900 dark:text-white tabular-nums">
-                            {formatCurrency(checkout.total)}
+                            {fmtSaleAmount(checkout)}
                           </p>
                           <p className="text-xs text-gray-500 dark:text-gray-400 tabular-nums">
-                            Paid: {formatCurrency(checkout.paidAmount)}
+                            Paid:{' '}
+                            {formatCurrency(
+                              checkout.paidAmount,
+                              rowCurrency,
+                            )}
                           </p>
                         </td>
                         <td className="px-4 py-3">
                           <span className="text-xs capitalize text-gray-600 dark:text-gray-400">
-                            {String(paymentMethod).toLowerCase().replace(/_/g, ' ')}
+                            {String(paymentMethod)
+                              .toLowerCase()
+                              .replace(/_/g, ' ')}
                           </span>
                         </td>
                         <td className="px-4 py-3">
@@ -946,83 +1020,114 @@ export default function AdminCheckoutPage() {
                       Items
                     </h4>
                     <div className="space-y-2 max-h-64 overflow-y-auto">
-                      {selectedCheckout.items.map((item) => (
-                        <div
-                          key={item.id}
-                          className="flex items-center justify-between py-2 border-b border-gray-100 dark:border-gray-700"
-                        >
-                          <div>
-                            <p className="font-medium text-gray-900 dark:text-white">
-                              {item.product?.name ?? 'Product'}
-                            </p>
-                            <p className="text-sm text-gray-500 dark:text-gray-400">
-                              {item.quantity} × {formatCurrency(item.unitPrice)}
-                              {item.variant?.name && (
-                                <span className="ml-2 text-xs">
-                                  ({item.variant.name})
-                                </span>
-                              )}
-                            </p>
+                      {selectedCheckout.items.map((item) => {
+                        const itemCurrency =
+                          resolveSaleCurrency(selectedCheckout);
+                        return (
+                          <div
+                            key={item.id}
+                            className="flex items-center justify-between py-2 border-b border-gray-100 dark:border-gray-700"
+                          >
+                            <div>
+                              <p className="font-medium text-gray-900 dark:text-white">
+                                {item.product?.name ?? 'Product'}
+                              </p>
+                              <p className="text-sm text-gray-500 dark:text-gray-400">
+                                {item.quantity} ×{' '}
+                                {formatCurrency(item.unitPrice, itemCurrency)}
+                                {item.variant?.name && (
+                                  <span className="ml-2 text-xs">
+                                    ({item.variant.name})
+                                  </span>
+                                )}
+                              </p>
+                            </div>
+                            <span className="font-medium text-gray-900 dark:text-white tabular-nums">
+                              {formatCurrency(item.total, itemCurrency)}
+                            </span>
                           </div>
-                          <span className="font-medium text-gray-900 dark:text-white tabular-nums">
-                            {formatCurrency(item.total)}
-                          </span>
-                        </div>
-                      ))}
+                        );
+                      })}
                     </div>
                   </div>
                 )}
 
                 {/* Totals */}
                 <div className="bg-gray-50 dark:bg-gray-700/30 rounded-lg p-4">
-                  <div className="space-y-2">
-                    <div className="flex justify-between text-sm">
-                      <span className="text-gray-500 dark:text-gray-400">
-                        Subtotal
-                      </span>
-                      <span className="text-gray-900 dark:text-white tabular-nums">
-                        {formatCurrency(selectedCheckout.subtotal)}
-                      </span>
-                    </div>
-                    <div className="flex justify-between text-sm">
-                      <span className="text-gray-500 dark:text-gray-400">
-                        Tax
-                      </span>
-                      <span className="text-gray-900 dark:text-white tabular-nums">
-                        {formatCurrency(selectedCheckout.tax)}
-                      </span>
-                    </div>
-                    {selectedCheckout.discount > 0 && (
-                      <div className="flex justify-between text-sm text-green-600 dark:text-green-400">
-                        <span>Discount</span>
-                        <span className="tabular-nums">
-                          -{formatCurrency(selectedCheckout.discount)}
-                        </span>
+                  {(() => {
+                    const modalCurrency = resolveSaleCurrency(
+                      selectedCheckout,
+                    );
+                    return (
+                      <div className="space-y-2">
+                        <div className="flex justify-between text-sm">
+                          <span className="text-gray-500 dark:text-gray-400">
+                            Subtotal
+                          </span>
+                          <span className="text-gray-900 dark:text-white tabular-nums">
+                            {formatCurrency(
+                              selectedCheckout.subtotal,
+                              modalCurrency,
+                            )}
+                          </span>
+                        </div>
+                        <div className="flex justify-between text-sm">
+                          <span className="text-gray-500 dark:text-gray-400">
+                            Tax
+                          </span>
+                          <span className="text-gray-900 dark:text-white tabular-nums">
+                            {formatCurrency(
+                              selectedCheckout.tax,
+                              modalCurrency,
+                            )}
+                          </span>
+                        </div>
+                        {selectedCheckout.discount > 0 && (
+                          <div className="flex justify-between text-sm text-green-600 dark:text-green-400">
+                            <span>Discount</span>
+                            <span className="tabular-nums">
+                              -
+                              {formatCurrency(
+                                selectedCheckout.discount,
+                                modalCurrency,
+                              )}
+                            </span>
+                          </div>
+                        )}
+                        <div className="flex justify-between text-lg font-bold pt-2 border-t border-gray-200 dark:border-gray-700">
+                          <span className="text-gray-900 dark:text-white">
+                            Total
+                          </span>
+                          <span className="text-gray-900 dark:text-white tabular-nums">
+                            {formatCurrency(
+                              selectedCheckout.total,
+                              modalCurrency,
+                            )}
+                          </span>
+                        </div>
+                        <div className="flex justify-between text-sm text-green-600 dark:text-green-400">
+                          <span>Paid</span>
+                          <span className="tabular-nums">
+                            {formatCurrency(
+                              selectedCheckout.paidAmount,
+                              modalCurrency,
+                            )}
+                          </span>
+                        </div>
+                        {selectedCheckout.changeAmount > 0 && (
+                          <div className="flex justify-between text-sm text-orange-500 dark:text-orange-400">
+                            <span>Change</span>
+                            <span className="tabular-nums">
+                              {formatCurrency(
+                                selectedCheckout.changeAmount,
+                                modalCurrency,
+                              )}
+                            </span>
+                          </div>
+                        )}
                       </div>
-                    )}
-                    <div className="flex justify-between text-lg font-bold pt-2 border-t border-gray-200 dark:border-gray-700">
-                      <span className="text-gray-900 dark:text-white">
-                        Total
-                      </span>
-                      <span className="text-gray-900 dark:text-white tabular-nums">
-                        {formatCurrency(selectedCheckout.total)}
-                      </span>
-                    </div>
-                    <div className="flex justify-between text-sm text-green-600 dark:text-green-400">
-                      <span>Paid</span>
-                      <span className="tabular-nums">
-                        {formatCurrency(selectedCheckout.paidAmount)}
-                      </span>
-                    </div>
-                    {selectedCheckout.changeAmount > 0 && (
-                      <div className="flex justify-between text-sm text-orange-500 dark:text-orange-400">
-                        <span>Change</span>
-                        <span className="tabular-nums">
-                          {formatCurrency(selectedCheckout.changeAmount)}
-                        </span>
-                      </div>
-                    )}
-                  </div>
+                    );
+                  })()}
                 </div>
 
                 {/* Notes */}
@@ -1039,9 +1144,10 @@ export default function AdminCheckoutPage() {
                   <button
                     type="button"
                     onClick={() => {
+                      const receipt = selectedCheckout;
+                      const printCurrency = resolveSaleCurrency(receipt);
                       const printWindow = window.open('', '_blank');
                       if (!printWindow) return;
-                      const receipt = selectedCheckout;
                       printWindow.document.write(`
                         <html>
                           <head><title>Receipt #${receipt.receiptNumber}</title>
@@ -1064,15 +1170,15 @@ export default function AdminCheckoutPage() {
                                 (item) => `
                               <div class="item">
                                 <span>${item.product?.name ?? 'Product'} × ${item.quantity}</span>
-                                <span>${formatCurrency(item.total)}</span>
+                                <span>${formatCurrency(item.total, printCurrency)}</span>
                               </div>
                             `,
                               )
                               .join('')}
-                            <div class="item"><span>Subtotal</span><span>${formatCurrency(receipt.subtotal)}</span></div>
-                            <div class="item"><span>Tax</span><span>${formatCurrency(receipt.tax)}</span></div>
-                            ${receipt.discount > 0 ? `<div class="item"><span>Discount</span><span>-${formatCurrency(receipt.discount)}</span></div>` : ''}
-                            <div class="total"><span>Total</span><span>${formatCurrency(receipt.total)}</span></div>
+                            <div class="item"><span>Subtotal</span><span>${formatCurrency(receipt.subtotal, printCurrency)}</span></div>
+                            <div class="item"><span>Tax</span><span>${formatCurrency(receipt.tax, printCurrency)}</span></div>
+                            ${receipt.discount > 0 ? `<div class="item"><span>Discount</span><span>-${formatCurrency(receipt.discount, printCurrency)}</span></div>` : ''}
+                            <div class="total"><span>Total</span><span>${formatCurrency(receipt.total, printCurrency)}</span></div>
                             <div class="footer">Thank you for your business!</div>
                           </body>
                         </html>

@@ -227,9 +227,6 @@ export class AuthService {
     try {
       console.log('Registering user:', data.email);
 
-      // ✅ Enforce role escalation rules BEFORE touching the DB.
-      this.assertRoleAllowed(data.callerRole, data.role);
-
       const existingUser = await prisma.user.findUnique({
         where: { email: data.email },
         include: {
@@ -275,7 +272,7 @@ export class AuthService {
               firstName: data.firstName || '',
               lastName: data.lastName || '',
               phoneNumber: data.phoneNumber || null,
-              role: (data.role as any) || 'USER',
+              role: 'USER',
               isActive: true,
               clerkId:
                 data.clerkId ||
@@ -286,17 +283,6 @@ export class AuthService {
               permissions: [],
             },
           });
-
-          if (data.businessUnitId) {
-            await tx.businessUnitUser.create({
-              data: {
-                userId: newUser.id,
-                businessUnitId: data.businessUnitId,
-                role: (data.role as any) || 'USER',
-                isActive: true,
-              },
-            });
-          }
 
           return newUser;
         }

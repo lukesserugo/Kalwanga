@@ -1,4 +1,4 @@
-// packages/web/components/payment/PaymentReceipt.tsx
+// packages/web/components/payments/PaymentReceipt.tsx
 
 'use client';
 
@@ -23,6 +23,7 @@ import {
   Gift,
   Star,
   Landmark,
+  TrendingUp,
   type LucideIcon,
 } from 'lucide-react';
 import { useThemeStore } from '../../app/stores/themeStore';
@@ -49,11 +50,28 @@ export interface PaymentReceiptData {
   paymentMethod: string;
   status: string;
   processedAt: string;
+  /**
+   * Ledger currency (ISO 4217). What the books record. Populated by
+   * the backend's currency resolver — never hardcoded.
+   *
+   * ⚠ Every `formatCurrency` call on this receipt uses this code. If
+   *   it is `undefined`, the amount renders as a bare number with no
+   *   symbol, which is better than rendering the wrong symbol.
+   */
   currency?: string;
   /** Legacy flat provider field. Prefer `metadata.provider`. */
   provider?: string;
   gatewayId?: string;
   metadata?: Record<string, unknown>;
+  /**
+   * Phase D1: what the gateway actually charged in, when it differs
+   * from `currency`. Null on the direct-charge path (ledger currency
+   * equals gateway currency).
+   */
+  gatewayCurrency?: string | null;
+  gatewayAmount?: number | null;
+  exchangeRate?: number | null;
+  exchangeRateSource?: string | null;
   sale?: {
     receiptNumber: string;
     items?: ReceiptItem[];
@@ -85,16 +103,6 @@ interface PaymentReceiptProps {
 // PROVIDER CONSTANTS
 // ============================================
 
-/**
- * Every provider code the backend can write to `metadata.provider`
- * or to the legacy top-level `provider` field. Used to decide
- * whether `gatewayId` is safe to consult — in practice it's a
- * PaymentGateway row FK, not a provider code.
- *
- * ⚠ PAYSTACK has been removed from this project. Historical
- *   receipts with `metadata.provider: 'PAYSTACK'` will fail the
- *   lookup and fall through to the generic method label.
- */
 const KNOWN_PROVIDER_CODES = new Set<string>([
   'STRIPE',
   'PAYPAL',
@@ -113,15 +121,6 @@ const KNOWN_PROVIDER_CODES = new Set<string>([
   'CHECK',
 ]);
 
-/**
- * Local icon paths under `packages/web/public/`. Add one SVG per
- * code to restore the images. Until then, the `<Image>` onError
- * handler hides the broken image and the provider name renders as
- * plain text.
- *
- * ⚠ No external CDN dependencies — every request stays on the
- *   deployment's own origin.
- */
 const PROVIDER_IMAGE_URLS: Record<string, string> = {
   STRIPE: '/icons/payments/stripe.svg',
   PAYPAL: '/icons/payments/paypal.svg',
@@ -139,12 +138,6 @@ const PROVIDER_IMAGE_URLS: Record<string, string> = {
   LOYALTY_POINTS: '/icons/payments/loyalty-points.svg',
 };
 
-/**
- * @deprecated The dark-mode image map is intentionally empty. If
- *   you later add dark-mode-specific logos, add them here — the
- *   lookup helper falls through to `PROVIDER_IMAGE_URLS` for any
- *   code not present in this map.
- */
 const PROVIDER_DARK_IMAGE_URLS: Record<string, string> = {};
 
 const PAYMENT_METHOD_ICONS: Record<string, LucideIcon> = {
@@ -228,12 +221,6 @@ const STATUS_BADGE_CLASSES: Record<string, string> = {
 // HELPERS
 // ============================================
 
-/**
- * Resolve the provider code from the receipt. Priority:
- *   1. Top-level `provider` — if it's a known code.
- *   2. `metadata.provider` — the canonical location.
- *   3. `gatewayId` — ONLY if it's a known code.
- */
 function resolveProvider(
   payment: PaymentReceiptData,
 ): string | undefined {
@@ -253,28 +240,11 @@ function resolveProvider(
   return metaProvider || payment.provider || undefined;
 }
 
-/**
- * Pull a provider-side transaction id out of the metadata. The
- * backend writes different keys depending on which gateway handled
- * the payment:
- *
- *   M-Pesa       → metadata.checkoutRequestId
- *                  metadata.mpesaResult.CheckoutRequestID
- *   MTN / Airtel → metadata.mobileMoneyResult.transactionId
- *                  metadata.transactionId
- *   Stripe       → metadata.gatewayResponse.id
- *                  metadata.paymentIntent.id
- *   PayPal       → metadata.gatewayResponse.id
- *   Flutterwave  → metadata.gatewayResponse.txRef
- *   Square       → metadata.gatewayResponse.payment.id
- */
 function resolveProviderReference(
   payment: PaymentReceiptData,
 ): string | undefined {
   const meta = payment.metadata ?? {};
 
-  // Direct top-level keys — the common path for mobile money and
-  // anything that records `transactionId` on the Payment itself.
   const direct =
     (typeof meta.checkoutRequestId === 'string'
       ? meta.checkoutRequestId
@@ -285,7 +255,6 @@ function resolveProviderReference(
 
   if (direct) return direct;
 
-  // M-Pesa callback payload.
   const mpesaResult = meta.mpesaResult as
     | { CheckoutRequestID?: unknown }
     | undefined;
@@ -296,7 +265,6 @@ function resolveProviderReference(
     return mpesaResult.CheckoutRequestID;
   }
 
-  // MTN / Airtel callback payload.
   const moneyResult = meta.mobileMoneyResult as
     | { transactionId?: unknown }
     | undefined;
@@ -307,7 +275,6 @@ function resolveProviderReference(
     return moneyResult.transactionId;
   }
 
-  // Stripe PaymentIntent object stored raw.
   const paymentIntent = meta.paymentIntent as
     | { id?: unknown }
     | undefined;
@@ -315,12 +282,10 @@ function resolveProviderReference(
     return paymentIntent.id;
   }
 
-  // Generic gateway response — try each key in priority order.
   const gateway = meta.gatewayResponse as
     | Record<string, unknown>
     | undefined;
   if (gateway) {
-    // Square nests the payment under `gatewayResponse.payment.id`.
     const squarePayment = gateway.payment as
       | { id?: unknown }
       | undefined;
@@ -354,6 +319,34 @@ export function PaymentReceipt({
 
   // ── Derived ──────────────────────────────────────────────────
 
+  /**
+   * The ledger currency. Every amount on this receipt is denominated
+   * in this code — `amount`, `sale.subtotal`, `sale.tax`,
+   * `sale.discount`, `sale.changeAmount`, and each item's
+   * `unitPrice` / `total`.
+   *
+   * Falls back to the empty string. `formatCurrency` with an empty
+   * currency renders a bare number, which is honest about the
+   * missing code — a `$` prefix would be a lie.
+   */
+  const ledgerCurrency = payment.currency ?? '';
+
+  /**
+   * `true` when the gateway charged in a currency different from the
+   * ledger currency. When this is true, the receipt shows a
+   * dedicated block with the gateway amount, the rate, and the
+   * source, so an accounting clerk can reconcile against the
+   * provider's settlement report.
+   */
+  const isConvertedCharge = useMemo(
+    () =>
+      !!payment.gatewayCurrency &&
+      payment.gatewayCurrency.toUpperCase() !==
+        (payment.currency ?? '').toUpperCase() &&
+      typeof payment.gatewayAmount === 'number',
+    [payment.gatewayCurrency, payment.gatewayAmount, payment.currency],
+  );
+
   const providerCode = useMemo(() => resolveProvider(payment), [payment]);
   const providerReference = useMemo(
     () => resolveProviderReference(payment),
@@ -372,12 +365,6 @@ export function PaymentReceipt({
     [providerCode],
   );
 
-  /**
-   * The method label. When the method is MOBILE_MONEY and we
-   * resolved a specific provider (M-Pesa / MTN / Airtel), show the
-   * provider name instead of the generic "Mobile Money" so the
-   * "Payment Method" and "Provider" rows don't duplicate.
-   */
   const methodLabel = useMemo(() => {
     if (
       payment.paymentMethod === 'MOBILE_MONEY' &&
@@ -414,10 +401,20 @@ export function PaymentReceipt({
   const handleCopy = useCallback(() => {
     const lines = [
       `Receipt #${receiptLabel}`,
-      `Amount: ${formatCurrency(payment.amount)}`,
+      `Amount: ${formatCurrency(payment.amount, ledgerCurrency)}`,
       `Payment Method: ${methodLabel}`,
       providerName ? `Provider: ${providerName}` : null,
       providerReference ? `Provider Ref: ${providerReference}` : null,
+      isConvertedCharge
+        ? `Charged: ${formatCurrency(
+            payment.gatewayAmount as number,
+            payment.gatewayCurrency as string,
+          )}${
+            typeof payment.exchangeRate === 'number'
+              ? ` (rate ${payment.exchangeRate})`
+              : ''
+          }`
+        : null,
       `Date: ${formatDateTime(payment.processedAt)}`,
       `Status: ${payment.status}`,
     ].filter(Boolean);
@@ -430,10 +427,15 @@ export function PaymentReceipt({
     payment.amount,
     payment.processedAt,
     payment.status,
+    payment.gatewayAmount,
+    payment.gatewayCurrency,
+    payment.exchangeRate,
+    isConvertedCharge,
     receiptLabel,
     methodLabel,
     providerName,
     providerReference,
+    ledgerCurrency,
   ]);
 
   const handlePrint = useCallback(() => {
@@ -445,6 +447,10 @@ export function PaymentReceipt({
       reference: payment.reference,
       amount: payment.amount,
       currency: payment.currency,
+      gatewayCurrency: payment.gatewayCurrency ?? null,
+      gatewayAmount: payment.gatewayAmount ?? null,
+      exchangeRate: payment.exchangeRate ?? null,
+      exchangeRateSource: payment.exchangeRateSource ?? null,
       paymentMethod: payment.paymentMethod,
       provider: providerCode,
       providerName: providerName || null,
@@ -589,7 +595,7 @@ export function PaymentReceipt({
                 isDark ? 'text-white' : 'text-gray-900'
               }`}
             >
-              {formatCurrency(payment.amount)}
+              {formatCurrency(payment.amount, ledgerCurrency)}
             </p>
           </div>
           <div
@@ -611,6 +617,83 @@ export function PaymentReceipt({
             </span>
           </div>
         </div>
+
+        {/* Gateway charge block (Phase D1) — shown only when the
+            gateway billed in a currency different from the ledger. */}
+        {isConvertedCharge && (
+          <div
+            className={`p-4 rounded-xl mb-6 border-2 ${
+              isDark
+                ? 'bg-brand-900/20 border-brand-800'
+                : 'bg-brand-50 border-brand-200'
+            }`}
+          >
+            <div className="flex items-start gap-3 mb-3">
+              <TrendingUp className="w-5 h-5 text-brand-600 dark:text-brand-400 flex-shrink-0 mt-0.5" />
+              <div>
+                <p
+                  className={`text-sm font-semibold ${
+                    isDark ? 'text-white' : 'text-gray-900'
+                  }`}
+                >
+                  Currency conversion
+                </p>
+                <p
+                  className={`text-xs ${
+                    isDark ? 'text-gray-400' : 'text-gray-500'
+                  }`}
+                >
+                  Your books recorded this sale in {ledgerCurrency}, but
+                  the payment provider billed in{' '}
+                  {payment.gatewayCurrency}.
+                </p>
+              </div>
+            </div>
+            <div className="space-y-1.5">
+              <div className="flex justify-between text-sm">
+                <span
+                  className={isDark ? 'text-gray-400' : 'text-gray-500'}
+                >
+                  Provider charge
+                </span>
+                <span
+                  className={`font-semibold tabular-nums ${
+                    isDark ? 'text-white' : 'text-gray-900'
+                  }`}
+                >
+                  {formatCurrency(
+                    payment.gatewayAmount as number,
+                    payment.gatewayCurrency as string,
+                  )}
+                </span>
+              </div>
+              {typeof payment.exchangeRate === 'number' && (
+                <div className="flex justify-between text-xs">
+                  <span
+                    className={
+                      isDark ? 'text-gray-400' : 'text-gray-500'
+                    }
+                  >
+                    Exchange rate
+                  </span>
+                  <span
+                    className={`font-mono tabular-nums ${
+                      isDark ? 'text-gray-300' : 'text-gray-700'
+                    }`}
+                  >
+                    1 {ledgerCurrency} = {payment.exchangeRate}{' '}
+                    {payment.gatewayCurrency}
+                    {payment.exchangeRateSource && (
+                      <span className="ml-1 opacity-70">
+                        ({payment.exchangeRateSource})
+                      </span>
+                    )}
+                  </span>
+                </div>
+              )}
+            </div>
+          </div>
+        )}
 
         {/* Payment Method & Provider */}
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-6">
@@ -707,9 +790,7 @@ export function PaymentReceipt({
           </div>
         </div>
 
-        {/* Provider reference — M-Pesa CheckoutRequestID, MTN
-            transactionId, Stripe pi_xxx, etc. Only shown when the
-            backend actually captured one. */}
+        {/* Provider reference */}
         {providerReference && (
           <div className="mb-6">
             <p
@@ -823,7 +904,8 @@ export function PaymentReceipt({
                         isDark ? 'text-gray-400' : 'text-gray-500'
                       }`}
                     >
-                      {item.quantity} × {formatCurrency(item.unitPrice)}
+                      {item.quantity} ×{' '}
+                      {formatCurrency(item.unitPrice, ledgerCurrency)}
                     </p>
                   </div>
                   <span
@@ -831,7 +913,7 @@ export function PaymentReceipt({
                       isDark ? 'text-white' : 'text-gray-900'
                     }`}
                   >
-                    {formatCurrency(item.total)}
+                    {formatCurrency(item.total, ledgerCurrency)}
                   </span>
                 </div>
               ))}
@@ -859,6 +941,7 @@ export function PaymentReceipt({
               >
                 {formatCurrency(
                   payment.sale?.subtotal ?? payment.amount,
+                  ledgerCurrency,
                 )}
               </span>
             </div>
@@ -875,7 +958,7 @@ export function PaymentReceipt({
                       isDark ? 'text-white' : 'text-gray-900'
                     }`}
                   >
-                    {formatCurrency(payment.sale.tax)}
+                    {formatCurrency(payment.sale.tax, ledgerCurrency)}
                   </span>
                 </div>
               )}
@@ -884,7 +967,7 @@ export function PaymentReceipt({
                 <div className="flex justify-between text-sm text-success-600 dark:text-success-400">
                   <span>Discount</span>
                   <span className="tabular-nums">
-                    -{formatCurrency(payment.sale.discount)}
+                    -{formatCurrency(payment.sale.discount, ledgerCurrency)}
                   </span>
                 </div>
               )}
@@ -897,7 +980,7 @@ export function PaymentReceipt({
                   isDark ? 'text-white' : 'text-gray-900'
                 }`}
               >
-                {formatCurrency(payment.amount)}
+                {formatCurrency(payment.amount, ledgerCurrency)}
               </span>
             </div>
             {typeof payment.sale?.changeAmount === 'number' &&
@@ -905,7 +988,10 @@ export function PaymentReceipt({
                 <div className="flex justify-between text-sm text-warning-600 dark:text-warning-400 pt-1">
                   <span>Change</span>
                   <span className="tabular-nums">
-                    {formatCurrency(payment.sale.changeAmount)}
+                    {formatCurrency(
+                      payment.sale.changeAmount,
+                      ledgerCurrency,
+                    )}
                   </span>
                 </div>
               )}

@@ -1,7 +1,13 @@
-// D:\Projects\Kalwanga\packages\web\app\(dashboard)\dashboard\page.tsx
+// packages/web/app/(dashboard)/dashboard/page.tsx
 'use client';
 
-import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
+import React, {
+  useState,
+  useEffect,
+  useCallback,
+  useMemo,
+  useRef,
+} from 'react';
 import { useUser } from '@clerk/nextjs';
 import { motion } from 'framer-motion';
 import {
@@ -36,100 +42,89 @@ import { SalesChart } from '../../../components/dashboard/SalesChart';
 import { RecentActivity } from '../../../components/dashboard/RecentActivity';
 
 import { apiService } from '../../../services/api';
+import { currencyService } from '../../../services/currencyService';
 import { useToast } from '../../../hooks/useToast';
 import { useAuth } from '../../../hooks/useAuth';
 import { formatCurrency, formatDate } from '../../../utils/helpers';
 
 // ============================================
-// TYPES
+// TYPES — mirror the backend payloads exactly
 // ============================================
 
+interface SalesPeriodStats {
+  total: number;
+  count: number;
+}
+
+interface DashboardTopProduct {
+  productId: string;
+  productName: string;
+  sku: string;
+  quantity: number;
+  revenue: number;
+}
+
 interface DashboardStats {
+  /**
+   * ISO 4217 ledger currency for the business unit this response
+   * describes. Populated by the backend from
+   * `BusinessUnit.currency`. This is the authoritative source for
+   * every amount on the dashboard.
+   */
+  currency: string;
   sales: {
-    today: { total: number; count: number; trend?: number };
-    week: { total: number; count: number; trend?: number };
-    month: { total: number; count: number; trend?: number };
-    year: { total: number; count: number; trend?: number };
+    today: SalesPeriodStats;
+    week: SalesPeriodStats;
+    month: SalesPeriodStats;
+    year: SalesPeriodStats;
+  };
+  inventory: {
+    totalItems: number;
+    totalValue: number;
+    lowStock: number;
+    outOfStock: number;
+    reorderNeeded: number;
   };
   customers: {
     total: number;
-    new: number;
     active: number;
-    trend?: number;
-    growth: number;
-  };
-  products: {
-    total: number;
-    active: number;
-    outOfStock: number;
-    lowStock: number;
-    categories: number;
-  };
-  inventory: {
-    totalValue: number;
-    totalItems: number;
-    categories: number;
-    turnover: number;
-    valueChange: number;
-  };
-  orders: {
-    total: number;
-    pending: number;
-    processing: number;
-    completed: number;
-    cancelled: number;
-    refunded: number;
-    completionRate: number;
-  };
-  revenue: {
-    total: number;
-    average: number;
-    growth: number;
-    target: number;
-    progress: number;
-  };
-  registers: {
-    open: number;
-    total: number;
-    active: number;
-    utilization: number;
-  };
-  employees: {
-    total: number;
-    active: number;
-    online: number;
-    turnover: number;
+    newThisMonth: number;
   };
   suppliers: {
     total: number;
     active: number;
-    new: number;
   };
-  performance: {
-    conversionRate: number;
-    averageOrderValue: number;
-    customerSatisfaction: number;
-    retentionRate: number;
+  registers: {
+    open: number;
+    total: number;
+    totalCash: number;
   };
-}
-
-interface SalesTrend {
-  date: string;
-  revenue: number;
-  orders: number;
-  average: number;
-  targets?: number;
+  orders: {
+    pending: number;
+    completed: number;
+    cancelled: number;
+  };
+  recentActivity: RecentSale[];
+  topProducts: DashboardTopProduct[];
+  salesTrend: Array<{ date: string; total: number; count: number }>;
 }
 
 interface RecentSale {
   id: string;
   receiptNumber: string;
-  customerName: string;
+  customerName?: string;
   total: number;
-  status: 'COMPLETED' | 'PENDING' | 'PROCESSING' | 'CANCELLED' | 'REFUNDED';
-  createdAt: string;
-  items: number;
-  paymentMethod: string;
+  status: string;
+  saleDate?: string;
+  createdAt?: string;
+  items?: Array<{
+    productId: string;
+    productName?: string;
+    sku?: string;
+    quantity: number;
+    total: number;
+  }>;
+  customer?: { id: string; firstName: string; lastName: string } | null;
 }
 
 interface TopProduct {
@@ -138,21 +133,25 @@ interface TopProduct {
   sku: string;
   sales: number;
   revenue: number;
-  stock: number;
-  category: string;
-  growth: number;
 }
+
+/**
+ * The `type` field MUST match the union declared in
+ * `components/dashboard/RecentActivity.tsx` — the `RecentActivity`
+ * component's `Activity` type will not accept a plain `string`.
+ */
+type ActivityType =
+  | 'sale'
+  | 'order'
+  | 'customer'
+  | 'inventory'
+  | 'payment'
+  | 'alert'
+  | 'system';
 
 interface RecentActivityItem {
   id: string;
-  type:
-    | 'sale'
-    | 'order'
-    | 'customer'
-    | 'inventory'
-    | 'payment'
-    | 'alert'
-    | 'system';
+  type: ActivityType;
   title: string;
   description: string;
   timestamp: string;
@@ -176,8 +175,6 @@ interface FilterState {
   status?: string[];
   category?: string[];
   search?: string;
-  department?: string[];
-  region?: string[];
 }
 
 interface Permission {
@@ -195,6 +192,18 @@ interface Permission {
   canManageSettings: boolean;
 }
 
+interface BusinessUnitOption {
+  id: string;
+  name: string;
+  /**
+   * The BU's ledger currency, when the auth payload surfaces it.
+   * The dashboard prefers `stats.currency` from `/dashboard/stats`
+   * when available, and falls back to the registry's `default`
+   * otherwise.
+   */
+  currency?: string;
+}
+
 // ============================================
 // HELPERS
 // ============================================
@@ -206,40 +215,27 @@ const formatNumber = (num: number): string => {
 };
 
 const getEmptyStats = (): DashboardStats => ({
+  currency: '',
   sales: {
     today: { total: 0, count: 0 },
     week: { total: 0, count: 0 },
     month: { total: 0, count: 0 },
     year: { total: 0, count: 0 },
   },
-  customers: { total: 0, new: 0, active: 0, growth: 0 },
-  products: { total: 0, active: 0, outOfStock: 0, lowStock: 0, categories: 0 },
   inventory: {
-    totalValue: 0,
     totalItems: 0,
-    categories: 0,
-    turnover: 0,
-    valueChange: 0,
+    totalValue: 0,
+    lowStock: 0,
+    outOfStock: 0,
+    reorderNeeded: 0,
   },
-  orders: {
-    total: 0,
-    pending: 0,
-    processing: 0,
-    completed: 0,
-    cancelled: 0,
-    refunded: 0,
-    completionRate: 0,
-  },
-  revenue: { total: 0, average: 0, growth: 0, target: 0, progress: 0 },
-  registers: { open: 0, total: 0, active: 0, utilization: 0 },
-  employees: { total: 0, active: 0, online: 0, turnover: 0 },
-  suppliers: { total: 0, active: 0, new: 0 },
-  performance: {
-    conversionRate: 0,
-    averageOrderValue: 0,
-    customerSatisfaction: 0,
-    retentionRate: 0,
-  },
+  customers: { total: 0, active: 0, newThisMonth: 0 },
+  suppliers: { total: 0, active: 0 },
+  registers: { open: 0, total: 0, totalCash: 0 },
+  orders: { pending: 0, completed: 0, cancelled: 0 },
+  recentActivity: [],
+  topProducts: [],
+  salesTrend: [],
 });
 
 const getEmptyPermissions = (): Permission => ({
@@ -258,67 +254,20 @@ const getEmptyPermissions = (): Permission => ({
 });
 
 function isFulfilled<T>(
-  result: PromiseSettledResult<T>
+  result: PromiseSettledResult<T>,
 ): result is PromiseFulfilledResult<T> {
   return result.status === 'fulfilled';
 }
 
-/**
- * Extract the payload from a response that may be wrapped as
- * `{ data: ... }` or returned bare.
- */
 function unwrap<T = any>(response: any): T | null {
   if (!response || typeof response !== 'object') return null;
   if ('data' in response) return (response as any).data as T;
   return response as T;
 }
 
-/**
- * Compute a trend direction. Returns undefined when there's no
- * meaningful signal — the caller can render a neutral state.
- */
-function trendDirection(value: number | undefined): 'up' | 'down' | undefined {
-  if (value === undefined || value === null || value === 0) return undefined;
-  return value > 0 ? 'up' : 'down';
-}
-
-/**
- * Deep-merge a partial DashboardStats payload with the defaults.
- *
- * ⚠️ The backend may not return every nested field. Without this
- *    merge, a response like `{ sales: {...} }` leaves
- *    `stats.revenue` as `undefined`, and the render crashes on
- *    `stats.revenue.total`.
- */
-function mergeStats(partial: Partial<DashboardStats>): DashboardStats {
-  const defaults = getEmptyStats();
-  return {
-    sales: {
-      today: { ...defaults.sales.today, ...(partial.sales?.today ?? {}) },
-      week: { ...defaults.sales.week, ...(partial.sales?.week ?? {}) },
-      month: { ...defaults.sales.month, ...(partial.sales?.month ?? {}) },
-      year: { ...defaults.sales.year, ...(partial.sales?.year ?? {}) },
-    },
-    customers: { ...defaults.customers, ...(partial.customers ?? {}) },
-    products: { ...defaults.products, ...(partial.products ?? {}) },
-    inventory: { ...defaults.inventory, ...(partial.inventory ?? {}) },
-    orders: { ...defaults.orders, ...(partial.orders ?? {}) },
-    revenue: { ...defaults.revenue, ...(partial.revenue ?? {}) },
-    registers: { ...defaults.registers, ...(partial.registers ?? {}) },
-    employees: { ...defaults.employees, ...(partial.employees ?? {}) },
-    suppliers: { ...defaults.suppliers, ...(partial.suppliers ?? {}) },
-    performance: { ...defaults.performance, ...(partial.performance ?? {}) },
-  };
-}
-
-/**
- * Fetch a dashboard sub-resource. Returns `null` when the endpoint
- * is missing (404) — that's not an error, it just means the backend
- * hasn't implemented this view yet.
- */
 async function safeFetch<T = any>(
   url: string,
-  options?: { params?: Record<string, any> }
+  options?: { params?: Record<string, any> },
 ): Promise<T | null> {
   try {
     const response = await apiService.get<any>(url, options);
@@ -326,7 +275,7 @@ async function safeFetch<T = any>(
   } catch (err: any) {
     if (err?.response?.status === 404) {
       console.warn(
-        `ℹ️ [dashboard] ${url} returned 404 — endpoint not implemented yet`
+        `ℹ️ [dashboard] ${url} returned 404 — endpoint not implemented yet`,
       );
       return null;
     }
@@ -335,48 +284,48 @@ async function safeFetch<T = any>(
 }
 
 /**
- * Normalize a raw top-product payload into the canonical `TopProduct`
- * shape and guarantee a **unique, stable `id`**.
- *
- * The backend may return identifiers under any of:
- *   id | productId | _id | sku | code
- * and may use alternate names for other fields. Missing ids are the
- * #1 cause of React's "unique key" warning — so we synthesize one
- * as a last resort.
+ * Normalize the business-unit list from the auth payload. Each entry
+ * may carry an optional `currency` field.
  */
-function normalizeTopProduct(raw: any, index: number): TopProduct {
-  const id =
-    raw?.id ??
-    raw?.productId ??
-    raw?._id ??
-    raw?.sku ??
-    raw?.code ??
-    `tp-${index}`;
+function normalizeBusinessUnits(raw: any): BusinessUnitOption[] {
+  if (!Array.isArray(raw)) return [];
+  return raw
+    .map((bu: any) => ({
+      id: bu.businessUnitId ?? bu.id ?? '',
+      name: bu.name ?? bu.businessUnit?.name ?? '',
+      currency: bu.currency ?? bu.businessUnit?.currency ?? undefined,
+    }))
+    .filter((bu) => bu.id);
+}
 
+function normalizeTopProduct(raw: any, index: number): TopProduct {
   return {
-    id: String(id),
-    name: raw?.name ?? raw?.productName ?? raw?.title ?? 'Unnamed product',
-    sku: raw?.sku ?? raw?.code ?? '',
-    sales: Number(raw?.sales ?? raw?.quantitySold ?? raw?.qty ?? 0),
-    revenue: Number(raw?.revenue ?? raw?.totalRevenue ?? raw?.amount ?? 0),
-    stock: Number(raw?.stock ?? raw?.quantity ?? raw?.stockLevel ?? 0),
-    category: raw?.category ?? raw?.categoryName ?? '',
-    growth: Number(raw?.growth ?? raw?.growthRate ?? 0),
+    id: String(raw?.productId ?? raw?.id ?? `tp-${index}`),
+    name: raw?.productName ?? raw?.name ?? 'Unnamed product',
+    sku: raw?.sku ?? '',
+    sales: Number(raw?.quantity ?? raw?.sales ?? 0),
+    revenue: Number(raw?.revenue ?? 0),
   };
 }
 
-/**
- * Normalize a raw notification payload into the canonical
- * `Notification` shape and guarantee a unique `id`.
- */
 function normalizeNotification(raw: any, index: number): Notification {
   const id = raw?.id ?? raw?._id ?? raw?.notificationId ?? `n-${index}`;
+  const rawType = String(raw?.type ?? 'info').toLowerCase();
+  const allowed: Notification['type'][] = [
+    'info',
+    'success',
+    'warning',
+    'error',
+  ];
+  const type = (allowed as string[]).includes(rawType)
+    ? (rawType as Notification['type'])
+    : 'info';
 
   return {
     id: String(id),
     title: raw?.title ?? raw?.subject ?? 'Notification',
     message: raw?.message ?? raw?.body ?? raw?.description ?? '',
-    type: raw?.type ?? 'info',
+    type,
     timestamp:
       raw?.timestamp ??
       raw?.createdAt ??
@@ -384,6 +333,27 @@ function normalizeNotification(raw: any, index: number): Notification {
       new Date().toISOString(),
     isRead: Boolean(raw?.isRead ?? raw?.read ?? false),
   };
+}
+
+function buildActivityFromSales(sales: RecentSale[]): RecentActivityItem[] {
+  return sales.map((sale, index) => {
+    const customerName = sale.customer
+      ? `${sale.customer.firstName} ${sale.customer.lastName}`.trim()
+      : sale.customerName ?? 'Walk-in customer';
+    return {
+      id: sale.id ?? `sale-${index}`,
+      type: 'sale' as ActivityType,
+      title: `Sale #${sale.receiptNumber ?? sale.id ?? index + 1}`,
+      description: customerName,
+      timestamp: sale.saleDate ?? sale.createdAt ?? new Date().toISOString(),
+      isRead: true,
+      priority: 'low' as const,
+      metadata: {
+        total: sale.total,
+        items: sale.items?.length ?? 0,
+      },
+    };
+  });
 }
 
 // ============================================
@@ -395,7 +365,6 @@ export default function DashboardPage() {
   const { user: authUser } = useAuth();
   const { showToast } = useToast();
 
-  // ---------- Primitive derivations from unstable objects ----------
   const userId = user?.id ?? null;
   const hasAuthUser = !!authUser;
 
@@ -404,11 +373,12 @@ export default function DashboardPage() {
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [stats, setStats] = useState<DashboardStats | null>(null);
-  const [salesTrend, setSalesTrend] = useState<SalesTrend[]>([]);
-  const [recentSales, setRecentSales] = useState<RecentSale[]>([]);
   const [topProducts, setTopProducts] = useState<TopProduct[]>([]);
+  const [salesTrend, setSalesTrend] = useState<
+    Array<{ date: string; revenue: number; orders: number }>
+  >([]);
   const [recentActivity, setRecentActivity] = useState<RecentActivityItem[]>(
-    []
+    [],
   );
   const [notifications, setNotifications] = useState<Notification[]>([]);
 
@@ -416,7 +386,7 @@ export default function DashboardPage() {
     'today' | 'week' | 'month' | 'year'
   >('week');
   const [viewMode, setViewMode] = useState<'grid' | 'list' | 'compact'>(
-    'grid'
+    'grid',
   );
   const [showFilters, setShowFilters] = useState(false);
   const [showNotifications, setShowNotifications] = useState(false);
@@ -433,6 +403,21 @@ export default function DashboardPage() {
     'inventory',
   ]);
 
+  // ---------- Currency state ----------
+  //
+  // Resolution order, highest precedence first:
+  //
+  //   1. `stats.currency` — populated by the backend from
+  //      `BusinessUnit.currency`. Zero extra round-trips.
+  //   2. The registry's `default` from `GET /currencies`, read via
+  //      `currencyService.getCurrencies()`. The active BU's own
+  //      `currency` from the auth payload is passed as a hint when
+  //      the registry does not surface its own default.
+  //
+  // No ISO code appears as a literal in this file.
+  const [ledgerCurrency, setLedgerCurrency] = useState<string | null>(null);
+  const [currencyAttempt, setCurrencyAttempt] = useState(0);
+
   // ---------- Derived roles ----------
   const role = authUser?.role;
   const isAdmin = role === 'SUPER_ADMIN' || role === 'ADMIN';
@@ -440,10 +425,9 @@ export default function DashboardPage() {
   const isSuperAdmin = role === 'SUPER_ADMIN';
   const hasAccess = isAdmin || isManager;
 
-  // ---------- Permissions (DERIVED, not state) ----------
+  // ---------- Permissions ----------
   const permissions: Permission = useMemo<Permission>(() => {
     if (!hasAuthUser) return getEmptyPermissions();
-
     return {
       canViewSales: isAdmin || isManager,
       canViewCustomers: isAdmin || isManager,
@@ -460,30 +444,117 @@ export default function DashboardPage() {
     };
   }, [hasAuthUser, isAdmin, isManager, isSuperAdmin]);
 
-  // ---------- Business units (derived, stable array) ----------
-  const businessUnits = useMemo<string[]>(() => {
-    if (isSuperAdmin) {
-      return ['All', 'HQ', 'Branch 1', 'Branch 2', 'Warehouse'];
-    }
-    if (isAdmin || isManager) {
-      const units = authUser?.businessUnits;
-      if (Array.isArray(units) && units.length > 0) {
-        return units.map((bu: any) => bu.name);
-      }
-      return ['HQ'];
-    }
-    return [];
-  }, [hasAuthUser, isSuperAdmin, isAdmin, isManager]);
+  // ---------- Business units ----------
+  const businessUnits: BusinessUnitOption[] = useMemo(() => {
+    if (isSuperAdmin) return [];
+    return normalizeBusinessUnits(authUser?.businessUnits);
+  }, [isSuperAdmin, authUser?.businessUnits]);
 
-  // ---------- Primitive form of authUser fields used in deps ----------
+  // ---------- Primary BU ----------
   const primaryBusinessUnitId = useMemo<string | undefined>(() => {
     if (!(isManager || isAdmin)) return undefined;
-    const units = authUser?.businessUnits;
-    if (!Array.isArray(units) || units.length === 0) return undefined;
-    return units[0]?.businessUnitId;
-  }, [hasAuthUser, isManager, isAdmin]);
+    return businessUnits[0]?.id;
+  }, [isManager, isAdmin, businessUnits]);
 
-  // ---------- Primitive form of the filters object ----------
+  // ---------- Active BU (selection or primary) ----------
+  const activeBusinessUnitId = useMemo<string | undefined>(() => {
+    if (selectedBusinessUnit && selectedBusinessUnit !== 'all') {
+      return selectedBusinessUnit;
+    }
+    return primaryBusinessUnitId;
+  }, [selectedBusinessUnit, primaryBusinessUnitId]);
+
+  // ---------- Currency resolution ----------
+  //
+  // Precedence:
+  //   1. `stats.currency` from the backend.
+  //   2. The registry's `default` from `currencyService.getCurrencies()`.
+  //   3. The active BU's own `currency` from the auth payload.
+  //
+  // The registry is queried at most 5 times with backoff; if it never
+  // resolves, the UI stays in the "Resolving ledger currency…" state
+  // rather than fabricating a code.
+  useEffect(() => {
+    if (!stats?.currency) return;
+    setLedgerCurrency(stats.currency);
+  }, [stats?.currency]);
+
+  useEffect(() => {
+    if (ledgerCurrency) return;
+    let cancelled = false;
+    let attempts = 0;
+    const MAX_ATTEMPTS = 5;
+
+    const buRecord = activeBusinessUnitId
+      ? businessUnits.find((bu) => bu.id === activeBusinessUnitId)
+      : undefined;
+    const buCurrencyHint = buRecord?.currency ?? null;
+
+    const tryResolve = async () => {
+      if (cancelled) return;
+
+      try {
+        // `getCurrencies()` returns the registry with a `default`
+        // field. We call it without forcing a refresh so the service
+        // can serve from its own cache when available.
+        const registry = await currencyService.getCurrencies();
+        const registryDefault =
+          (registry as any)?.default ??
+          (registry as any)?.defaultCurrency ??
+          null;
+
+        if (cancelled) return;
+
+        if (typeof registryDefault === 'string' && registryDefault.trim()) {
+          setLedgerCurrency(registryDefault.trim().toUpperCase());
+          return;
+        }
+
+        // Registry responded but carried no default. Fall back to
+        // the BU's own currency when the auth payload surfaced it.
+        if (buCurrencyHint && buCurrencyHint.trim()) {
+          setLedgerCurrency(buCurrencyHint.trim().toUpperCase());
+          return;
+        }
+      } catch (err) {
+        // Swallow — we retry below.
+        console.warn('[dashboard] currency registry fetch failed:', err);
+      }
+
+      if (cancelled) return;
+
+      attempts += 1;
+      if (attempts < MAX_ATTEMPTS) {
+        setTimeout(tryResolve, 500 * attempts);
+      } else {
+        console.warn(
+          '[dashboard] currency registry unreachable after',
+          MAX_ATTEMPTS,
+          'attempts — see `currencyService.getCurrencies` and `GET /currencies`',
+        );
+        setCurrencyAttempt((n) => n + 1);
+      }
+    };
+
+    tryResolve();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    activeBusinessUnitId,
+    businessUnits,
+    currencyAttempt,
+    ledgerCurrency,
+  ]);
+
+  // ---------- Formatter bound to the resolved currency ----------
+  const fmt = useCallback(
+    (value: number): string => formatCurrency(value, ledgerCurrency ?? ''),
+    [ledgerCurrency],
+  );
+
+  // ---------- Filters key ----------
   const filtersKey = useMemo(
     () =>
       [
@@ -492,13 +563,11 @@ export default function DashboardPage() {
         filters.businessUnit ?? '',
         (filters.status ?? []).join(','),
         (filters.category ?? []).join(','),
-        (filters.department ?? []).join(','),
-        (filters.region ?? []).join(','),
       ].join('|'),
-    [filters]
+    [filters],
   );
 
-  // ---------- Stable `showToast` ref ----------
+  // ---------- showToast ref ----------
   const showToastRef = useRef(showToast);
   useEffect(() => {
     showToastRef.current = showToast;
@@ -511,9 +580,7 @@ export default function DashboardPage() {
         params: { limit: 10, unread: true },
       });
       const data = unwrap<any[]>(response);
-      const list = Array.isArray(data)
-        ? data.map(normalizeNotification)
-        : [];
+      const list = Array.isArray(data) ? data.map(normalizeNotification) : [];
       setNotifications(list);
     } catch (err) {
       console.error('Failed to fetch notifications:', err);
@@ -539,50 +606,37 @@ export default function DashboardPage() {
         if (filters.category?.length)
           params.category = filters.category.join(',');
         if (filters.search) params.search = filters.search;
-        if (filters.department?.length)
-          params.department = filters.department.join(',');
-        if (filters.region?.length)
-          params.region = filters.region.join(',');
 
         const requestParams = primaryBusinessUnitId
           ? { ...params, businessUnitId: primaryBusinessUnitId }
           : params;
 
-        type Slot =
-          | 'stats'
-          | 'trends'
-          | 'recentSales'
-          | 'topProducts'
-          | 'activity';
+        type Slot = 'stats' | 'trends' | 'topProducts';
         const slots: Slot[] = [];
         const fetchPromises: Promise<any>[] = [];
 
         if (permissions.canViewSales) {
-          slots.push('stats', 'trends', 'recentSales');
+          slots.push('stats', 'trends');
           fetchPromises.push(
-            safeFetch('/dashboard/stats', { params: requestParams }),
-            safeFetch('/dashboard/trends', { params: requestParams }),
-            safeFetch('/sales/recent', {
-              params: { limit: 10, ...requestParams },
-            })
+            safeFetch<DashboardStats>('/dashboard/stats', {
+              params: requestParams,
+            }),
+            safeFetch<{
+              range: string;
+              sales: Array<{ date: string; value: number }>;
+              orders: Array<{ date: string; value: number }>;
+            }>('/dashboard/trends', {
+              params: { range: timeRange, ...requestParams },
+            }),
           );
         }
 
         if (permissions.canViewProducts) {
           slots.push('topProducts');
           fetchPromises.push(
-            safeFetch('/dashboard/top-products', {
-              params: { limit: 10, ...requestParams },
-            })
-          );
-        }
-
-        if (permissions.canViewCustomers || permissions.canViewOrders) {
-          slots.push('activity');
-          fetchPromises.push(
-            safeFetch('/dashboard/activity', {
-              params: { limit: 10, ...requestParams },
-            })
+            safeFetch<DashboardTopProduct[]>('/dashboard/top-products', {
+              params: { limit: 10, range: timeRange, ...requestParams },
+            }),
           );
         }
 
@@ -598,44 +652,65 @@ export default function DashboardPage() {
 
         let hasData = false;
 
+        // ---- Stats: this is the canonical payload ----
         if (bySlot.stats) {
-          const data = bySlot.stats as Partial<DashboardStats>;
-          if (data && Object.keys(data).length > 0) {
-            setStats(mergeStats(data));
+          const data = bySlot.stats as DashboardStats;
+          if (data && typeof data === 'object') {
+            setStats(data);
+            setRecentActivity(
+              buildActivityFromSales(
+                Array.isArray(data.recentActivity) ? data.recentActivity : [],
+              ),
+            );
+            if (
+              Array.isArray(data.topProducts) &&
+              data.topProducts.length > 0
+            ) {
+              setTopProducts(
+                data.topProducts.map((tp, i) => normalizeTopProduct(tp, i)),
+              );
+            }
+            if (Array.isArray(data.salesTrend) && data.salesTrend.length > 0) {
+              setSalesTrend(
+                data.salesTrend.map((point) => ({
+                  date: point.date,
+                  revenue: point.total ?? 0,
+                  orders: point.count ?? 0,
+                })),
+              );
+            }
             hasData = true;
           }
         }
 
+        // ---- Trends endpoint (fallback / richer series) ----
         if (bySlot.trends) {
-          const data = bySlot.trends as SalesTrend[];
-          if (Array.isArray(data) && data.length > 0) {
-            setSalesTrend(data);
+          const data = bySlot.trends as {
+            sales: Array<{ date: string; value: number }>;
+            orders: Array<{ date: string; value: number }>;
+          };
+          if (Array.isArray(data?.sales) && data.sales.length > 0) {
+            const salesByDate = new Map(
+              data.sales.map((p) => [p.date, p.value]),
+            );
+            const ordersByDate = new Map(
+              (data.orders ?? []).map((p) => [p.date, p.value]),
+            );
+            const merged = Array.from(salesByDate.keys()).map((date) => ({
+              date,
+              revenue: salesByDate.get(date) ?? 0,
+              orders: ordersByDate.get(date) ?? 0,
+            }));
+            setSalesTrend(merged);
             hasData = true;
           }
         }
 
-        if (bySlot.recentSales) {
-          const data = bySlot.recentSales as RecentSale[];
-          if (Array.isArray(data) && data.length > 0) {
-            setRecentSales(data);
-            hasData = true;
-          }
-        }
-
+        // ---- Top products endpoint (fallback / richer list) ----
         if (bySlot.topProducts) {
-          const raw = bySlot.topProducts as any[];
+          const raw = bySlot.topProducts as DashboardTopProduct[];
           if (Array.isArray(raw) && raw.length > 0) {
-            // Normalize so every product has a unique, stable id.
-            const data = raw.map(normalizeTopProduct);
-            setTopProducts(data);
-            hasData = true;
-          }
-        }
-
-        if (bySlot.activity) {
-          const data = bySlot.activity as RecentActivityItem[];
-          if (Array.isArray(data) && data.length > 0) {
-            setRecentActivity(data);
+            setTopProducts(raw.map((tp, i) => normalizeTopProduct(tp, i)));
             hasData = true;
           }
         }
@@ -654,7 +729,7 @@ export default function DashboardPage() {
         if (silent && showToastRef.current) {
           showToastRef.current(
             'Dashboard data refreshed successfully',
-            'success'
+            'success',
           );
         }
       } catch (err) {
@@ -678,12 +753,10 @@ export default function DashboardPage() {
       primaryBusinessUnitId,
       permissions.canViewSales,
       permissions.canViewProducts,
-      permissions.canViewCustomers,
-      permissions.canViewOrders,
-    ]
+    ],
   );
 
-  // ---------- Mount + refetch effect ----------
+  // ---------- Mount effect ----------
   useEffect(() => {
     if (!isLoaded || !userId || !hasAccess) return;
     fetchDashboardData();
@@ -705,37 +778,59 @@ export default function DashboardPage() {
     fetchNotifications();
   }, [fetchDashboardData, fetchNotifications]);
 
+  /**
+   * Client-side CSV export built from the already-loaded stats. The
+   * backend does not implement `/dashboard/export`, so this builds
+   * the file in the browser. Gated by `canExportData`.
+   */
   const handleExport = useCallback(async () => {
+    if (!stats) return;
     setExportLoading(true);
     try {
-      const params: any = { range: timeRange, ...filters };
-      if (selectedBusinessUnit) params.businessUnit = selectedBusinessUnit;
+      const rows: string[][] = [
+        ['Metric', 'Value'],
+        ['Currency', ledgerCurrency ?? ''],
+        ['Today Sales', String(stats.sales.today.total)],
+        ['Today Transactions', String(stats.sales.today.count)],
+        ['Week Sales', String(stats.sales.week.total)],
+        ['Week Transactions', String(stats.sales.week.count)],
+        ['Month Sales', String(stats.sales.month.total)],
+        ['Month Transactions', String(stats.sales.month.count)],
+        ['Year Sales', String(stats.sales.year.total)],
+        ['Year Transactions', String(stats.sales.year.count)],
+        ['Inventory Value', String(stats.inventory.totalValue)],
+        ['Inventory Items', String(stats.inventory.totalItems)],
+        ['Low Stock', String(stats.inventory.lowStock)],
+        ['Out of Stock', String(stats.inventory.outOfStock)],
+        ['Total Customers', String(stats.customers.total)],
+        ['Active Customers', String(stats.customers.active)],
+        ['New Customers This Month', String(stats.customers.newThisMonth)],
+        ['Pending Orders', String(stats.orders.pending)],
+        ['Completed Orders', String(stats.orders.completed)],
+        ['Cancelled Orders', String(stats.orders.cancelled)],
+      ];
 
-      const response = await apiService.get('/dashboard/export', {
-        params,
-        responseType: 'blob',
-      });
+      const csv = rows
+        .map((row) =>
+          row.map((cell) => `"${String(cell).replace(/"/g, '""')}"`).join(','),
+        )
+        .join('\n');
 
-      if (response && typeof response === 'object') {
-        const blob = response as unknown as Blob;
-        const url = window.URL.createObjectURL(blob);
-        const link = document.createElement('a');
-        link.href = url;
-        link.setAttribute(
-          'download',
-          `dashboard-export-${new Date().toISOString()}.csv`
-        );
-        document.body.appendChild(link);
-        link.click();
-        link.remove();
-        window.URL.revokeObjectURL(url);
+      const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+      const url = window.URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.setAttribute(
+        'download',
+        `dashboard-export-${new Date().toISOString()}.csv`,
+      );
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      window.URL.revokeObjectURL(url);
 
-        if (showToastRef.current) {
-          showToastRef.current(
-            'Dashboard data exported successfully',
-            'success'
-          );
-        }
+      if (showToastRef.current) {
+        showToastRef.current('Dashboard data exported successfully', 'success');
       }
     } catch (err) {
       console.error('Export failed:', err);
@@ -745,13 +840,13 @@ export default function DashboardPage() {
     } finally {
       setExportLoading(false);
     }
-  }, [timeRange, filters, selectedBusinessUnit]);
+  }, [stats, ledgerCurrency]);
 
   const toggleSection = useCallback((section: string) => {
     setExpandedSections((prev) =>
       prev.includes(section)
         ? prev.filter((s) => s !== section)
-        : [...prev, section]
+        : [...prev, section],
     );
   }, []);
 
@@ -759,10 +854,10 @@ export default function DashboardPage() {
     setSelectedBusinessUnit(unit);
   }, []);
 
-  // ---------- Memoized derivations for render ----------
+  // ---------- Memoized derivations ----------
   const unreadCount = useMemo(
     () => notifications.filter((n) => !n.isRead).length,
-    [notifications]
+    [notifications],
   );
 
   const chartData = useMemo(
@@ -772,12 +867,12 @@ export default function DashboardPage() {
         revenue: t.revenue,
         orders: t.orders,
       })),
-    [salesTrend]
+    [salesTrend],
   );
 
   const topProductsSlice = useMemo(
     () => topProducts.slice(0, 5),
-    [topProducts]
+    [topProducts],
   );
 
   // ---------- Early returns ----------
@@ -808,10 +903,8 @@ export default function DashboardPage() {
     );
   }
 
-  // ---------- Local stats (never null past this point) ----------
   const s: DashboardStats = stats ?? getEmptyStats();
 
-  // ---------- Render ----------
   return (
     <motion.div
       initial={{ opacity: 0 }}
@@ -845,31 +938,45 @@ export default function DashboardPage() {
               )}
             </h1>
             <p className="text-gray-600 dark:text-gray-400 mt-1">
-              Welcome back, {user?.firstName}! Here's your business overview.
+              Welcome back, {user?.firstName}! Here&apos;s your business
+              overview.
               {isManager && (
                 <span className="ml-2 text-sm text-brand-600 dark:text-brand-400">
                   (Manager View)
                 </span>
               )}
             </p>
+            <p className="text-xs text-gray-400 dark:text-gray-500 mt-1">
+              {ledgerCurrency ? (
+                <>
+                  Amounts are shown in{' '}
+                  <span className="font-medium">{ledgerCurrency}</span>
+                </>
+              ) : (
+                <>
+                  Resolving ledger currency
+                  <span className="ml-1 inline-block w-1 h-1 rounded-full bg-gray-400 animate-pulse" />
+                </>
+              )}
+            </p>
           </div>
         </div>
 
         <div className="flex flex-wrap items-center gap-2">
-          {businessUnits.length > 0 && (
+          {(businessUnits.length > 0 || isSuperAdmin) && (
             <select
               value={selectedBusinessUnit || 'all'}
               onChange={(e) =>
                 handleBusinessUnitChange(
-                  e.target.value === 'all' ? null : e.target.value
+                  e.target.value === 'all' ? null : e.target.value,
                 )
               }
               className="px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-800 text-sm focus-ring"
             >
               <option value="all">All Business Units</option>
               {businessUnits.map((unit) => (
-                <option key={unit} value={unit}>
-                  {unit}
+                <option key={unit.id} value={unit.id}>
+                  {unit.name}
                 </option>
               ))}
             </select>
@@ -929,7 +1036,7 @@ export default function DashboardPage() {
           {permissions.canExportData && (
             <button
               onClick={handleExport}
-              disabled={exportLoading}
+              disabled={exportLoading || !stats}
               className="p-2 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-orange-50 dark:hover:bg-gray-700 transition-colors focus-ring disabled:opacity-50"
               aria-label="Export"
             >
@@ -972,7 +1079,7 @@ export default function DashboardPage() {
                   <button
                     onClick={() =>
                       setNotifications((prev) =>
-                        prev.map((n) => ({ ...n, isRead: true }))
+                        prev.map((n) => ({ ...n, isRead: true })),
                       )
                     }
                     className="text-sm text-brand-600 hover:text-brand-700 font-medium"
@@ -994,8 +1101,8 @@ export default function DashboardPage() {
                           prev.map((n) =>
                             n.id === notification.id
                               ? { ...n, isRead: true }
-                              : n
-                          )
+                              : n,
+                          ),
                         )
                       }
                       className={`p-3 border-b border-gray-100 dark:border-gray-700 cursor-pointer hover:bg-orange-50 dark:hover:bg-gray-700 transition-colors ${
@@ -1090,7 +1197,7 @@ export default function DashboardPage() {
                 onChange={(e) => {
                   const values = Array.from(
                     e.target.selectedOptions,
-                    (o) => o.value
+                    (o) => o.value,
                   );
                   setFilters((f) => ({ ...f, status: values }));
                 }}
@@ -1112,7 +1219,7 @@ export default function DashboardPage() {
                 onChange={(e) => {
                   const values = Array.from(
                     e.target.selectedOptions,
-                    (o) => o.value
+                    (o) => o.value,
                   );
                   setFilters((f) => ({ ...f, category: values }));
                 }}
@@ -1202,42 +1309,36 @@ export default function DashboardPage() {
                   viewMode === 'grid'
                     ? 'grid-cols-1 sm:grid-cols-2 lg:grid-cols-4'
                     : viewMode === 'list'
-                    ? 'grid-cols-1'
-                    : 'grid-cols-2 sm:grid-cols-4'
+                      ? 'grid-cols-1'
+                      : 'grid-cols-2 sm:grid-cols-4'
                 }`}
               >
                 <StatsCard
                   title="Today's Sales"
-                  value={formatCurrency(s.sales.today.total || 0)}
+                  value={fmt(s.sales.today.total || 0)}
                   subtitle={`${s.sales.today.count || 0} transactions`}
                   icon={<DollarSign className="w-5 h-5" />}
-                  trend={trendDirection(s.sales.today.trend)}
                   color="blue"
                 />
                 <StatsCard
                   title="Weekly Sales"
-                  value={formatCurrency(s.sales.week.total || 0)}
+                  value={fmt(s.sales.week.total || 0)}
                   subtitle={`${s.sales.week.count || 0} transactions`}
                   icon={<TrendingUp className="w-5 h-5" />}
-                  trend={trendDirection(s.sales.week.trend)}
                   color="green"
                 />
                 <StatsCard
                   title="Monthly Sales"
-                  value={formatCurrency(s.sales.month.total || 0)}
+                  value={fmt(s.sales.month.total || 0)}
                   subtitle={`${s.sales.month.count || 0} transactions`}
                   icon={<Calendar className="w-5 h-5" />}
-                  trend={trendDirection(s.sales.month.trend)}
                   color="purple"
                 />
                 <StatsCard
-                  title="Total Revenue"
-                  value={formatCurrency(s.revenue.total || 0)}
-                  subtitle={`Avg: ${formatCurrency(
-                    s.revenue.average || 0
-                  )} per order`}
+                  title="Yearly Sales"
+                  value={fmt(s.sales.year.total || 0)}
+                  subtitle={`${s.sales.year.count || 0} transactions`}
                   icon={<BarChart3 className="w-5 h-5" />}
-                  trend={trendDirection(s.revenue.growth)}
                   color="yellow"
                 />
               </div>
@@ -1290,10 +1391,10 @@ export default function DashboardPage() {
                                 index === 0
                                   ? 'bg-warning-100 text-warning-700'
                                   : index === 1
-                                  ? 'bg-gray-100 text-gray-700'
-                                  : index === 2
-                                  ? 'bg-brand-100 text-brand-700'
-                                  : 'bg-brand-50 text-brand-600'
+                                    ? 'bg-gray-100 text-gray-700'
+                                    : index === 2
+                                      ? 'bg-brand-100 text-brand-700'
+                                      : 'bg-brand-50 text-brand-600'
                               }`}
                             >
                               {index + 1}
@@ -1308,7 +1409,7 @@ export default function DashboardPage() {
                             </div>
                             <div className="text-right">
                               <p className="text-sm font-semibold text-gray-900 dark:text-white tabular-nums">
-                                {formatCurrency(product.revenue)}
+                                {fmt(product.revenue)}
                               </p>
                             </div>
                           </div>
@@ -1357,16 +1458,15 @@ export default function DashboardPage() {
                     viewMode === 'grid'
                       ? 'grid-cols-1 sm:grid-cols-2 lg:grid-cols-4'
                       : viewMode === 'list'
-                      ? 'grid-cols-1'
-                      : 'grid-cols-2 sm:grid-cols-4'
+                        ? 'grid-cols-1'
+                        : 'grid-cols-2 sm:grid-cols-4'
                   }`}
                 >
                   <StatsCard
                     title="Total Customers"
                     value={formatNumber(s.customers.total || 0)}
-                    subtitle={`${s.customers.new || 0} new this ${timeRange}`}
+                    subtitle={`${s.customers.newThisMonth || 0} new this month`}
                     icon={<Users className="w-5 h-5" />}
-                    trend={trendDirection(s.customers.trend)}
                     color="indigo"
                   />
                   <StatsCard
@@ -1377,18 +1477,17 @@ export default function DashboardPage() {
                     color="green"
                   />
                   <StatsCard
-                    title="Customer Growth"
-                    value={`${s.customers.growth || 0}%`}
-                    subtitle="Month over month"
+                    title="New This Month"
+                    value={s.customers.newThisMonth || 0}
+                    subtitle="New customer registrations"
                     icon={<TrendingUp className="w-5 h-5" />}
-                    trend={trendDirection(s.customers.growth)}
                     color="purple"
                   />
                   <StatsCard
-                    title="Retention Rate"
-                    value={`${s.performance.retentionRate || 0}%`}
-                    subtitle="Customer retention"
-                    icon={<Activity className="w-5 h-5" />}
+                    title="Suppliers"
+                    value={s.suppliers.total || 0}
+                    subtitle={`${s.suppliers.active || 0} active`}
+                    icon={<Building className="w-5 h-5" />}
                     color="cyan"
                   />
                 </div>
@@ -1427,37 +1526,37 @@ export default function DashboardPage() {
                     viewMode === 'grid'
                       ? 'grid-cols-1 sm:grid-cols-2 lg:grid-cols-4'
                       : viewMode === 'list'
-                      ? 'grid-cols-1'
-                      : 'grid-cols-2 sm:grid-cols-4'
+                        ? 'grid-cols-1'
+                        : 'grid-cols-2 sm:grid-cols-4'
                   }`}
                 >
                   <StatsCard
-                    title="Total Products"
-                    value={s.products.total || 0}
-                    subtitle={`${s.products.active || 0} active`}
+                    title="Inventory Items"
+                    value={s.inventory.totalItems || 0}
+                    subtitle={`${s.inventory.reorderNeeded || 0} need reorder`}
                     icon={<Package className="w-5 h-5" />}
                     color="orange"
                   />
                   <StatsCard
                     title="Inventory Value"
-                    value={formatCurrency(s.inventory.totalValue || 0)}
+                    value={fmt(s.inventory.totalValue || 0)}
                     subtitle={`${s.inventory.totalItems || 0} items`}
                     icon={<DollarSign className="w-5 h-5" />}
                     color="blue"
                   />
                   <StatsCard
                     title="Low Stock Items"
-                    value={s.products.lowStock || 0}
-                    subtitle={`${s.products.outOfStock || 0} out of stock`}
+                    value={s.inventory.lowStock || 0}
+                    subtitle={`${s.inventory.outOfStock || 0} out of stock`}
                     icon={<AlertTriangle className="w-5 h-5" />}
-                    trend={(s.products.lowStock ?? 0) > 0 ? 'down' : 'up'}
+                    trend={(s.inventory.lowStock ?? 0) > 0 ? 'down' : 'up'}
                     color="red"
                   />
                   <StatsCard
-                    title="Turnover Rate"
-                    value={`${s.inventory.turnover || 0}x`}
-                    subtitle="Inventory turnover"
-                    icon={<RefreshCw className="w-5 h-5" />}
+                    title="Open Registers"
+                    value={s.registers.open || 0}
+                    subtitle={`${s.registers.total || 0} total`}
+                    icon={<Activity className="w-5 h-5" />}
                     color="cyan"
                   />
                 </div>
@@ -1477,10 +1576,10 @@ export default function DashboardPage() {
             <div className="grid grid-cols-2 gap-4">
               <div className="bg-gradient-to-r from-brand-50 to-secondary-50 dark:from-brand-900/20 dark:to-secondary-900/20 rounded-2xl p-4 border border-brand-100 dark:border-brand-800/30">
                 <p className="text-sm text-gray-600 dark:text-gray-400">
-                  Order Completion
+                  Orders Pending
                 </p>
                 <p className="text-2xl font-bold text-gray-900 dark:text-white tabular-nums">
-                  {s.orders.completionRate || 0}%
+                  {s.orders.pending || 0}
                 </p>
                 <div className="flex items-center gap-2 mt-1 text-sm">
                   <CheckCircle className="w-4 h-4 text-success-500" />
@@ -1492,46 +1591,46 @@ export default function DashboardPage() {
 
               <div className="bg-gradient-to-r from-success-50 to-emerald-50 dark:from-success-900/20 dark:to-emerald-900/20 rounded-2xl p-4 border border-success-100 dark:border-success-800/30">
                 <p className="text-sm text-gray-600 dark:text-gray-400">
-                  Customer Satisfaction
+                  Orders Cancelled
                 </p>
                 <p className="text-2xl font-bold text-success-600 dark:text-success-400 tabular-nums">
-                  {s.performance.customerSatisfaction || 0}⭐
+                  {s.orders.cancelled || 0}
                 </p>
                 <div className="flex items-center gap-2 mt-1 text-sm">
-                  <Users className="w-4 h-4 text-success-500" />
+                  <XCircle className="w-4 h-4 text-danger-500" />
                   <span className="text-success-600 dark:text-success-400">
-                    from {s.customers.active || 0} customers
+                    this period
                   </span>
                 </div>
               </div>
 
               <div className="bg-gradient-to-r from-secondary-50 to-pink-50 dark:from-secondary-900/20 dark:to-pink-900/20 rounded-2xl p-4 border border-secondary-100 dark:border-secondary-800/30">
                 <p className="text-sm text-gray-600 dark:text-gray-400">
-                  Conversion Rate
+                  Register Cash
                 </p>
                 <p className="text-2xl font-bold text-secondary-600 dark:text-secondary-400 tabular-nums">
-                  {s.performance.conversionRate || 0}%
+                  {fmt(s.registers.totalCash || 0)}
                 </p>
                 <div className="flex items-center gap-2 mt-1 text-sm">
                   <TrendingUp className="w-4 h-4 text-secondary-500" />
                   <span className="text-secondary-600 dark:text-secondary-400">
-                    visitors to customers
+                    {s.registers.open || 0} open
                   </span>
                 </div>
               </div>
 
               <div className="bg-gradient-to-r from-warning-50 to-brand-50 dark:from-warning-900/20 dark:to-brand-900/20 rounded-2xl p-4 border border-warning-100 dark:border-warning-800/30">
                 <p className="text-sm text-gray-600 dark:text-gray-400">
-                  Revenue Target
+                  Reorder Needed
                 </p>
                 <p className="text-2xl font-bold text-warning-600 dark:text-warning-400 tabular-nums">
-                  {s.revenue.progress || 0}%
+                  {s.inventory.reorderNeeded || 0}
                 </p>
                 <div className="flex items-center gap-2 mt-1 text-sm">
                   <Target className="w-4 h-4 text-warning-500" />
-                  <span className="text-warning-600 dark:text-warning-400">
-                    {formatCurrency(s.revenue.total || 0)} /{' '}
-                    {formatCurrency(s.revenue.target || 0)}
+                  <span className="text-warning-600 dark:text-warning-400 tabular-nums">
+                    {s.inventory.lowStock || 0} low /{' '}
+                    {s.inventory.outOfStock || 0} out
                   </span>
                 </div>
               </div>
@@ -1553,7 +1652,7 @@ export default function DashboardPage() {
         <div className="flex gap-4">
           <span>Data source: Real-time API</span>
           <span>•</span>
-          <span>Business Units: {authUser?.businessUnits?.length || 0}</span>
+          <span>Business Units: {businessUnits.length}</span>
           <span>•</span>
           <span className="flex items-center gap-1">
             {isSuperAdmin ? (

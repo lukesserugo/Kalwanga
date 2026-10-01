@@ -11,6 +11,7 @@ import React, {
 } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import Link from 'next/link';
+import Image from 'next/image';
 import { motion } from 'framer-motion';
 import {
   ArrowLeft,
@@ -129,6 +130,19 @@ type PaymentMethodValue = (typeof PAYMENT_METHODS)[number]['value'];
 
 const CUSTOMER_SEARCH_DEBOUNCE_MS = 300;
 const MIN_CUSTOMER_SEARCH_LENGTH = 2;
+
+/**
+ * ── Phase 2: fallback currency for the render path. ───────────────
+ *
+ * The cart loaded into this page carries `currency` (required on the
+ * canonical `Cart` type, populated server-side). This fallback only
+ * applies during the pre-fetch window (the loading state) or if a
+ * stale cached cart from before Phase 2 is present.
+ *
+ * `'UGX'` matches the registry default (`DEFAULT_CURRENCY_CODE` in
+ * `lib/currencies.ts`), in keeping with the rest of Phase 2.
+ */
+const DEFAULT_CURRENCY = 'UGX';
 
 // ============================================
 // HELPERS
@@ -445,6 +459,67 @@ export default function AdminCartCheckoutPage() {
   }, []);
 
   // ============================================
+  // PHASE 2 — CURRENCY
+  // ============================================
+  //
+  // A single derived currency/symbol pair, covering every render
+  // branch on this page. `cart.currency` is required on the canonical
+  // `Cart` type and is always populated server-side; the fallback
+  // covers only the pre-fetch window (during which the loading state
+  // is rendered and no amounts are visible) and pre-Phase-2 cached
+  // carts.
+  //
+  // The success summary uses the same `currency`/`currencySymbol`
+  // because the checked-out `sale` is denominated in the same
+  // currency as the cart it came from. The backend's checkout
+  // response does not carry a separate currency field.
+
+  const currency = cart?.currency ?? DEFAULT_CURRENCY;
+  const currencySymbol = cart?.currencySymbol ?? currency;
+
+  // ============================================
+  // RECEIPT / NAVIGATION HELPERS
+  // ============================================
+  //
+  // ⚠ These two helpers are declared BEFORE `handleCheckout` because
+  //   `handleCheckout`'s success path schedules an auto-print via
+  //   `handlePrintReceipt`. Declaring them first:
+  //     1. Makes the data flow obvious when reading top-to-bottom.
+  //     2. Silences any "used before declaration" ambiguity in
+  //        TypeScript — though the forward reference was already
+  //        legal because the call site is inside a `setTimeout`
+  //        closure (lazy resolution).
+  //     3. Allows `handlePrintReceipt` to be a normal entry in
+  //        `handleCheckout`'s dep array without the reader having
+  //        to scroll down to confirm it exists.
+  //
+  // Both callbacks have empty dependency arrays — they reference
+  // only `window`, `router`, and `toast`, all of which are stable
+  // for the lifetime of the component. Their identities never
+  // change, so adding `handlePrintReceipt` to `handleCheckout`'s
+  // deps does NOT cause `handleCheckout` to be recreated on extra
+  // renders.
+
+  const handlePrintReceipt = useCallback((receiptNumber: string) => {
+    const printWindow = window.open(
+      `/receipts/${receiptNumber}/print`,
+      '_blank',
+    );
+    if (printWindow) {
+      printWindow.focus();
+    } else {
+      toast.info('Please allow popups to print receipts');
+    }
+  }, []);
+
+  const handleViewSale = useCallback(
+    (saleId: string) => {
+      router.push(`/admin/sales/${saleId}`);
+    },
+    [router],
+  );
+
+  // ============================================
   // CHECKOUT
   // ============================================
 
@@ -464,7 +539,7 @@ export default function AdminCartCheckoutPage() {
         return;
       }
 
-      // A loyalty-only checkout legitimately tenders $0 because the
+      // A loyalty-only checkout legitimately tenders 0 because the
       // balance is covered by the customer's points. Every other
       // payment method must tender at least the total.
       const isLoyaltyOnly =
@@ -475,7 +550,11 @@ export default function AdminCartCheckoutPage() {
         toast.error(
           `Paid amount (${formatCurrency(
             paidAmountNum,
-          )}) is less than total (${formatCurrency(totalDue)})`,
+            currency,
+          )}) is less than total (${formatCurrency(
+            totalDue,
+            currency,
+          )})`,
         );
         return;
       }
@@ -558,30 +637,16 @@ export default function AdminCartCheckoutPage() {
       notes,
       cashRegisterId,
       cashRegisterSessionId,
+      currency,
+      // ── `handlePrintReceipt` is called on the success path via a
+      //    `setTimeout` closure. Its identity is stable (empty
+      //    deps), so adding it here does not cause `handleCheckout`
+      //    to be recreated on extra renders. It must be in the
+      //    array because the linter cannot see that the reference
+      //    is stable — it only sees a useCallback value captured
+      //    by another useCallback.
+      handlePrintReceipt,
     ],
-  );
-
-  // ============================================
-  // RECEIPT / NAVIGATION
-  // ============================================
-
-  const handlePrintReceipt = useCallback((receiptNumber: string) => {
-    const printWindow = window.open(
-      `/receipts/${receiptNumber}/print`,
-      '_blank',
-    );
-    if (printWindow) {
-      printWindow.focus();
-    } else {
-      toast.info('Please allow popups to print receipts');
-    }
-  }, []);
-
-  const handleViewSale = useCallback(
-    (saleId: string) => {
-      router.push(`/admin/sales/${saleId}`);
-    },
-    [router],
   );
 
   /**
@@ -696,8 +761,8 @@ export default function AdminCartCheckoutPage() {
           Access Restricted
         </h2>
         <p className="text-gray-500 dark:text-gray-400 mt-2 text-center max-w-md">
-          You don't have permission to checkout carts. Please contact
-          your administrator.
+          You don&apos;t have permission to checkout carts. Please
+          contact your administrator.
         </p>
         <button
           type="button"
@@ -767,7 +832,11 @@ export default function AdminCartCheckoutPage() {
               <SummaryTile label="Receipt" value={sale.receiptNumber} />
               <SummaryTile
                 label="Total"
-                value={formatCurrency(sale.total)}
+                // ── Phase 2: format in the cart's currency. The ──
+                //   sale was denominated in the same currency as
+                //   the cart it came from; the backend does not
+                //   send a separate currency field on the sale.
+                value={formatCurrency(sale.total, currency)}
               />
               <SummaryTile
                 label="Payment"
@@ -780,6 +849,7 @@ export default function AdminCartCheckoutPage() {
                     sale.changeAmount ??
                     checkoutResult.changeAmount ??
                     0,
+                  currency,
                 )}
                 accent="text-emerald-600 dark:text-emerald-400"
               />
@@ -941,9 +1011,21 @@ export default function AdminCartCheckoutPage() {
                   >
                     <div className="w-12 h-12 bg-gray-100 dark:bg-gray-700 rounded-lg overflow-hidden flex-shrink-0">
                       {item.product?.images?.[0] ? (
-                        <img
+                        // ── next/image with `unoptimized` ────────
+                        // Product image URLs are arbitrary
+                        // customer/admin uploads. The optimized
+                        // path would require every host to be
+                        // whitelisted in `next.config.js` under
+                        // `images.remotePatterns`. `unoptimized`
+                        // silences `@next/next/no-img-element`,
+                        // preserves the current load behaviour,
+                        // and gives a clean upgrade path.
+                        <Image
                           src={item.product.images[0]}
                           alt={item.product.name}
+                          width={48}
+                          height={48}
+                          unoptimized
                           className="w-full h-full object-cover"
                         />
                       ) : (
@@ -958,7 +1040,7 @@ export default function AdminCartCheckoutPage() {
                       </p>
                       <p className="text-sm text-gray-500 dark:text-gray-400">
                         {item.quantity} ×{' '}
-                        {formatCurrency(item.unitPrice)}
+                        {formatCurrency(item.unitPrice, currency)}
                       </p>
                       {item.variant && (
                         <p className="text-xs text-gray-400 dark:text-gray-500">
@@ -968,7 +1050,7 @@ export default function AdminCartCheckoutPage() {
                     </div>
                     <div className="text-right tabular-nums">
                       <p className="font-semibold text-gray-900 dark:text-white">
-                        {formatCurrency(item.total)}
+                        {formatCurrency(item.total, currency)}
                       </p>
                     </div>
                   </div>
@@ -1134,30 +1216,39 @@ export default function AdminCartCheckoutPage() {
               <div className="space-y-2 border-b border-gray-200 dark:border-gray-700 pb-4">
                 <Row
                   label="Subtotal"
-                  value={formatCurrency(cart.subtotal ?? 0)}
+                  value={formatCurrency(cart.subtotal ?? 0, currency)}
                 />
                 <Row
                   label="Tax"
-                  value={formatCurrency(cart.tax ?? 0)}
+                  value={formatCurrency(cart.tax ?? 0, currency)}
                 />
                 {(cart.discount ?? 0) > 0 && (
                   <Row
                     label="Discount"
-                    value={`−${formatCurrency(cart.discount ?? 0)}`}
+                    value={`−${formatCurrency(
+                      cart.discount ?? 0,
+                      currency,
+                    )}`}
                     accent="text-emerald-600 dark:text-emerald-400"
                   />
                 )}
                 {(cart.promotionDiscount ?? 0) > 0 && (
                   <Row
                     label="Promotion"
-                    value={`−${formatCurrency(cart.promotionDiscount ?? 0)}`}
+                    value={`−${formatCurrency(
+                      cart.promotionDiscount ?? 0,
+                      currency,
+                    )}`}
                     accent="text-purple-600 dark:text-purple-400"
                   />
                 )}
                 {(cart.loyaltyDiscount ?? 0) > 0 && (
                   <Row
                     label="Loyalty"
-                    value={`−${formatCurrency(cart.loyaltyDiscount ?? 0)}`}
+                    value={`−${formatCurrency(
+                      cart.loyaltyDiscount ?? 0,
+                      currency,
+                    )}`}
                     accent="text-indigo-600 dark:text-indigo-400"
                   />
                 )}
@@ -1166,7 +1257,7 @@ export default function AdminCartCheckoutPage() {
                     Total
                   </span>
                   <span className="text-base font-bold text-orange-600 dark:text-orange-400 tabular-nums">
-                    {formatCurrency(cart.total ?? 0)}
+                    {formatCurrency(cart.total ?? 0, currency)}
                   </span>
                 </div>
               </div>
@@ -1212,7 +1303,8 @@ export default function AdminCartCheckoutPage() {
                 </label>
                 <div className="relative">
                   <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none">
-                    $
+                    {/* ── Phase 2: resolved currency symbol ── */}
+                    {currencySymbol}
                   </span>
                   <input
                     type="number"
@@ -1221,7 +1313,7 @@ export default function AdminCartCheckoutPage() {
                     value={paidAmount}
                     onChange={(e) => setPaidAmount(e.target.value)}
                     disabled={isLoyaltyOnly}
-                    className="w-full pl-8 pr-4 py-2 bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-transparent focus:outline-none text-gray-900 dark:text-white tabular-nums disabled:opacity-60"
+                    className="w-full pl-12 pr-4 py-2 bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-transparent focus:outline-none text-gray-900 dark:text-white tabular-nums disabled:opacity-60"
                     required
                     inputMode="decimal"
                   />
@@ -1239,7 +1331,7 @@ export default function AdminCartCheckoutPage() {
                         onClick={() => setPaidAmount(String(amount))}
                         className="px-2 py-0.5 text-xs rounded border border-gray-300 dark:border-gray-600 hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors text-gray-600 dark:text-gray-400"
                       >
-                        {formatCurrency(amount)}
+                        {formatCurrency(amount, currency)}
                       </button>
                     ))}
                   </div>
@@ -1254,7 +1346,7 @@ export default function AdminCartCheckoutPage() {
                       Change Due
                     </span>
                     <span className="font-bold text-emerald-700 dark:text-emerald-300 tabular-nums">
-                      {formatCurrency(changeAmount)}
+                      {formatCurrency(changeAmount, currency)}
                     </span>
                   </div>
                 </div>

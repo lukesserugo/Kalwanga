@@ -1,14 +1,116 @@
 // D:\Projects\Kalwanga\packages\web\services\api.ts
 
-import axios, { AxiosInstance, AxiosRequestConfig, AxiosResponse } from 'axios';
+import axios, {
+  AxiosInstance,
+  AxiosRequestConfig,
+  AxiosResponse,
+} from 'axios';
 
+/**
+ * Extended request config accepted by every HTTP method on this
+ * client.
+ *
+ * Two flags beyond axios' own:
+ *
+ *   • `silent` — suppresses console logging for this request. Used
+ *     for polling and background refreshes where the noise is not
+ *     helpful. Has NO effect on error handling or on whether the
+ *     request is retried.
+ *
+ *   • `_retrySafe` — opt-in marker that this request MAY be retried
+ *     after a 401 response. Only meaningful for non-idempotent
+ *     methods (`POST`, `PUT`, `PATCH`, `DELETE`). Idempotent methods
+ *     (`GET`, `HEAD`, `OPTIONS`) are retried automatically without
+ *     this flag.
+ *
+ *     ⚠ Set this flag ONLY when the request carries an idempotency
+ *       key that the backend understands — e.g.
+ *       `POST /checkout` with a `Sale.idempotencyKey`, or
+ *       `PATCH /cart/settings` (last-writer-wins is acceptable), or
+ *       `POST /exchange-rates` (upsert semantics).
+ *
+ *       Do NOT set this flag on `POST /cart/items`. A retry would
+ *       add the item twice. The correct fix for that endpoint is to
+ *       give it an idempotency key on the backend; until then, the
+ *       client must not retry it.
+ */
 interface SilentableRequestConfig extends AxiosRequestConfig {
   silent?: boolean;
+  _retrySafe?: boolean;
+}
+
+/**
+ * Internal config shape after the request interceptor has run.
+ * `_retry` tracks whether this request has already been retried once
+ * after a 401 — the retry loop only runs once.
+ */
+interface RetryableConfig extends SilentableRequestConfig {
+  _retry?: boolean;
 }
 
 const PAGINATION_KEY = Symbol.for('api.pagination');
 const STATS_KEY = Symbol.for('api.stats');
 const SCOPE_KEY = Symbol.for('api.scope');
+
+/**
+ * HTTP methods considered idempotent by RFC 7231 §4.2.2.
+ *
+ * A 401-triggered retry of an idempotent method is always safe: the
+ * server either performs the operation (and returns 200) or does not
+ * (and returns an error). Retrying does not change the outcome.
+ *
+ * Non-idempotent methods are only retried when the caller has marked
+ * the request `_retrySafe: true`.
+ */
+const IDEMPOTENT_METHODS = new Set(['get', 'head', 'options']);
+
+// ============================================
+// DISPLAY CURRENCY (Phase 3a)
+// ============================================
+
+/**
+ * localStorage key for the payer's chosen display currency.
+ *
+ * ⚠ Must match the key used by `hooks/useDisplayCurrency.ts`. Both
+ *   files are the sole owners of this string; changing it in one
+ *   place without the other breaks the picker silently.
+ */
+const DISPLAY_CURRENCY_STORAGE_KEY = 'kalwanga.displayCurrency';
+
+/**
+ * Read the payer's chosen display currency from localStorage.
+ *
+ * Returns `null` when:
+ *   • Running on the server (no `window`).
+ *   • localStorage is unavailable (private mode, quota exceeded).
+ *   • No preference is set.
+ *   • The stored value is not a well-formed ISO 4217 code.
+ *
+ * The returned value is always uppercase and always 3 characters
+ * long, or `null`. Anything else is treated as "no preference" — a
+ * malformed code would otherwise reach the backend and be rejected
+ * with a 400, causing the whole page to error for a bad storage
+ * value.
+ */
+function resolveDisplayCurrency(): string | null {
+  if (typeof window === 'undefined') return null;
+
+  try {
+    const raw = window.localStorage.getItem(DISPLAY_CURRENCY_STORAGE_KEY);
+    if (!raw) return null;
+
+    const normalized = raw.trim().toUpperCase();
+    if (!/^[A-Z]{3}$/.test(normalized)) return null;
+
+    return normalized;
+  } catch {
+    return null;
+  }
+}
+
+// ============================================
+// SIBLING FIELD ATTACHMENT
+// ============================================
 
 /**
  * Attach a sibling field to the extracted `data` without clobbering
@@ -178,6 +280,22 @@ class ApiService {
         const businessUnitId = resolveBusinessUnitId();
         if (businessUnitId) {
           config.headers['x-business-unit-id'] = businessUnitId;
+        }
+
+        // ── Display currency (Phase 3a) ─────────────────────
+        // The payer's chosen display currency is sent as a
+        // header on every request. The backend uses it to
+        // populate `cart.display*` fields on cart responses
+        // and to stamp `Payment.displayCurrency` at checkout.
+        //
+        // The header is omitted entirely when no preference
+        // is set. The backend falls back to the BU's
+        // settlement currency in that case — which is the
+        // correct behavior, and avoids a stale "USD" from
+        // leaking in when the payer has not chosen.
+        const displayCurrency = resolveDisplayCurrency();
+        if (displayCurrency) {
+          config.headers['X-Display-Currency'] = displayCurrency;
         }
 
         return config;
@@ -412,24 +530,69 @@ class ApiService {
     }
   }
 
+  /**
+   * True when a request with this config may be safely retried after
+   * a 401 response.
+   *
+   * Rules:
+   *   • `GET`, `HEAD`, `OPTIONS` — always retryable. They are
+   *     idempotent by HTTP semantics.
+   *   • `POST`, `PUT`, `PATCH`, `DELETE` — retryable ONLY when the
+   *     caller has explicitly marked the request `_retrySafe: true`.
+   *     This is the flag that prevents `POST /cart/items` from
+   *     double-adding an item on retry, and prevents
+   *     `POST /checkout` from double-charging.
+   *
+   * ⚠ Do not relax this. A silent double-charge is worse than a
+   *   user-visible 401.
+   */
+  private isRetrySafe(
+    config: RetryableConfig | undefined,
+  ): boolean {
+    if (!config) return false;
+
+    const method = (config.method ?? 'get').toLowerCase();
+    if (IDEMPOTENT_METHODS.has(method)) return true;
+
+    return config._retrySafe === true;
+  }
+
   private async handleResponseError(error: any): Promise<any> {
-    const config = error.config as
-      | (SilentableRequestConfig & { _retry?: boolean })
-      | undefined;
+    const config = error.config as RetryableConfig | undefined;
     const silent = config?.silent === true;
 
     // ── 401 refresh-and-retry ────────────────────────────────
     //
     // On the first 401 for a non-auth URL, attempt one token
-    // refresh and re-issue the original request. This is critical
-    // for POS and scanner flows: a single stale token must not
-    // drop a live cart. Only if the retry also 401s do we wipe
-    // the session.
+    // refresh and re-issue the original request IF the method is
+    // retry-safe. A single stale token must not drop a live cart
+    // — but a stale token must also not cause a POST to be sent
+    // twice.
+    //
+    // ⚠ Retry policy (see `isRetrySafe`):
+    //     • GET / HEAD / OPTIONS — always retried.
+    //     • POST / PUT / PATCH / DELETE — retried only when the
+    //       caller set `_retrySafe: true`. Callers doing a
+    //       non-idempotent write must either supply an idempotency
+    //       key AND set the flag, or accept that a 401 on that
+    //       call will surface to the user.
     if (
       error.response?.status === 401 &&
       !config?._retry &&
       !config?.url?.includes('/auth/')
     ) {
+      const retrySafe = this.isRetrySafe(config);
+
+      if (!retrySafe) {
+        if (!silent) {
+          console.warn(
+            `⚠️ 401 on non-retry-safe ${config?.method?.toUpperCase()} ${config?.url} — surfacing to caller, not retrying`,
+          );
+        }
+        this.clearAuthState();
+        return Promise.reject(error);
+      }
+
       if (!silent) {
         console.warn(
           '⚠️ 401 — attempting one refresh-and-retry before logout',
@@ -441,7 +604,7 @@ class ApiService {
       // the stale backend token.
       this.resetTokenState();
 
-      const original = config ?? {};
+      const original = config ?? ({} as RetryableConfig);
       (original as any)._retry = true;
 
       const freshHeaders = await this.getAuthHeaders();
@@ -576,7 +739,13 @@ class ApiService {
   /**
    * Single place that clears persisted auth state. Called only when
    * a 401 has survived the refresh-and-retry, or when no fresh token
-   * could be obtained.
+   * could be obtained, or when the retry-safety gate refused to
+   * retry a non-idempotent write.
+   *
+   * ⚠ Display currency is intentionally NOT cleared here. The
+   *   payer's preference is orthogonal to auth state; a session
+   *   expiry should not reset their chosen currency. It is only
+   *   cleared by an explicit action in the picker.
    */
   private clearAuthState(): void {
     try {
@@ -1019,3 +1188,13 @@ export const apiService = api;
 // Re-export the pagination symbols for consumers that prefer symbol
 // access to the attached sibling fields.
 export { PAGINATION_KEY, STATS_KEY, SCOPE_KEY };
+
+// Re-export the display-currency storage key so downstream modules
+// (`useDisplayCurrency`, `CurrencyPicker`) do not hardcode the string.
+// Both files must import from here.
+export { DISPLAY_CURRENCY_STORAGE_KEY };
+
+// Re-export the request-config type so callers that build configs
+// programmatically can reference `silent` and `_retrySafe` without
+// redefining the shape.
+export type { SilentableRequestConfig };

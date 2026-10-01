@@ -34,16 +34,31 @@ export type SaleStatus =
   | 'REFUNDED'
   | 'ON_HOLD'
   | 'VOID'
+  | 'RETURNED'
   | 'DELETED';
 
 export type PaymentMethod =
   | 'CASH'
+  | 'CARD'
   | 'CREDIT_CARD'
   | 'DEBIT_CARD'
   | 'MOBILE_MONEY'
+  | 'MOBILE'
+  | 'MPESA'
   | 'BANK_TRANSFER'
+  | 'BANK'
   | 'GIFT_CARD'
+  | 'GIFT'
   | 'LOYALTY_POINTS'
+  | 'LOYALTY'
+  | 'WALLET'
+  | 'SPLIT'
+  | 'MIXED'
+  | 'OTHER'
+  | 'PAYPAL'
+  | 'FLUTTERWAVE'
+  | 'PAYSTACK'
+  | 'SQUARE'
   | 'CRYPTO'
   | 'CHECK';
 
@@ -125,20 +140,6 @@ export interface PromotionPassthrough {
 /**
  * Promotion / loyalty breakdown as returned on a `Sale` row and
  * inside receipt payloads.
- *
- * The `Sale` interface already carries these fields directly.
- * This standalone interface exists so consumers that want to pass
- * just the breakdown around — without the rest of a `Sale` — have
- * a named shape to reach for.
- *
- * `discountType` is typed as `DiscountType | string | null` on the
- * READ side to remain compatible with:
- *   1. sales created before the enum migration ran (whose column was
- *      a free-form TEXT at the time), and
- *   2. any future enum member the frontend hasn't been updated to
- *      know about yet.
- *
- * Narrow it with `isDiscountType()` before rendering a label.
  */
 export interface SaleBreakdown {
   discountType?: DiscountType | string | null;
@@ -146,6 +147,47 @@ export interface SaleBreakdown {
   promotionDiscount?: number;
   loyaltyPointsUsed?: number;
   loyaltyDiscount?: number;
+}
+
+// ============================================
+// PAYMENT CURRENCY (PHASE 2 / D1)
+// ============================================
+
+/**
+ * Per-payment currency audit fields written by the backend.
+ *
+ * ── Ledger currency ─────────────────────────────────────────────
+ *   `currency` is the business unit's ledger currency. It is
+ *   REQUIRED and written on every payment row. All amounts on the
+ *   `Sale` (subtotal, tax, total, items[].unitPrice, items[].total)
+ *   are denominated in this currency.
+ *
+ * ── Display currency ────────────────────────────────────────────
+ *   `displayCurrency` is the payer's chosen view currency, read
+ *   from the `X-Display-Currency` header. It is recorded as an
+ *   AUDIT FACT — never used to mutate any ledger amount.
+ *
+ * ── Charge currency (Phase D1) ──────────────────────────────────
+ *   When the payment gateway bills in a different currency than
+ *   the ledger (a converted card/PayPal/Flutterwave/Paystack/Square
+ *   sale), the backend writes:
+ *
+ *     gatewayCurrency      the currency the gateway actually billed
+ *     gatewayAmount        the amount in `gatewayCurrency`
+ *     exchangeRate         ledger → charge rate applied
+ *     exchangeRateSource   provenance of the rate
+ *
+ *   For ledger-native methods (CASH, BANK_TRANSFER, CHECK,
+ *   GIFT_CARD, LOYALTY_POINTS) and for mobile money, all four are
+ *   `null` — the charge currency IS the ledger currency.
+ */
+export interface PaymentCurrencyAudit {
+  currency?: string;
+  displayCurrency?: string | null;
+  gatewayCurrency?: string | null;
+  gatewayAmount?: number | null;
+  exchangeRate?: number | null;
+  exchangeRateSource?: string | null;
 }
 
 // ============================================
@@ -189,6 +231,21 @@ export interface Sale {
   saleDate: string | Date;
   businessUnitId: string;
   businessUnit?: BusinessUnit;
+
+  /**
+   * ISO 4217 ledger currency, resolved server-side from the
+   * business unit.
+   *
+   * ⚠ Phase 2: every amount on this sale is denominated in this
+   *   currency. Use it to format `subtotal`, `tax`, `total`,
+   *   `items[].unitPrice`, `items[].total`, `paidAmount`,
+   *   `changeAmount`, and every line on `payments[]`.
+   *
+   *   Optional because pre-Phase-2 backend responses don't carry
+   *   it. When absent, fall back to `payments[0].currency`.
+   */
+  currency?: string;
+
   userId: string;
   user?: User;
   customerId?: string | null;
@@ -220,12 +277,35 @@ export interface Sale {
   qrCodes?: QRCodeRecord[];
   createdAt: string | Date;
   updatedAt: string | Date;
+
   /**
    * Optional idempotency key the sale was created with. Only present
-   * on sales that were created with a key — older rows and
-   * non-idempotent create paths leave this undefined.
+   * on sales that were created with a key.
    */
   idempotencyKey?: string | null;
+
+  // ── Phase 3a: display-currency view ───────────────────────────
+  //
+  // Populated ONLY when the payer chose a display currency via
+  // `X-Display-Currency` AND an FX rate was available. Every field
+  // is optional.
+  //
+  // ⚠ These are VIEWS, not ledger amounts. The ledger fields
+  //   (`subtotal`, `total`, `items[].unitPrice`, …) are unchanged.
+  //   An operator must always be able to see the ledger.
+  //
+  // There is no `displayItems` on `Sale` — the sale detail page
+  // renders items individually and applies the display conversion
+  // at render time using `displayRate`.
+  displayCurrency?: string | null;
+  displayRate?: number | null;
+  displayRateSource?: string | null;
+  displaySubtotal?: number;
+  displayTax?: number;
+  displayDiscount?: number;
+  displayTotal?: number;
+  displayPaidAmount?: number;
+  displayChangeAmount?: number;
 }
 
 // ============================================
@@ -237,6 +317,10 @@ export interface SaleItem {
   quantity: number;
   unitPrice: number;
   total: number;
+  /**
+   * Per-line discount on the ledger currency.
+   */
+  discount?: number;
   notes?: string | null;
   saleId: string;
   sale?: Sale;
@@ -395,6 +479,10 @@ export interface SaleSearchParams {
   startDate?: string;
   endDate?: string;
   status?: SaleStatus | string;
+  paymentMethod?: string;
+  minAmount?: number;
+  maxAmount?: number;
+  includeDeleted?: boolean;
   page?: number;
   limit?: number;
   sortBy?: string;
@@ -423,7 +511,7 @@ export interface SaleStats {
 export interface SalesAnalyticsParams {
   startDate?: string;
   endDate?: string;
-  view?: 'daily' | 'weekly' | 'monthly';
+  view?: 'daily' | 'weekly' | 'monthly' | 'hourly';
   businessUnitId?: string;
 }
 
@@ -446,6 +534,7 @@ export interface SalesAnalyticsResponse {
     totalCustomers: number;
     newCustomers: number;
     returningCustomers: number;
+    repeatRate?: number;
   };
   bestCategory: string;
   bestCategorySales: number;
@@ -460,6 +549,8 @@ export interface SalesAnalyticsResponse {
     quantity: number;
     revenue: number;
   }>;
+  totalSales?: number;
+  totalRevenue?: number;
 }
 
 // ============================================
@@ -469,13 +560,14 @@ export interface SalesAnalyticsResponse {
 /**
  * Sales settings as returned by `GET /sales/settings`.
  *
- * ⚠ `currencySymbol` was removed. Phase 1 dropped the persisted
- *   column from `SalesSettings`; the display symbol is now derived
- *   from `currencyCode` via `lib/currencies.ts` on the read path.
- *   The backend service computes it at read time with
- *   `currencyService.tryGetCurrency(currencyCode)?.symbol`, but the
- *   client should not rely on that — derive it locally when a
- *   symbol is needed for rendering.
+ * ⚠ `currencySymbol` is derived, not stored. The backend resolves
+ *   it from `currencyCode` via the currency registry on every read
+ *   and includes it on the response. It is optional because a
+ *   registry entry may not carry a symbol (in which case the
+ *   backend falls back to the code itself).
+ *
+ *   When updating settings, do NOT send `currencySymbol`. The
+ *   backend drops it silently — only `currencyCode` is persisted.
  */
 export interface SalesSettings {
   taxRate: number;
@@ -488,7 +580,8 @@ export interface SalesSettings {
   receiptFooter: string;
   defaultPaymentMethod: string;
   currencyCode: string;
-  // ⚠ `currencySymbol` intentionally absent — see JSDoc above.
+  /** Derived server-side. Never persisted. */
+  currencySymbol?: string;
   invoicePrefix: string;
   receiptPrefix: string;
 }
@@ -498,6 +591,8 @@ export interface SalesSettings {
 // ============================================
 
 export interface DashboardStats {
+  /** ISO 4217 ledger currency for every amount in this response. */
+  currency?: string;
   totalRevenue: number;
   totalSales: number;
   totalCustomers: number;
@@ -527,6 +622,15 @@ export interface ExportSalesParams {
   format: 'CSV' | 'EXCEL' | 'PDF' | 'JSON';
 }
 
+/**
+ * Result of an export call.
+ */
+export interface ExportSalesResult {
+  blob: Blob;
+  format: 'csv' | 'json' | 'excel' | 'pdf';
+  filename: string;
+}
+
 // ============================================
 // CHECKOUT RELATED INTERFACES
 // ============================================
@@ -543,10 +647,15 @@ export interface CheckoutData extends PromotionPassthrough {
   applyLoyaltyPoints?: boolean;
   businessUnitId?: string;
   /**
-   * Idempotency key. When supplied, the same value sent twice results
-   * in the same sale being returned — no duplicate.
+   * Idempotency key. When supplied, the same value sent twice
+   * results in the same sale being returned — no duplicate.
    */
   idempotencyKey?: string;
+  /**
+   * ISO 4217 code of the payer's chosen display currency. Recorded
+   * on the `Payment` row as an audit fact.
+   */
+  displayCurrency?: string | null;
 }
 
 export interface CheckoutResponse {
@@ -566,18 +675,22 @@ export interface CheckoutResponse {
     createdAt: string | Date;
     paymentMethod: PaymentMethod;
 
-    // ── Promotion / loyalty breakdown ──────────────────────────
-    // Populated by the backend's `buildReceiptShape`, which forwards
-    // the corresponding columns from the `Sale` row.
-    //
-    // `discountType` stays widened to `DiscountType | string | null`
-    // so responses from a pre-migration backend still type-check.
-    // Narrow it with `isDiscountType` before rendering a label.
     discountType?: DiscountType | string | null;
     promotionCode?: string | null;
     promotionDiscount?: number;
     loyaltyPointsUsed?: number;
     loyaltyDiscount?: number;
+
+    /**
+     * Ledger currency.
+     */
+    currency?: string;
+
+    // ── Charge-currency audit (Phase D1) ─────────────────────
+    chargeCurrency?: string | null;
+    chargeAmount?: number | null;
+    chargeRate?: number | null;
+    chargeRateSource?: string | null;
   };
   loyaltyPointsEarned: number;
   loyaltyPointsUsed: number;
@@ -602,6 +715,8 @@ export interface CheckoutSummary {
   loyaltyPointsRedeemable: number;
   maxLoyaltyDiscount: number;
   customerId?: string;
+  currency?: string;
+  currencySymbol?: string;
 }
 
 export interface CheckoutStats {
@@ -710,8 +825,6 @@ export interface Company {
 // RE-EXPORT FOR BACKWARD COMPATIBILITY
 // ============================================
 
-// These are already exported from their respective files
-// but re-exporting them here for convenience
 export type { Product, ProductVariant } from './product';
 export type { Customer } from './customer';
 export type { BusinessUnit, User } from './user';

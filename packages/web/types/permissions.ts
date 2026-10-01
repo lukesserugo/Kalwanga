@@ -1012,31 +1012,10 @@ const USER_PERMISSIONS: string[] = [
 export function buildPermissionsForRole(
   role: string | null | undefined
 ): UserPermissions {
-  if (!role) return NO_ACCESS_PERMISSIONS;
-
   if (isSuperAdminRole(role)) {
     return ALL_ACCESS_PERMISSIONS;
   }
-
-  const normalized = String(role).trim().toUpperCase();
-
-  switch (normalized) {
-    case 'ADMIN':
-      return buildPermissionsFromSet(ADMIN_PERMISSIONS);
-    case 'MANAGER':
-      return buildPermissionsFromSet(MANAGER_PERMISSIONS);
-    case 'EDITOR':
-      return buildPermissionsFromSet(EDITOR_PERMISSIONS);
-    case 'VIEWER':
-      return buildPermissionsFromSet(VIEWER_PERMISSIONS);
-    case 'EMPLOYEE':
-      return buildPermissionsFromSet(EMPLOYEE_PERMISSIONS);
-    case 'CASHIER':
-      return buildPermissionsFromSet(CASHIER_PERMISSIONS);
-    case 'USER':
-    default:
-      return buildPermissionsFromSet(USER_PERMISSIONS);
-  }
+  return NO_ACCESS_PERMISSIONS;
 }
 
 // ============================================

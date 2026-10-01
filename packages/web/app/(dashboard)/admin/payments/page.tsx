@@ -81,12 +81,51 @@ import { useThemeStore } from '../../../stores/themeStore';
 import { PaymentReceipt } from '../../../../components/payments/PaymentReceipt';
 
 // ============================================
+// CURRENCY FALLBACK
+// ============================================
+//
+// `formatCurrency` (see `utils/formatters.ts`) deliberately requires
+// a currency code as its second argument. That is a platform
+// invariant: every amount must be rendered in a code that came from
+// the backend at request time.
+//
+// This page reads every Payment row from the backend, so each row's
+// own `currency` column is the authoritative code. The value below
+// is a RENDER-ONLY fallback for the summary figures (which are
+// aggregates and don't carry a single currency) and for the first
+// paint before any Payment row has loaded. It mirrors the backend's
+// `DEFAULT_CURRENCY` precedence chain.
+
+const RENDER_FALLBACK_CURRENCY =
+  process.env.NEXT_PUBLIC_DEFAULT_CURRENCY || 'UGX';
+
+/**
+ * Format an amount using an explicit currency code when one is
+ * available, and the platform render fallback otherwise.
+ *
+ * Every payment row carries its own `currency` — pass it. Only
+ * aggregates (summary totals, method breakdowns) and pre-load
+ * placeholders fall through to the fallback.
+ */
+function fmtAmount(amount: number, currency?: string | null): string {
+  return formatCurrency(
+    amount,
+    currency || RENDER_FALLBACK_CURRENCY,
+  );
+}
+
+// ============================================
 // TYPES
 // ============================================
 
 interface Payment {
   id: string;
   amount: number;
+  currency?: string;
+  gatewayCurrency?: string | null;
+  gatewayAmount?: number | null;
+  exchangeRate?: number | null;
+  exchangeRateSource?: string | null;
   paymentMethod: string;
   status: string;
   reference?: string;
@@ -101,12 +140,14 @@ interface Payment {
     id: string;
     receiptNumber: string;
     total: number;
+    currency?: string;
   };
   orderId?: string;
   order?: {
     id: string;
     orderNumber: string;
     total: number;
+    currency?: string;
   };
   userId: string;
   user?: {
@@ -125,6 +166,7 @@ interface Payment {
   businessUnit?: {
     id: string;
     name: string;
+    currency?: string;
     address?: string;
     phone?: string;
     email?: string;
@@ -141,6 +183,7 @@ interface PaymentSummaryData {
   totalRefunds: number;
   refundCount: number;
   netAmount: number;
+  currency?: string;
 }
 
 interface PaymentFiltersState {
@@ -193,26 +236,25 @@ const PAYMENT_METHOD_ICONS: Record<string, any> = {
   PAYPAL: CreditCard,
   FLUTTERWAVE: Globe,
   SQUARE: CreditCard,
+  MPESA: Smartphone,
+  MTN: Smartphone,
+  AIRTEL: Smartphone,
 };
 
 /**
- * Local icon paths under `packages/web/public/`. Add one SVG per
- * code to restore the images. Until then, the `<Image>` onError
- * handler hides the broken image and the emoji from
- * `PROVIDER_CONFIGS` renders.
+ * Local icon paths under `packages/web/public/`.
  *
- * ⚠ No external CDN dependencies — every request stays on the
- *   deployment's own origin.
+ * ⚠ TIGO and VODAFONE removed — no backend handler exists.
+ * ⚠ PAYSTACK removed — no backend handler exists.
  */
 const PROVIDER_IMAGE_URLS: Record<string, string> = {
   STRIPE: '/icons/payments/stripe.svg',
   PAYPAL: '/icons/payments/paypal.svg',
   FLUTTERWAVE: '/icons/payments/flutterwave.svg',
   SQUARE: '/icons/payments/square.svg',
+  MPESA: '/icons/payments/mpesa.svg',
   MTN: '/icons/payments/mtn.svg',
   AIRTEL: '/icons/payments/airtel.svg',
-  TIGO: '/icons/payments/tigo.svg',
-  VODAFONE: '/icons/payments/vodafone.svg',
   CASH: '/icons/payments/cash.svg',
   MOBILE_MONEY: '/icons/payments/mobile-money.svg',
   BANK_TRANSFER: '/icons/payments/bank-transfer.svg',
@@ -261,8 +303,7 @@ const PROVIDER_CONFIGS: Record<
     bgColor: 'bg-secondary-50 dark:bg-secondary-900/20',
     borderColor: 'border-secondary-200 dark:border-secondary-800',
     textColor: 'text-secondary-600 dark:text-secondary-400',
-    description:
-      'Mobile money payments (M-Pesa, Airtel Money, etc.)',
+    description: 'Mobile money payments (MTN, Airtel Money)',
   },
   BANK_TRANSFER: {
     icon: '🏦',
@@ -313,6 +354,30 @@ const PROVIDER_CONFIGS: Record<
     textColor: 'text-gray-600 dark:text-gray-400',
     description: 'Square payments (Cards, Digital Wallet)',
   },
+  MPESA: {
+    icon: '📱',
+    color: 'green',
+    bgColor: 'bg-success-50 dark:bg-success-900/20',
+    borderColor: 'border-success-200 dark:border-success-800',
+    textColor: 'text-success-600 dark:text-success-400',
+    description: 'M-Pesa STK push (Safaricom)',
+  },
+  MTN: {
+    icon: '📱',
+    color: 'warning',
+    bgColor: 'bg-warning-50 dark:bg-warning-900/20',
+    borderColor: 'border-warning-200 dark:border-warning-800',
+    textColor: 'text-warning-600 dark:text-warning-400',
+    description: 'MTN Mobile Money',
+  },
+  AIRTEL: {
+    icon: '📱',
+    color: 'danger',
+    bgColor: 'bg-danger-50 dark:bg-danger-900/20',
+    borderColor: 'border-danger-200 dark:border-danger-800',
+    textColor: 'text-danger-600 dark:text-danger-400',
+    description: 'Airtel Money',
+  },
 };
 
 const PROVIDER_NAMES: Record<string, string> = {
@@ -325,15 +390,23 @@ const PROVIDER_NAMES: Record<string, string> = {
   PAYPAL: 'PayPal',
   FLUTTERWAVE: 'Flutterwave',
   SQUARE: 'Square',
+  MPESA: 'M-Pesa',
   MTN: 'MTN',
   AIRTEL: 'Airtel',
-  TIGO: 'Tigo',
-  VODAFONE: 'Vodafone',
 };
 
 /**
  * The backend auto-seeds these on first call, so this list is only a
  * fallback for the very first paint (or when the API is unreachable).
+ *
+ * ⚠ `supportedCurrencies` is intentionally EMPTY on every entry.
+ *   The backend's `providerCurrencies()` is the source of truth — it
+ *   reads the registry via `currencyService.listForProvider(...)`
+ *   and `currencyService.listAllSettlement()`. This fallback list
+ *   exists only to keep the UI from crashing when the API is down;
+ *   it must not claim currencies the registry does not, or the
+ *   admin will see a currency badge for a currency the backend
+ *   cannot settle in.
  */
 const DEFAULT_PROVIDERS: PaymentProviderStatus[] = [
   {
@@ -354,7 +427,7 @@ const DEFAULT_PROVIDERS: PaymentProviderStatus[] = [
     config: {
       name: 'Cash',
       type: 'OFFLINE',
-      supportedCurrencies: ['USD', 'TZS', 'KES', 'UGX'],
+      supportedCurrencies: [],
       supportedMethods: ['CASH'],
       description: 'Pay with cash at the counter',
       icon: '💰',
@@ -380,7 +453,7 @@ const DEFAULT_PROVIDERS: PaymentProviderStatus[] = [
     config: {
       name: 'Stripe',
       type: 'ONLINE',
-      supportedCurrencies: ['USD', 'EUR', 'GBP'],
+      supportedCurrencies: [],
       supportedMethods: ['CREDIT_CARD', 'DEBIT_CARD'],
       description: 'Pay with credit card (Visa, Mastercard, Amex)',
       icon: '💳',
@@ -408,9 +481,9 @@ const DEFAULT_PROVIDERS: PaymentProviderStatus[] = [
     config: {
       name: 'Mobile Money',
       type: 'ONLINE',
-      supportedCurrencies: ['TZS', 'KES', 'UGX', 'USD'],
+      supportedCurrencies: [],
       supportedMethods: ['MOBILE_MONEY'],
-      description: 'M-Pesa, Tigo Pesa, Airtel Money',
+      description: 'MTN Mobile Money, Airtel Money',
       icon: '📱',
       minAmount: 1,
       maxAmount: 10000,
@@ -436,7 +509,7 @@ const DEFAULT_PROVIDERS: PaymentProviderStatus[] = [
     config: {
       name: 'Bank Transfer',
       type: 'ONLINE',
-      supportedCurrencies: ['USD', 'TZS', 'KES', 'UGX'],
+      supportedCurrencies: [],
       supportedMethods: ['BANK_TRANSFER'],
       description: 'Direct bank transfer',
       icon: '🏦',
@@ -464,7 +537,7 @@ const DEFAULT_PROVIDERS: PaymentProviderStatus[] = [
     config: {
       name: 'Gift Card',
       type: 'ONLINE',
-      supportedCurrencies: ['USD'],
+      supportedCurrencies: [],
       supportedMethods: ['GIFT_CARD'],
       description: 'Redeem your gift card',
       icon: '🎁',
@@ -492,7 +565,7 @@ const DEFAULT_PROVIDERS: PaymentProviderStatus[] = [
     config: {
       name: 'Loyalty Points',
       type: 'OFFLINE',
-      supportedCurrencies: ['USD'],
+      supportedCurrencies: [],
       supportedMethods: ['LOYALTY_POINTS'],
       description: 'Pay with your loyalty points',
       icon: '⭐',
@@ -520,7 +593,7 @@ const DEFAULT_PROVIDERS: PaymentProviderStatus[] = [
     config: {
       name: 'PayPal',
       type: 'ONLINE',
-      supportedCurrencies: ['USD', 'EUR', 'GBP'],
+      supportedCurrencies: [],
       supportedMethods: ['PAYPAL'],
       description: 'Pay with PayPal',
       icon: '💸',
@@ -548,7 +621,7 @@ const DEFAULT_PROVIDERS: PaymentProviderStatus[] = [
     config: {
       name: 'Flutterwave',
       type: 'ONLINE',
-      supportedCurrencies: ['NGN', 'GHS', 'KES', 'UGX', 'TZS', 'USD'],
+      supportedCurrencies: [],
       supportedMethods: ['FLUTTERWAVE'],
       description:
         'Pay with Flutterwave (Cards, Mobile Money, Bank Transfer)',
@@ -577,7 +650,7 @@ const DEFAULT_PROVIDERS: PaymentProviderStatus[] = [
     config: {
       name: 'Square',
       type: 'ONLINE',
-      supportedCurrencies: ['USD', 'EUR', 'GBP'],
+      supportedCurrencies: [],
       supportedMethods: ['SQUARE'],
       description: 'Pay with Square (Cards, Digital Wallet)',
       icon: '⬜',
@@ -594,21 +667,39 @@ const DEFAULT_PROVIDERS: PaymentProviderStatus[] = [
 // ============================================
 
 /**
- * Resolve the provider name from a payment. Prefers the legacy
- * top-level field, falls back to `metadata.provider` (where the
- * backend actually writes it), then to `gatewayId`.
+ * Resolve the provider code from a payment.
+ *
+ * Priority:
+ *   1. Top-level `provider` field.
+ *   2. `metadata.provider` — canonical for online checkouts.
+ *   3. `gatewayId` — only when it happens to be a known code.
  */
 function resolveProvider(payment: Payment): string | undefined {
   if (payment.provider) return payment.provider;
   const meta = payment.metadata ?? {};
   const metaProvider =
     typeof meta.provider === 'string' ? meta.provider : undefined;
-  return metaProvider || payment.gatewayId || undefined;
+  return metaProvider || undefined;
+}
+
+/**
+ * Read the authoritative currency off a payment row.
+ *
+ * Order: the Payment row's own `currency` (the ledger code the
+ * backend wrote), then the joined Sale's currency, then the joined
+ * BusinessUnit's currency, then the platform render fallback.
+ */
+function paymentCurrency(payment: Payment): string {
+  return (
+    payment.currency ||
+    payment.sale?.currency ||
+    payment.businessUnit?.currency ||
+    RENDER_FALLBACK_CURRENCY
+  );
 }
 
 /**
  * Compute the `startDate` / `endDate` params for a named date range.
- * Kept outside the component so it doesn't need `useCallback`.
  */
 function buildDateRangeParams(
   range: 'today' | 'week' | 'month' | 'quarter' | 'year' | 'custom',
@@ -922,8 +1013,12 @@ export default function AdminPaymentsPage() {
 
       const refunded =
         (result as any)?.refundedAmount ?? refundAmount;
+      const refundedCurrency =
+        (result as any)?.refundedCurrency ||
+        paymentCurrency(selectedPayment);
+
       toast.success(
-        `Refund of ${formatCurrency(refunded)} processed successfully`,
+        `Refund of ${fmtAmount(refunded, refundedCurrency)} processed successfully`,
       );
 
       setShowRefundModal(false);
@@ -1202,6 +1297,9 @@ export default function AdminPaymentsPage() {
     }
 
     const total = summary.totalAmount || 1;
+    const summaryCurrency =
+      summary.currency || RENDER_FALLBACK_CURRENCY;
+
     return Object.entries(summary.byMethod).map(([method, amount]) => {
       const numericAmount = typeof amount === 'number' ? amount : 0;
       const percentage = (numericAmount / total) * 100;
@@ -1227,7 +1325,7 @@ export default function AdminPaymentsPage() {
               <span
                 className={isDark ? 'text-gray-400' : 'text-gray-500'}
               >
-                {formatCurrency(numericAmount)}
+                {fmtAmount(numericAmount, summaryCurrency)}
               </span>
               <span
                 className={isDark ? 'text-gray-300' : 'text-gray-700'}
@@ -1353,6 +1451,9 @@ export default function AdminPaymentsPage() {
   // ============================================
   // RENDER
   // ============================================
+
+  const summaryCurrency =
+    summary?.currency || RENDER_FALLBACK_CURRENCY;
 
   return (
     <div
@@ -1775,7 +1876,10 @@ export default function AdminPaymentsPage() {
         {[
           {
             label: 'Total Revenue',
-            value: formatCurrency(summary?.totalAmount || 0),
+            value: fmtAmount(
+              summary?.totalAmount || 0,
+              summaryCurrency,
+            ),
             icon: DollarSign,
             color:
               'bg-success-100 text-success-600 dark:bg-success-900/30 dark:text-success-400',
@@ -1789,14 +1893,20 @@ export default function AdminPaymentsPage() {
           },
           {
             label: 'Average Amount',
-            value: formatCurrency(summary?.averageAmount || 0),
+            value: fmtAmount(
+              summary?.averageAmount || 0,
+              summaryCurrency,
+            ),
             icon: BarChart3,
             color:
               'bg-secondary-100 text-secondary-600 dark:bg-secondary-900/30 dark:text-secondary-400',
           },
           {
             label: 'Net Amount',
-            value: formatCurrency(summary?.netAmount || 0),
+            value: fmtAmount(
+              summary?.netAmount || 0,
+              summaryCurrency,
+            ),
             icon: TrendingUp,
             color:
               'bg-brand-100 text-brand-600 dark:bg-brand-900/30 dark:text-brand-400',
@@ -2004,6 +2114,8 @@ export default function AdminPaymentsPage() {
                   <option value="PAYPAL">PayPal</option>
                   <option value="FLUTTERWAVE">Flutterwave</option>
                   <option value="SQUARE">Square</option>
+                  <option value="MTN">MTN Mobile Money</option>
+                  <option value="AIRTEL">Airtel Money</option>
                 </select>
               </div>
               <div>
@@ -2038,6 +2150,9 @@ export default function AdminPaymentsPage() {
                   <option value="PAYPAL">PayPal</option>
                   <option value="FLUTTERWAVE">Flutterwave</option>
                   <option value="SQUARE">Square</option>
+                  <option value="MPESA">M-Pesa</option>
+                  <option value="MTN">MTN</option>
+                  <option value="AIRTEL">Airtel</option>
                 </select>
               </div>
               <div>
@@ -2171,6 +2286,7 @@ export default function AdminPaymentsPage() {
                 >
                   {payments.map((payment) => {
                     const resolvedProvider = resolveProvider(payment);
+                    const rowCurrency = paymentCurrency(payment);
                     return (
                       <tr
                         key={payment.id}
@@ -2244,7 +2360,7 @@ export default function AdminPaymentsPage() {
                               isDark ? 'text-white' : 'text-gray-900'
                             }`}
                           >
-                            {formatCurrency(payment.amount)}
+                            {fmtAmount(payment.amount, rowCurrency)}
                           </p>
                         </td>
                         <td className="px-3 py-3">
@@ -2446,7 +2562,10 @@ export default function AdminPaymentsPage() {
                       isDark ? 'text-white' : 'text-gray-900'
                     }`}
                   >
-                    {formatCurrency(selectedPayment.amount)}
+                    {fmtAmount(
+                      selectedPayment.amount,
+                      paymentCurrency(selectedPayment),
+                    )}
                   </p>
                 </div>
                 <div
@@ -2583,7 +2702,12 @@ export default function AdminPaymentsPage() {
                       isDark ? 'text-gray-400' : 'text-gray-500'
                     } tabular-nums`}
                   >
-                    Total: {formatCurrency(selectedPayment.sale.total)}
+                    Total:{' '}
+                    {fmtAmount(
+                      selectedPayment.sale.total,
+                      selectedPayment.sale.currency ||
+                        paymentCurrency(selectedPayment),
+                    )}
                   </p>
                 </div>
               )}
@@ -2709,8 +2833,8 @@ export default function AdminPaymentsPage() {
                   Refund Amount
                 </label>
                 <div className="relative">
-                  <span className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-500">
-                    $
+                  <span className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-500 text-sm font-mono">
+                    {paymentCurrency(selectedPayment)}
                   </span>
                   <input
                     type="number"
@@ -2721,7 +2845,7 @@ export default function AdminPaymentsPage() {
                     min={0}
                     max={selectedPayment.amount}
                     step={0.01}
-                    className={`w-full pl-8 pr-4 py-2 border rounded-lg ${
+                    className={`w-full pl-16 pr-4 py-2 border rounded-lg ${
                       isDark
                         ? 'bg-gray-700 border-gray-600 text-white'
                         : 'bg-white border-gray-300 text-gray-900'
@@ -2733,7 +2857,11 @@ export default function AdminPaymentsPage() {
                     isDark ? 'text-gray-400' : 'text-gray-500'
                   }`}
                 >
-                  Max refund: {formatCurrency(selectedPayment.amount)}
+                  Max refund:{' '}
+                  {fmtAmount(
+                    selectedPayment.amount,
+                    paymentCurrency(selectedPayment),
+                  )}
                 </p>
               </div>
 
@@ -2800,6 +2928,11 @@ export default function AdminPaymentsPage() {
                 reference:
                   selectedPayment.reference || selectedPayment.id,
                 amount: selectedPayment.amount,
+                currency: paymentCurrency(selectedPayment),
+                gatewayCurrency: selectedPayment.gatewayCurrency,
+                gatewayAmount: selectedPayment.gatewayAmount,
+                exchangeRate: selectedPayment.exchangeRate,
+                exchangeRateSource: selectedPayment.exchangeRateSource,
                 paymentMethod: selectedPayment.paymentMethod,
                 status: selectedPayment.status,
                 processedAt: selectedPayment.processedAt,

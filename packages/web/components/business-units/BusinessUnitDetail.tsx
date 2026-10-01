@@ -1,3 +1,5 @@
+// D:\Projects\Kalwanga\packages\web\components\business-units\BusinessUnitDetail.tsx
+
 'use client';
 
 import React, { useState, useEffect, useCallback } from 'react';
@@ -20,6 +22,7 @@ import {
   XCircle,
   Clock,
   Calendar,
+  Coins,
 } from 'lucide-react';
 import {
   businessUnitService,
@@ -27,6 +30,7 @@ import {
   isValidID,
 } from '../../services/businessUnitService';
 import { toast } from '../../utils/toast-manager';
+import { formatCurrency } from '../../utils/formatters';
 import type { BusinessUnitType } from '../../types/businessUnit';
 
 // ============================================
@@ -76,6 +80,16 @@ interface BusinessUnitWithDetails {
   createdAt: string;
   updatedAt: string;
   deletedAt?: string | null;
+
+  /**
+   * The business unit's settlement currency, resolved through the
+   * registry by the backend. Every amount on this page is
+   * denominated in it.
+   */
+  currency?: string;
+
+  /** Display symbol for `currency`, derived at read time. */
+  currencySymbol?: string;
 
   company?: {
     id?: string;
@@ -197,14 +211,18 @@ export function BusinessUnitDetail({ id }: BusinessUnitDetailProps) {
     return labels[type] || type;
   };
 
-  const formatCurrency = (amount: number) => {
-    return new Intl.NumberFormat('en-US', {
-      style: 'currency',
-      currency: 'USD',
-      minimumFractionDigits: 2,
-      maximumFractionDigits: 2,
-    }).format(amount || 0);
-  };
+  // ── Currency for this page ────────────────────────────────────
+  // Read from the business unit. Never hardcoded. When the backend
+  // hasn't sent a currency (older deployments), fall back to the
+  // registry default via the shared formatter — the same formatter
+  // every other page uses. Do NOT define a local `formatCurrency`
+  // that hardcodes a symbol; that is the exact bug class this
+  // component used to have.
+  const ledgerCurrency = unit?.currency ?? 'USD';
+  const ledgerSymbol = unit?.currencySymbol ?? ledgerCurrency;
+
+  const formatAmount = (amount: number) =>
+    formatCurrency(amount || 0, ledgerCurrency);
 
   if (!hasValidId) {
     return null;
@@ -227,8 +245,8 @@ export function BusinessUnitDetail({ id }: BusinessUnitDetailProps) {
             Business Unit Not Found
           </h2>
           <p className="text-gray-500 dark:text-gray-400 mt-2">
-            The business unit you're looking for doesn't exist or has been
-            removed.
+            The business unit you&apos;re looking for doesn&apos;t exist
+            or has been removed.
           </p>
           <button
             onClick={() => router.push('/admin/business-units')}
@@ -260,7 +278,7 @@ export function BusinessUnitDetail({ id }: BusinessUnitDetailProps) {
               </h1>
               {getStatusBadge(unit.isActive)}
             </div>
-            <div className="flex items-center gap-4 mt-1">
+            <div className="flex items-center gap-4 mt-1 flex-wrap">
               <p className="text-gray-600 dark:text-gray-400">
                 Code:{' '}
                 <span className="font-mono font-medium tabular-nums">
@@ -270,13 +288,33 @@ export function BusinessUnitDetail({ id }: BusinessUnitDetailProps) {
               {unit.type && (
                 <p className="text-gray-600 dark:text-gray-400">
                   Type:{' '}
-                  <span className="font-medium">{getTypeLabel(unit.type)}</span>
+                  <span className="font-medium">
+                    {getTypeLabel(unit.type)}
+                  </span>
                 </p>
               )}
+              <p className="text-gray-600 dark:text-gray-400 flex items-center gap-1.5">
+                <Coins className="w-3.5 h-3.5" />
+                Currency:{' '}
+                <span className="font-medium tabular-nums">
+                  {ledgerCurrency}
+                </span>
+                <span className="text-gray-400 dark:text-gray-500">
+                  ({ledgerSymbol})
+                </span>
+              </p>
             </div>
           </div>
         </div>
         <div className="flex flex-wrap gap-2">
+          <Link
+            href="/admin/settings/currency"
+            className="px-4 py-2 border border-gray-300 dark:border-gray-600 hover:bg-orange-50 dark:hover:bg-gray-700 rounded-lg transition-colors flex items-center gap-2 focus-ring"
+            title="Manage this business unit's currency"
+          >
+            <Coins className="w-4 h-4" />
+            Currency Settings
+          </Link>
           <Link
             href={`/admin/business-units/${unit.id}/edit`}
             className="px-4 py-2 bg-brand-gradient text-white rounded-lg shadow-brand hover:shadow-brand-lg transition-all flex items-center gap-2 focus-ring"
@@ -308,7 +346,9 @@ export function BusinessUnitDetail({ id }: BusinessUnitDetailProps) {
           <div className="space-y-3">
             <div className="flex items-center gap-3 text-sm">
               <Building className="w-4 h-4 text-gray-400 flex-shrink-0" />
-              <span className="text-gray-600 dark:text-gray-400">Company:</span>
+              <span className="text-gray-600 dark:text-gray-400">
+                Company:
+              </span>
               <span className="font-medium text-gray-900 dark:text-white">
                 {unit.company?.name || 'N/A'}
               </span>
@@ -405,7 +445,7 @@ export function BusinessUnitDetail({ id }: BusinessUnitDetailProps) {
                 <span className="text-sm font-medium">Revenue</span>
               </div>
               <p className="text-2xl font-bold text-gray-900 dark:text-white tabular-nums">
-                {formatCurrency(stats?.totalRevenue || 0)}
+                {formatAmount(stats?.totalRevenue || 0)}
               </p>
             </div>
           </div>
@@ -445,7 +485,7 @@ export function BusinessUnitDetail({ id }: BusinessUnitDetailProps) {
                     Monthly Revenue:
                   </span>
                   <span className="font-medium text-success-600 dark:text-success-400 tabular-nums">
-                    {formatCurrency(stats.monthlyRevenue)}
+                    {formatAmount(stats.monthlyRevenue)}
                   </span>
                 </div>
               )}
@@ -485,8 +525,21 @@ export function BusinessUnitDetail({ id }: BusinessUnitDetailProps) {
                 {getTypeLabel(unit.type)}
               </span>
             </div>
+            <div className="flex justify-between py-2 border-b border-gray-100 dark:border-gray-700">
+              <span className="text-gray-500 dark:text-gray-400">
+                Settlement Currency
+              </span>
+              <span className="font-medium text-gray-900 dark:text-white tabular-nums">
+                {ledgerCurrency}
+                <span className="ml-1 text-gray-400 dark:text-gray-500">
+                  ({ledgerSymbol})
+                </span>
+              </span>
+            </div>
             <div className="flex justify-between py-2">
-              <span className="text-gray-500 dark:text-gray-400">Status</span>
+              <span className="text-gray-500 dark:text-gray-400">
+                Status
+              </span>
               <span className="font-medium text-gray-900 dark:text-white">
                 {unit.isActive ? 'Active' : 'Inactive'}
               </span>
@@ -515,7 +568,9 @@ export function BusinessUnitDetail({ id }: BusinessUnitDetailProps) {
                 >
                   <div className="flex items-center gap-2">
                     <div className="w-8 h-8 rounded-full bg-gray-200 dark:bg-gray-700 flex items-center justify-center text-sm font-medium text-gray-600 dark:text-gray-300">
-                      {user.user?.firstName?.[0] || user.user?.email?.[0] || 'U'}
+                      {user.user?.firstName?.[0] ||
+                        user.user?.email?.[0] ||
+                        'U'}
                     </div>
                     <div>
                       <p className="text-sm font-medium text-gray-900 dark:text-white">
@@ -582,7 +637,7 @@ export function BusinessUnitDetail({ id }: BusinessUnitDetailProps) {
                   SKU: {product.sku}
                 </p>
                 <p className="text-sm font-semibold text-gray-900 dark:text-white mt-1 tabular-nums">
-                  {formatCurrency(product.unitPrice)}
+                  {formatAmount(product.unitPrice)}
                 </p>
               </div>
             ))}

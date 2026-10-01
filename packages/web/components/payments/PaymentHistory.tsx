@@ -39,10 +39,7 @@ import type {
   Payment as ApiPayment,
   PaymentMetadata,
 } from '../../types/payment';
-import {
-  formatCurrency,
-  formatDateTime,
-} from '../../utils/formatters';
+import { formatCurrency, formatDateTime } from '../../utils/formatters';
 import { toast } from '../../utils/toast-manager';
 import { PaymentReceipt } from './PaymentReceipt';
 
@@ -58,19 +55,14 @@ interface PaymentHistoryProps {
   onPaymentSelect?: (payment: Payment) => void;
 }
 
-/**
- * Local view-model shape. Flattens `metadata.provider` into a
- * top-level `provider` field and lifts `metadata.customerEmail` etc.
- * up to a `customer` object so the render code stays simple.
- *
- * The `metadata` field is preserved so advanced consumers can still
- * reach the raw backend payload (and so the receipt modal can
- * forward it).
- */
 interface Payment {
   id: string;
   amount: number;
   currency?: string;
+  gatewayCurrency?: string | null;
+  gatewayAmount?: number | null;
+  exchangeRate?: number | null;
+  exchangeRateSource?: string | null;
   paymentMethod: string;
   status: string;
   reference?: string;
@@ -106,16 +98,6 @@ interface Payment {
 // ============================================
 // PROVIDER CONSTANTS
 // ============================================
-//
-// Every provider code the backend can write to `metadata.provider`
-// or to the legacy top-level `provider` field. Used by
-// `resolveProvider` to decide whether `gatewayId` is safe to
-// consult (it isn't — it's a PaymentGateway row FK, not a code).
-//
-// ⚠ PAYSTACK has been removed from this project. Historical rows
-//   that carry `metadata.provider: 'PAYSTACK'` will fail the
-//   `KNOWN_PROVIDER_CODES` lookup and fall through to the generic
-//   method label. Everything else about the row renders normally.
 
 const KNOWN_PROVIDER_CODES = new Set<string>([
   'STRIPE',
@@ -135,14 +117,18 @@ const KNOWN_PROVIDER_CODES = new Set<string>([
   'CHECK',
 ]);
 
-/**
- * Local icon paths under `packages/web/public/`. Add one SVG per
- * code to restore the images. Until then, the `onError` fallback
- * hides the broken image and the method icon renders instead.
- *
- * ⚠ No external CDN dependencies — every request stays on the
- *   deployment's own origin.
- */
+const PROVIDER_FILTER_OPTIONS: string[] = [
+  'STRIPE',
+  'PAYPAL',
+  'FLUTTERWAVE',
+  'SQUARE',
+  'MPESA',
+  'MTN',
+  'AIRTEL',
+  'TIGO',
+  'VODAFONE',
+];
+
 const PROVIDER_IMAGE_URLS: Record<string, string> = {
   STRIPE: '/icons/payments/stripe.svg',
   PAYPAL: '/icons/payments/paypal.svg',
@@ -160,12 +146,6 @@ const PROVIDER_IMAGE_URLS: Record<string, string> = {
   LOYALTY_POINTS: '/icons/payments/loyalty-points.svg',
 };
 
-/**
- * @deprecated The dark-mode image map is intentionally empty. If
- *   you later add dark-mode-specific logos, add them here — the
- *   lookup helper falls through to `PROVIDER_IMAGE_URLS` for any
- *   code not present in this map.
- */
 const PROVIDER_DARK_IMAGE_URLS: Record<string, string> = {};
 
 const PAYMENT_METHOD_ICONS: Record<string, LucideIcon> = {
@@ -187,25 +167,6 @@ const PAYMENT_METHOD_ICONS: Record<string, LucideIcon> = {
   VODAFONE: Smartphone,
 };
 
-const PAYMENT_METHOD_EMOJIS: Record<string, string> = {
-  CASH: '💰',
-  CREDIT_CARD: '💳',
-  DEBIT_CARD: '💳',
-  MOBILE_MONEY: '📱',
-  BANK_TRANSFER: '🏦',
-  GIFT_CARD: '🎁',
-  LOYALTY_POINTS: '⭐',
-  CHECK: '📝',
-  PAYPAL: '💸',
-  FLUTTERWAVE: '🌊',
-  SQUARE: '⬜',
-  MPESA: '📱',
-  MTN: '📱',
-  AIRTEL: '📱',
-  TIGO: '📱',
-  VODAFONE: '📱',
-};
-
 const PROVIDER_NAMES: Record<string, string> = {
   STRIPE: 'Stripe',
   CASH: 'Cash',
@@ -223,11 +184,6 @@ const PROVIDER_NAMES: Record<string, string> = {
   VODAFONE: 'Vodafone Cash',
 };
 
-/**
- * Full literal Tailwind class strings for each status. The
- * compiler can only see literal strings, so a helper that
- * interpolates `bg-${color}` never emits a rule.
- */
 const STATUS_BADGE_CLASSES: Record<string, string> = {
   PAID: 'bg-success-100 text-success-700 dark:bg-success-900/30 dark:text-success-300',
   PENDING:
@@ -250,24 +206,12 @@ const STATUS_BADGE_CLASSES: Record<string, string> = {
     'bg-gray-100 text-gray-700 dark:bg-gray-700/50 dark:text-gray-300',
 };
 
-// Backwards-compatible alias — some callers import the old name.
 export const PAYMENT_STATUS_COLORS = STATUS_BADGE_CLASSES;
 
 // ============================================
 // HELPERS
 // ============================================
 
-/**
- * Resolve the provider name from an API Payment.
- *
- * Priority:
- *   1. Top-level `provider` field — if it's a known code.
- *   2. `metadata.provider` — the canonical location the backend
- *      writes on every online checkout.
- *   3. `gatewayId` — ONLY if it happens to be a known provider
- *      code. In practice this is a PaymentGateway row FK, so
- *      consulting it unconditionally would render a UUID.
- */
 function resolveProvider(payment: ApiPayment): string | undefined {
   const meta = (payment.metadata ?? {}) as PaymentMetadata;
   const metaProvider =
@@ -284,35 +228,25 @@ function resolveProvider(payment: ApiPayment): string | undefined {
   return metaProvider || legacy || undefined;
 }
 
-/**
- * For MOBILE_MONEY payments, resolve the actual provider
- * (MPESA / MTN / AIRTEL). Falls back to the generic
- * `MOBILE_MONEY` label when the metadata doesn't carry a
- * specific provider.
- */
-function resolveMobileProvider(
-  payment: ApiPayment,
-): string | undefined {
+function resolveMobileProvider(payment: ApiPayment): string | undefined {
   const meta = (payment.metadata ?? {}) as PaymentMetadata;
   const candidate =
     (typeof meta.provider === 'string' ? meta.provider : undefined) ||
     ((payment as any).provider as string | undefined);
 
   if (!candidate) return undefined;
-  if (candidate === 'MPESA' || candidate === 'MTN' || candidate === 'AIRTEL') {
-    return candidate;
-  }
-  if (candidate === 'TIGO' || candidate === 'VODAFONE') {
+  if (
+    candidate === 'MPESA' ||
+    candidate === 'MTN' ||
+    candidate === 'AIRTEL' ||
+    candidate === 'TIGO' ||
+    candidate === 'VODAFONE'
+  ) {
     return candidate;
   }
   return undefined;
 }
 
-/**
- * Extract a customer view-model from the joined relation or from
- * metadata (online checkouts write `customerName` / `customerEmail`
- * into metadata before a Customer row exists).
- */
 function resolveCustomer(payment: ApiPayment): Payment['customer'] {
   const joined = (payment as any).customer;
   if (joined) {
@@ -346,16 +280,10 @@ function resolveCustomer(payment: ApiPayment): Payment['customer'] {
   return undefined;
 }
 
-/**
- * Map an API `Payment` into the component's local view-model.
- */
 function toViewPayment(payment: ApiPayment): Payment {
   const method = String(payment.paymentMethod);
   const resolvedProvider = resolveProvider(payment);
 
-  // For MOBILE_MONEY, prefer the specific provider (MPESA / MTN /
-  // AIRTEL) over the generic method code, so the row can say
-  // "M-Pesa" instead of "Mobile Money".
   const provider =
     method === 'MOBILE_MONEY'
       ? resolveMobileProvider(payment) || resolvedProvider
@@ -365,10 +293,25 @@ function toViewPayment(payment: ApiPayment): Payment {
   const refundedAmount =
     typeof refundedRaw === 'number' ? refundedRaw : undefined;
 
+  const gatewayCurrencyRaw = (payment as any).gatewayCurrency;
+  const gatewayAmountRaw = (payment as any).gatewayAmount;
+  const exchangeRateRaw = (payment as any).exchangeRate;
+  const exchangeRateSourceRaw = (payment as any).exchangeRateSource;
+
   return {
     id: payment.id,
     amount: payment.amount,
     currency: payment.currency,
+    gatewayCurrency:
+      typeof gatewayCurrencyRaw === 'string' ? gatewayCurrencyRaw : null,
+    gatewayAmount:
+      typeof gatewayAmountRaw === 'number' ? gatewayAmountRaw : null,
+    exchangeRate:
+      typeof exchangeRateRaw === 'number' ? exchangeRateRaw : null,
+    exchangeRateSource:
+      typeof exchangeRateSourceRaw === 'string'
+        ? exchangeRateSourceRaw
+        : null,
     paymentMethod: method,
     status: String(payment.status),
     reference: payment.reference,
@@ -438,16 +381,7 @@ export function PaymentHistory({
   );
   const [showReceiptModal, setShowReceiptModal] = useState(false);
 
-  /**
-   * Guards against overlapping loads. When two `loadPayments` calls
-   * are in flight (e.g. a user clicking Search twice quickly, or a
-   * Search while the mount effect is still resolving), only the
-   * most recent request's response is committed. The ref holds the
-   * id of the latest request; older responses are dropped.
-   */
   const latestRequestIdRef = useRef(0);
-
-  // ── Data loading ─────────────────────────────────────────────
 
   const loadPayments = useCallback(async () => {
     const requestId = ++latestRequestIdRef.current;
@@ -470,8 +404,6 @@ export function PaymentHistory({
 
       const response = await paymentService.getPayments(params);
 
-      // Drop a stale response — a newer request has already been
-      // issued and will commit its own result.
       if (requestId !== latestRequestIdRef.current) return;
 
       const items: ApiPayment[] = Array.isArray(response.data)
@@ -495,9 +427,6 @@ export function PaymentHistory({
         const nextTotalPages = paginationData.totalPages || 1;
         const nextLimit = paginationData.limit || limit;
 
-        // Avoid a redundant state update that would retrigger
-        // the mount effect. If nothing changed, return the
-        // previous object so React bails out of the re-render.
         if (
           prev.page === nextPage &&
           prev.total === nextTotal &&
@@ -536,10 +465,6 @@ export function PaymentHistory({
     limit,
   ]);
 
-  // Load on mount and whenever the effective query changes. The
-  // dependency array lists scalars explicitly instead of relying
-  // on the identity of the `filters` object, which changes on
-  // every keystroke and would cause a fetch storm.
   useEffect(() => {
     void loadPayments();
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -554,18 +479,12 @@ export function PaymentHistory({
     filters.endDate,
   ]);
 
-  // ── Handlers ─────────────────────────────────────────────────
-
   const handleRefresh = useCallback(() => {
     void loadPayments();
     toast.success('Payments refreshed');
   }, [loadPayments]);
 
   const handleSearch = useCallback(() => {
-    // Reset the page. The `useEffect` above will fire when
-    // `pagination.page` changes and issue exactly one fetch. If
-    // the page is already 1, we issue the fetch directly so the
-    // search doesn't silently no-op.
     if (pagination.page !== 1) {
       setPagination((prev) => ({ ...prev, page: 1 }));
     } else {
@@ -599,8 +518,6 @@ export function PaymentHistory({
     setPagination((prev) => ({ ...prev, page: 1 }));
   }, []);
 
-  // ── Lookups ──────────────────────────────────────────────────
-
   const getProviderImageUrl = useCallback(
     (provider?: string): string => {
       if (!provider) return '';
@@ -614,10 +531,6 @@ export function PaymentHistory({
   const getProviderName = useCallback((provider?: string): string => {
     if (!provider) return 'N/A';
     return PROVIDER_NAMES[provider] || provider;
-  }, []);
-
-  const getPaymentMethodEmoji = useCallback((method: string): string => {
-    return PAYMENT_METHOD_EMOJIS[method] || '💳';
   }, []);
 
   const getStatusColor = useCallback((status: string) => {
@@ -635,26 +548,15 @@ export function PaymentHistory({
     [],
   );
 
-  /**
-   * Human-readable label for the payment method. For MOBILE_MONEY
-   * this returns the specific provider name (M-Pesa / MTN / Airtel)
-   * rather than the generic "mobile money".
-   */
-  const paymentMethodLabel = useCallback(
-    (payment: Payment): string => {
-      if (payment.paymentMethod === 'MOBILE_MONEY') {
-        if (payment.provider && PROVIDER_NAMES[payment.provider]) {
-          return PROVIDER_NAMES[payment.provider];
-        }
-        return 'Mobile Money';
-      }
-      if (payment.provider && PROVIDER_NAMES[payment.provider]) {
-        return PROVIDER_NAMES[payment.provider];
-      }
-      return payment.paymentMethod.toLowerCase().replace(/_/g, ' ');
-    },
-    [],
-  );
+  const paymentMethodLabel = useCallback((payment: Payment): string => {
+    if (payment.provider && PROVIDER_NAMES[payment.provider]) {
+      return PROVIDER_NAMES[payment.provider];
+    }
+    if (payment.paymentMethod === 'MOBILE_MONEY') {
+      return 'Mobile Money';
+    }
+    return payment.paymentMethod.toLowerCase().replace(/_/g, ' ');
+  }, []);
 
   const getStatusIcon = useCallback(
     (status: string): JSX.Element => {
@@ -677,16 +579,13 @@ export function PaymentHistory({
     [],
   );
 
-  // ── Derived ──────────────────────────────────────────────────
-
   const providerOptions = useMemo(() => {
     const fromPage = payments
       .map((p) => p.provider)
       .filter((v): v is string => !!v);
-    const fromConstants = Object.keys(PROVIDER_NAMES);
-    return Array.from(new Set([...fromConstants, ...fromPage])).sort(
-      (a, b) => a.localeCompare(b),
-    );
+    return Array.from(
+      new Set([...PROVIDER_FILTER_OPTIONS, ...fromPage]),
+    ).sort((a, b) => a.localeCompare(b));
   }, [payments]);
 
   return (
@@ -943,6 +842,11 @@ export function PaymentHistory({
               );
               const providerName = getProviderName(payment.provider);
               const methodLabel = paymentMethodLabel(payment);
+              const hasConversion =
+                !!payment.gatewayCurrency &&
+                payment.gatewayCurrency.toUpperCase() !==
+                  (payment.currency ?? '').toUpperCase() &&
+                typeof payment.gatewayAmount === 'number';
 
               return (
                 <div
@@ -955,7 +859,6 @@ export function PaymentHistory({
                 >
                   <div className="flex flex-wrap items-start justify-between gap-3">
                     <div className="flex items-start gap-3">
-                      {/* Provider Logo or Icon */}
                       <div
                         className={`p-2 rounded-lg ${getStatusColor(
                           payment.status,
@@ -988,8 +891,26 @@ export function PaymentHistory({
                               isDark ? 'text-white' : 'text-gray-900'
                             }`}
                           >
-                            {formatCurrency(payment.amount)}
+                            {formatCurrency(
+                              payment.amount,
+                              payment.currency ?? '',
+                            )}
                           </p>
+                          {hasConversion && (
+                            <span
+                              className={`px-2 py-0.5 text-2xs font-medium rounded-full ${
+                                isDark
+                                  ? 'bg-brand-900/40 text-brand-300'
+                                  : 'bg-brand-100 text-brand-700'
+                              }`}
+                              title={`Charged in ${payment.gatewayCurrency}`}
+                            >
+                              {payment.gatewayCurrency}{' '}
+                              {typeof payment.gatewayAmount === 'number'
+                                ? payment.gatewayAmount.toFixed(2)
+                                : ''}
+                            </span>
+                          )}
                           <span
                             className={`px-2 py-0.5 text-2xs font-medium rounded-full flex items-center gap-1 ${getStatusColor(
                               payment.status,
@@ -1165,13 +1086,6 @@ export function PaymentHistory({
       {showReceiptModal && selectedPayment && (
         <div className="fixed inset-0 z-modal flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm overflow-y-auto custom-scrollbar animate-fade-in">
           <div className="max-w-2xl w-full">
-            {/*
-              Keyed on the payment id so React remounts the receipt
-              when the user switches payments without closing the
-              modal. Resets any internal state (scroll position,
-              transient copy indicator) that would otherwise leak
-              between views.
-            */}
             <PaymentReceipt
               key={selectedPayment.id}
               payment={{
@@ -1179,12 +1093,15 @@ export function PaymentHistory({
                 reference:
                   selectedPayment.reference || selectedPayment.id,
                 amount: selectedPayment.amount,
+                currency: selectedPayment.currency,
+                gatewayCurrency: selectedPayment.gatewayCurrency,
+                gatewayAmount: selectedPayment.gatewayAmount,
+                exchangeRate: selectedPayment.exchangeRate,
+                exchangeRateSource: selectedPayment.exchangeRateSource,
                 paymentMethod: selectedPayment.paymentMethod,
                 status: selectedPayment.status,
                 processedAt: selectedPayment.processedAt,
                 provider: selectedPayment.provider,
-                // Forwarded so the receipt can render the
-                // M-Pesa CheckoutRequestID / MTN transaction id.
                 metadata: selectedPayment.metadata,
                 sale: selectedPayment.sale
                   ? {

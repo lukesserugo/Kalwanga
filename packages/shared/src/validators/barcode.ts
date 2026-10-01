@@ -13,7 +13,7 @@ import {
   type GenerateBarcodeInput,
   type ScanBarcodeInput,
   type ValidateBarcodeInput,
-} from "../schemas/barcode";
+} from "../../../shared/src/schemas/barcode";
 
 export class BarcodeValidation {
   static validateGenerateBarcode(data: unknown): GenerateBarcodeInput {

@@ -1,6 +1,6 @@
 ﻿// packages/mobile/hooks/useTheme.ts
-import { useColorScheme } from "react-native";
 import { useMemo } from "react";
+import { useThemeStore } from "../stores/themeStore";
 
 // ============================================
 // THEME TYPES
@@ -235,8 +235,18 @@ function getShadows(isDark: boolean): ThemeShadows {
 // ============================================
 
 export function useTheme() {
-  const colorScheme = useColorScheme();
-  const isDark = colorScheme === "dark";
+  // ── Theme source ─────────────────────────────────────────
+  // The active theme is driven by `themeStore.isDark`, NOT by
+  // `useColorScheme()`. That makes the exposed `toggleTheme`
+  // actually switch the palette at runtime; the previous version
+  // read from the OS and the toggle only flipped a value nothing
+  // consumed.
+  //
+  // If you later want "follow OS by default, manual override wins",
+  // the store should carry a tri-state (`'light' | 'dark' | null`)
+  // and this hook would resolve `storeOverride ?? osScheme`.
+  const isDark = useThemeStore((s) => s.isDark);
+  const toggleTheme = useThemeStore((s) => s.toggleTheme);
 
   const theme = useMemo((): Theme => {
     const colors = isDark ? darkColors : lightColors;
@@ -352,6 +362,7 @@ export function useTheme() {
     typography: theme.typography,
     shadows: theme.shadows,
     isDark: theme.isDark,
+    toggleTheme,
     borderRadius: theme.borderRadius,
 
     getColorWithOpacity,

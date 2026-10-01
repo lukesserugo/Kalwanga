@@ -79,6 +79,59 @@ import {
 } from '../../../../../services/paymentService';
 
 // ============================================
+// CURRENCY RESOLUTION
+// ============================================
+//
+// `formatCurrency` (see `utils/formatters.ts`) requires a currency
+// code by design — the platform invariant is that every amount is
+// rendered in a code that came from the backend at request time.
+//
+// Provider aggregate volume figures on this page sum across many
+// payments. Each Payment row has its own `currency` column, but the
+// provider endpoint currently returns aggregates WITHOUT a currency
+// code. Until the backend includes a `currency` field on the
+// provider response, we resolve the display code from the deployment
+// env. A caller-supplied `provider.currency` (added below as an
+// optional field) wins when present.
+//
+// ⚠ No hardcoded fallback in this file. The env var MUST be set on
+//   the deployment; `formatCurrency` will surface an unknown code as
+//   a bare number, which is preferable to silently rendering the
+//   wrong symbol.
+
+/**
+ * Resolve the currency code for a provider's aggregate volume.
+ *
+ * Priority:
+ *   1. `provider.currency` — the row's own code (when the backend
+ *      is updated to include one).
+ *   2. `NEXT_PUBLIC_DEFAULT_CURRENCY` — the deployment's settlement
+ *      currency, set at build time.
+ *   3. `''` — empty string. `formatCurrency` renders a bare number
+ *      when given an empty code, which is honest about the missing
+ *      code. Never a `$`, never a `UGX`.
+ */
+function resolveProviderCurrency(
+  provider: { currency?: string | null } | null | undefined,
+): string {
+  return (
+    provider?.currency ||
+    process.env.NEXT_PUBLIC_DEFAULT_CURRENCY ||
+    ''
+  );
+}
+
+/**
+ * Resolve the currency code for the "Total 24h/30d Volume" summary
+ * cards. These sum across ALL providers, so no single row's currency
+ * applies. The deployment's settlement currency is the only honest
+ * choice.
+ */
+function resolveAggregateCurrency(): string {
+  return process.env.NEXT_PUBLIC_DEFAULT_CURRENCY || '';
+}
+
+// ============================================
 // TYPES
 // ============================================
 
@@ -104,6 +157,13 @@ interface PaymentProvider extends PaymentProviderStatus {
   volume7d: number;
   transactions30d: number;
   volume30d: number;
+  /**
+   * Optional settlement currency code. The backend does not yet
+   * return this on provider rows; when it does, it wins over the
+   * deployment env default. Every `formatCurrency` call on this
+   * page routes through `resolveProviderCurrency`.
+   */
+  currency?: string | null;
   config: {
     name: string;
     type: string;
@@ -165,10 +225,20 @@ interface UpdateProviderData {
 
 /**
  * Normalize a raw backend provider row into the local view-model.
- * Every field is coerced to a safe default so the render code never
- * sees `undefined` where it expects a value.
+ *
+ * ⚠ `supportedCurrencies` defaults to `[]`, NOT `['USD']`. The
+ *   backend's `providerCurrencies()` is the source of truth — a
+ *   provider with no currencies in the response is a provider the
+ *   backend has not yet resolved. Rendering `['USD']` would claim
+ *   the provider settles in USD when the registry may say otherwise.
+ *
+ * ⚠ `currency` is passed through verbatim from the raw row when
+ *   present. When absent, it stays `undefined` and the render path
+ *   resolves from env via `resolveProviderCurrency`.
  */
-function toViewProvider(raw: Partial<PaymentProviderStatus>): PaymentProvider {
+function toViewProvider(raw: Partial<PaymentProviderStatus> & {
+  currency?: string | null;
+}): PaymentProvider {
   const providerCode = (raw.provider || raw.code || 'UNKNOWN') as string;
   const type = (raw.type || 'ONLINE') as 'ONLINE' | 'OFFLINE' | 'HYBRID';
 
@@ -187,11 +257,12 @@ function toViewProvider(raw: Partial<PaymentProviderStatus>): PaymentProvider {
     volume7d: raw.volume7d ?? 0,
     transactions30d: raw.transactions30d ?? 0,
     volume30d: raw.volume30d ?? 0,
+    currency: raw.currency ?? null,
     config: raw.config
       ? {
           name: raw.config.name || raw.name || providerCode,
           type: raw.config.type || type.toLowerCase(),
-          supportedCurrencies: raw.config.supportedCurrencies || ['USD'],
+          supportedCurrencies: raw.config.supportedCurrencies || [],
           supportedMethods: raw.config.supportedMethods || [],
           description:
             raw.config.description ||
@@ -205,7 +276,7 @@ function toViewProvider(raw: Partial<PaymentProviderStatus>): PaymentProvider {
       : {
           name: raw.name || providerCode,
           type: type.toLowerCase(),
-          supportedCurrencies: ['USD'],
+          supportedCurrencies: [],
           supportedMethods: [],
           description: `${raw.name || providerCode} payment provider`,
           icon: '💳',
@@ -225,10 +296,10 @@ function toViewProvider(raw: Partial<PaymentProviderStatus>): PaymentProvider {
 // CONSTANTS
 // ============================================
 //
-// ⚠ PAYSTACK has been removed from this project. Historical rows
-//   with `provider === 'PAYSTACK'` fall through to the generic
-//   defaults (`CreditCard` icon, default gradient, raw code as
-//   display name).
+// ⚠ PAYSTACK, TIGO, and VODAFONE have been removed from this
+//   project — no backend handler exists for any of them. Historical
+//   rows with those codes fall through to the generic defaults
+//   (`CreditCard` icon, default gradient, raw code as display name).
 //
 // Icon URLs are local paths under `packages/web/public/`. Add one
 // SVG per code to restore the images. Until then, the `<Image>`
@@ -240,10 +311,9 @@ const PROVIDER_IMAGE_URLS: Record<string, string> = {
   PAYPAL: '/icons/payments/paypal.svg',
   FLUTTERWAVE: '/icons/payments/flutterwave.svg',
   SQUARE: '/icons/payments/square.svg',
+  MPESA: '/icons/payments/mpesa.svg',
   MTN: '/icons/payments/mtn.svg',
   AIRTEL: '/icons/payments/airtel.svg',
-  TIGO: '/icons/payments/tigo.svg',
-  VODAFONE: '/icons/payments/vodafone.svg',
   CASH: '/icons/payments/cash.svg',
   MOBILE_MONEY: '/icons/payments/mobile-money.svg',
   BANK_TRANSFER: '/icons/payments/bank-transfer.svg',
@@ -269,10 +339,9 @@ const PROVIDER_ICONS: Record<string, any> = {
   PAYPAL: CreditCard,
   FLUTTERWAVE: CreditCard,
   SQUARE: CreditCard,
+  MPESA: Smartphone,
   MTN: Smartphone,
   AIRTEL: Smartphone,
-  TIGO: Smartphone,
-  VODAFONE: Smartphone,
 };
 
 const PROVIDER_COLORS: Record<string, string> = {
@@ -285,10 +354,9 @@ const PROVIDER_COLORS: Record<string, string> = {
   PAYPAL: 'from-primary-400 to-sky-500',
   FLUTTERWAVE: 'from-emerald-500 to-teal-600',
   SQUARE: 'from-gray-700 to-gray-900',
+  MPESA: 'from-success-500 to-emerald-600',
   MTN: 'from-warning-500 to-amber-600',
   AIRTEL: 'from-danger-500 to-rose-600',
-  TIGO: 'from-primary-500 to-indigo-600',
-  VODAFONE: 'from-danger-600 to-danger-800',
 };
 
 const PROVIDER_TYPE_LABELS: Record<string, string> = {
@@ -325,7 +393,7 @@ const EMPTY_NEW_PROVIDER: CreateProviderData = {
   config: {
     name: '',
     type: 'online',
-    supportedCurrencies: ['USD'],
+    supportedCurrencies: [],
     supportedMethods: [],
     description: '',
     icon: '💳',
@@ -371,14 +439,11 @@ export default function PaymentProvidersPage() {
     canView(PermissionResource.PAYMENT) ||
     canView(PermissionResource.SETTINGS);
 
-  // ============================================
-  // DATA FETCHING
-  // ============================================
-  //
-  // `paymentService.getPaymentProviders()` returns
-  // `{ success: boolean, data: PaymentProviderStatus[] }`.
-  // Older service versions returned a bare array. The unwrap
-  // handles both, plus the error envelope case.
+  // ── Currency for aggregate totals ──────────────────────────
+  // Stable for the lifetime of the page — env var, not state.
+  const aggregateCurrency = useMemo(() => resolveAggregateCurrency(), []);
+
+  // ── Data fetching ──────────────────────────────────────────
 
   const fetchProviders = useCallback(async () => {
     try {
@@ -437,9 +502,7 @@ export default function PaymentProvidersPage() {
     toast.success('Providers refreshed');
   }, [fetchProviders]);
 
-  // ============================================
-  // FILTERS & SEARCH
-  // ============================================
+  // ── Filters & search ───────────────────────────────────────
 
   const filteredProviders = useMemo(() => {
     let filtered = providers;
@@ -473,9 +536,7 @@ export default function PaymentProvidersPage() {
     return filtered;
   }, [providers, searchQuery, filterType, filterStatus]);
 
-  // ============================================
-  // CRUD OPERATIONS
-  // ============================================
+  // ── CRUD operations ────────────────────────────────────────
 
   const handleAddProvider = useCallback(async () => {
     try {
@@ -697,9 +758,7 @@ export default function PaymentProvidersPage() {
     }
   }, [selectedProvider]);
 
-  // ============================================
-  // UI HELPERS
-  // ============================================
+  // ── UI helpers ─────────────────────────────────────────────
 
   const getStatusColor = useCallback((status: string) => {
     return (
@@ -732,15 +791,30 @@ export default function PaymentProvidersPage() {
     return PROVIDER_TYPE_LABELS[type] || type;
   }, []);
 
-  const formatNumber = useCallback((num: number) => {
-    if (num >= 1000000) return (num / 1000000).toFixed(1) + 'M';
-    if (num >= 1000) return (num / 1000).toFixed(1) + 'K';
-    return num.toString();
-  }, []);
+  /**
+   * Format a provider's aggregate volume in its own resolved
+   * currency. When the provider row carries no `currency` and the
+   * deployment env has no default, `formatCurrency` renders a bare
+   * number — never a fabricated symbol.
+   */
+  const fmtProviderAmount = useCallback(
+    (amount: number, provider: PaymentProvider): string =>
+      formatCurrency(amount, resolveProviderCurrency(provider)),
+    [],
+  );
 
-  // ============================================
-  // PERMISSION GATE
-  // ============================================
+  /**
+   * Format a page-level aggregate (sum across providers) in the
+   * deployment's settlement currency. Same fallback contract as
+   * above.
+   */
+  const fmtAggregateAmount = useCallback(
+    (amount: number): string =>
+      formatCurrency(amount, aggregateCurrency),
+    [aggregateCurrency],
+  );
+
+  // ── Permission gate ────────────────────────────────────────
 
   if (!canViewProviders) {
     return (
@@ -764,9 +838,7 @@ export default function PaymentProvidersPage() {
     );
   }
 
-  // ============================================
-  // LOADING
-  // ============================================
+  // ── Loading ────────────────────────────────────────────────
 
   if (loading) {
     return (
@@ -898,27 +970,29 @@ export default function PaymentProvidersPage() {
                 24h Volume
               </p>
               <p className="text-lg font-semibold tabular-nums text-gray-900 dark:text-white">
-                {formatCurrency(provider.volume24h || 0)}
+                {fmtProviderAmount(provider.volume24h || 0, provider)}
               </p>
             </div>
           </div>
 
-          <div className="flex flex-wrap gap-2">
-            {(provider.config?.supportedCurrencies || []).map(
-              (currency) => (
-                <span
-                  key={currency}
-                  className={`px-2 py-0.5 rounded text-2xs font-medium ${
-                    isDark
-                      ? 'bg-gray-700 text-gray-300'
-                      : 'bg-gray-100 text-gray-600'
-                  }`}
-                >
-                  {currency}
-                </span>
-              ),
-            )}
-          </div>
+          {(provider.config?.supportedCurrencies || []).length > 0 && (
+            <div className="flex flex-wrap gap-2">
+              {(provider.config?.supportedCurrencies || []).map(
+                (currency) => (
+                  <span
+                    key={currency}
+                    className={`px-2 py-0.5 rounded text-2xs font-medium ${
+                      isDark
+                        ? 'bg-gray-700 text-gray-300'
+                        : 'bg-gray-100 text-gray-600'
+                    }`}
+                  >
+                    {currency}
+                  </span>
+                ),
+              )}
+            </div>
+          )}
 
           {provider.config?.description && (
             <p
@@ -1127,7 +1201,7 @@ export default function PaymentProvidersPage() {
               isDark ? 'text-white' : 'text-gray-900'
             }`}
           >
-            {formatCurrency(provider.volume24h || 0)}
+            {fmtProviderAmount(provider.volume24h || 0, provider)}
           </p>
           <p
             className={`text-xs tabular-nums ${
@@ -1143,7 +1217,7 @@ export default function PaymentProvidersPage() {
               isDark ? 'text-white' : 'text-gray-900'
             }`}
           >
-            {formatCurrency(provider.volume30d || 0)}
+            {fmtProviderAmount(provider.volume30d || 0, provider)}
           </p>
           <p
             className={`text-xs tabular-nums ${
@@ -1356,12 +1430,12 @@ export default function PaymentProvidersPage() {
             },
             {
               label: '24h Volume',
-              value: `$${formatNumber(
+              value: fmtAggregateAmount(
                 providers.reduce(
                   (sum, p) => sum + (p.volume24h || 0),
                   0,
                 ),
-              )}`,
+              ),
               icon: TrendingUp,
               color:
                 'bg-secondary-100 text-secondary-600 dark:bg-secondary-900/30 dark:text-secondary-400',
@@ -1610,7 +1684,7 @@ export default function PaymentProvidersPage() {
                     isDark ? 'text-white' : 'text-gray-900'
                   }`}
                 >
-                  {formatCurrency(
+                  {fmtAggregateAmount(
                     filteredProviders.reduce(
                       (sum, p) => sum + (p.volume24h || 0),
                       0,
@@ -1631,7 +1705,7 @@ export default function PaymentProvidersPage() {
                     isDark ? 'text-white' : 'text-gray-900'
                   }`}
                 >
-                  {formatCurrency(
+                  {fmtAggregateAmount(
                     filteredProviders.reduce(
                       (sum, p) => sum + (p.volume30d || 0),
                       0,
@@ -2039,7 +2113,7 @@ export default function PaymentProvidersPage() {
                           ? 'bg-gray-700 border-gray-600 text-white placeholder-gray-400'
                           : 'bg-white border-gray-300 text-gray-900 placeholder-gray-500'
                       }`}
-                      placeholder="USD, EUR, GBP"
+                      placeholder="Comma-separated ISO codes, e.g. UGX, KES"
                     />
                   </div>
                   <div className="flex justify-end gap-3 pt-4 border-t border-gray-200 dark:border-gray-700">
@@ -2287,7 +2361,7 @@ export default function PaymentProvidersPage() {
                           ? 'bg-gray-700 border-gray-600 text-white placeholder-gray-400'
                           : 'bg-white border-gray-300 text-gray-900 placeholder-gray-500'
                       }`}
-                      placeholder="USD, EUR, GBP"
+                      placeholder="Comma-separated ISO codes, e.g. UGX, KES"
                     />
                   </div>
                   <div className="flex justify-end gap-3 pt-4 border-t border-gray-200 dark:border-gray-700">

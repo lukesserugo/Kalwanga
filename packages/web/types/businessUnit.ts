@@ -55,6 +55,29 @@ export interface BusinessUnit {
   companyId: string;
   isActive: boolean;
   type?: BusinessUnitType;
+  /**
+   * ISO 4217 settlement currency.
+   *
+   * This is the AUTHORITATIVE ledger currency for every cart, sale,
+   * payment, receipt, and report belonging to this business unit.
+   * Resolved server-side through the registry in
+   * `packages/backend/src/lib/currencies.ts` — never hardcoded on the
+   * client.
+   *
+   * Changing it goes through `PATCH /business-units/:id/currency`
+   * (see `changeBusinessUnitCurrency` in the admin currency settings
+   * page), which runs a dirty-record check and, when the BU has any
+   * non-terminal carts, sales, payments, orders, or invoices, requires
+   * an explicit conversion rate.
+   */
+  currency?: string;
+  /**
+   * Display symbol for `currency`, derived at read time from the
+   * registry. NEVER persisted — the code is the single source of
+   * truth; the symbol is a view. If the registry has no symbol for
+   * the code, the code itself stands in.
+   */
+  currencySymbol?: string;
   createdAt: string;
   updatedAt: string;
   deletedAt?: string | null;
@@ -121,6 +144,18 @@ export interface CreateBusinessUnitDto {
   companyId: string;
   isActive?: boolean;
   type?: BusinessUnitType;
+  /**
+   * ISO 4217 settlement currency for the new business unit.
+   *
+   * Must be a `settlementAllowed: true` code per the backend registry.
+   * The backend rejects unknown or display-only codes with a 400. When
+   * omitted, the platform default (`DEFAULT_CURRENCY_CODE`) applies.
+   *
+   * Set at creation time. Changing it later goes through
+   * `PATCH /business-units/:id/currency`, not through
+   * `UpdateBusinessUnitDto`.
+   */
+  currency?: string;
 }
 
 export interface UpdateBusinessUnitDto {
@@ -131,6 +166,18 @@ export interface UpdateBusinessUnitDto {
   email?: string | null;
   isActive?: boolean;
   type?: BusinessUnitType;
+  // ⚠ `currency` is intentionally NOT declared here.
+  //
+  //   Currency changes do not go through this DTO. They go through
+  //   `PATCH /business-units/:id/currency`, which runs a dirty-record
+  //   check and, when the BU has non-terminal records, requires an
+  //   explicit conversion rate. Sending `currency` on this DTO would
+  //   either silently swap (clean BU, no audit trail beyond the
+  //   generic PUT) or 409 with no way to collect a rate on the client.
+  //
+  //   If a future refactor needs to send currency on PUT, that is a
+  //   decision that must be made deliberately — do not just add the
+  //   field back. The dedicated endpoint exists for a reason.
 }
 
 export interface AddUserToBusinessUnitDto {
@@ -144,6 +191,100 @@ export interface RemoveUserFromBusinessUnitDto {
 
 export interface BulkDeleteBusinessUnitsDto {
   ids: string[];
+}
+
+/**
+ * Body accepted by `PATCH /business-units/:id/currency`.
+ *
+ * This is the ONLY DTO that carries a currency change. It is not
+ * `UpdateBusinessUnitDto` — currency changes have different semantics
+ * (dirty-record gating, optional conversion rate) and deserve their
+ * own shape.
+ */
+export interface ChangeBusinessUnitCurrencyDto {
+  /** The target settlement currency (3-char ISO 4217 code). */
+  targetCurrency: string;
+  /**
+   * When the BU has dirty records, the admin must set this to `true`
+   * to acknowledge that a conversion will run. Without it, the service
+   * logs a blocked-change audit entry and returns 409 with the dirty
+   * counts.
+   */
+  acknowledgeDirtyRecords?: boolean;
+  /**
+   * Rate to apply for the conversion (`from → to`). Required when
+   * dirty records exist and `acknowledgeDirtyRecords` is `true`.
+   * Ignored otherwise.
+   */
+  conversionRate?: number;
+  /** Optional reason for the audit log. */
+  reason?: string | null;
+}
+
+/**
+ * Body accepted by `POST /business-units/:id/currency/convert`.
+ *
+ * Same shape as `ChangeBusinessUnitCurrencyDto`, but the service
+ * forces `acknowledgeDirtyRecords` to `true` — this endpoint exists
+ * specifically to run a conversion, so acknowledgement is implied.
+ * `conversionRate` remains required.
+ */
+export interface ConvertBusinessUnitCurrencyDto {
+  targetCurrency: string;
+  conversionRate: number;
+  reason?: string | null;
+}
+
+/**
+ * Response shape from `GET /business-units/:id/currency/preview`.
+ *
+ * Read-only. Never mutates. `suggestedRate` may be `null` when no
+ * provider rate is available — the admin can still supply a manual
+ * rate.
+ */
+export interface BusinessUnitCurrencyPreview {
+  businessUnitId: string;
+  currentCurrency: string;
+  targetCurrency: string;
+  dirtyCounts: {
+    carts: number;
+    sales: number;
+    payments: number;
+    orders: number;
+    invoices: number;
+  };
+  suggestedRate: number | null;
+  rateSource: string | null;
+}
+
+/**
+ * Response shape from `PATCH /business-units/:id/currency` and
+ * `POST /business-units/:id/currency/convert`.
+ *
+ * `mode` distinguishes the two paths the service can take:
+ *   • `simple`   — the BU was clean, currency was swapped directly.
+ *   • `migrated` — the BU had dirty records, a conversion ran.
+ */
+export interface BusinessUnitCurrencyChangeResult {
+  businessUnit: BusinessUnit | null;
+  mode: 'simple' | 'migrated';
+  fromCurrency: string;
+  toCurrency: string;
+  dirtyCounts?: {
+    carts: number;
+    sales: number;
+    payments: number;
+    orders: number;
+    invoices: number;
+  };
+  conversionRate?: number;
+  convertedRecords?: {
+    carts: number;
+    sales: number;
+    payments: number;
+    orders: number;
+    invoices: number;
+  };
 }
 
 // ============================================
@@ -227,6 +368,8 @@ export function isValidBusinessUnitId(id: string): boolean {
     'test',
     'new',
     'edit',
+    'current',
+    'currency',
   ]);
   if (RESERVED.has(id.toLowerCase())) return false;
 
@@ -368,6 +511,38 @@ export function getBusinessUnitDisplayName(businessUnit: BusinessUnit): string {
 
 export function getBusinessUnitShortName(businessUnit: BusinessUnit): string {
   return businessUnit.name;
+}
+
+/**
+ * Derive the display symbol for a business unit's currency.
+ *
+ * ⚠ This is a FALLBACK for contexts that cannot call `Intl` (CSV
+ *   exports, plain-text emails). Everywhere else, prefer rendering
+ *   the code via `Intl.NumberFormat` — the browser's own formatting
+ *   is more robust across locales than prefixing a symbol.
+ *
+ * Returns:
+ *   1. `businessUnit.currencySymbol` when the backend supplied one.
+ *   2. `businessUnit.currency` when there is no symbol.
+ *   3. The empty string when the BU has no currency at all.
+ */
+export function getBusinessUnitCurrencySymbol(
+  businessUnit: BusinessUnit
+): string {
+  return businessUnit.currencySymbol ?? businessUnit.currency ?? '';
+}
+
+/**
+ * Derive the code to pass to `Intl.NumberFormat` for a business unit.
+ *
+ * Returns the BU's currency, or `undefined` when the BU has none. A
+ * caller that receives `undefined` should NOT fall back to a
+ * hardcoded literal — it should skip formatting or render a `—`.
+ */
+export function getBusinessUnitCurrency(
+  businessUnit: BusinessUnit
+): string | undefined {
+  return businessUnit.currency ?? undefined;
 }
 
 // ============================================

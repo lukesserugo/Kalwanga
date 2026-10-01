@@ -36,6 +36,7 @@ import {
   Tag,
   Star,
   Sparkles,
+  ArrowRightLeft,
 } from 'lucide-react';
 
 import {
@@ -47,9 +48,7 @@ import type { Sale } from '../../types/sale';
 import { toast } from '../../utils/toast-manager';
 import { formatCurrency, formatDate } from '../../utils/formatters';
 
-// ============================================
-// STATIC MAPS — Tailwind can't see dynamic classes
-// ============================================
+const DEFAULT_CURRENCY = 'USD';
 
 const STATUS_MAP: Record<
   string,
@@ -143,10 +142,6 @@ const DEFAULT_RETURN_STATUS_STYLE =
 
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
-// ============================================
-// HELPERS
-// ============================================
-
 function extractErrorMessage(error: unknown, fallback: string): string {
   if (!error) return fallback;
   const anyErr = error as any;
@@ -167,12 +162,6 @@ function extractErrorMessage(error: unknown, fallback: string): string {
   return fallback;
 }
 
-/**
- * Escape a value for HTML interpolation in the print window. The
- * print window is same-origin with the app, so an unescaped product
- * or customer name containing `<` or `>` is a script-injection
- * vector as well as a rendering hazard.
- */
 function escapeHtml(value: unknown): string {
   if (value === null || value === undefined) return '';
   return String(value)
@@ -194,35 +183,12 @@ function round2(value: number): number {
   return Math.round(value * 100) / 100;
 }
 
-/**
- * `Sale.saleDate` is `string | Date` on the canonical type. All the
- * formatters in this component expect a string, so coerce once here.
- */
 function toIsoString(value: string | Date | null | undefined): string {
   if (!value) return '';
   if (value instanceof Date) return value.toISOString();
   return String(value);
 }
 
-/**
- * Compute the customer's loyalty tier from their total spend.
- *
- * `loyaltyLevel` is NOT a column on the `Customer` model, and NOT
- * declared on the frontend `Customer` type (see
- * `packages/web/types/customer.ts`). The backend computes it at
- * read time in `SaleService.calculateLoyaltyLevel(totalSpent)` — see
- * `packages/backend/src/services/saleService.ts`.
- *
- * The thresholds below mirror that helper exactly:
- *
- *   totalSpent >= 10000 → DIAMOND
- *   totalSpent >= 5000  → PLATINUM
- *   totalSpent >= 2000  → GOLD
- *   totalSpent >= 500   → SILVER
- *   otherwise           → BRONZE
- *
- * If the backend's thresholds change, update this table to match.
- */
 function calculateLoyaltyLevel(totalSpent: number): string {
   if (!Number.isFinite(totalSpent) || totalSpent < 0) return 'BRONZE';
   if (totalSpent >= 10000) return 'DIAMOND';
@@ -232,9 +198,39 @@ function calculateLoyaltyLevel(totalSpent: number): string {
   return 'BRONZE';
 }
 
-// ============================================
-// SUB-COMPONENTS
-// ============================================
+function resolveSaleCurrency(sale: Sale): string {
+  const payment = (sale as any).payments?.[0];
+
+  const candidates = [
+    payment?.displayCurrency,
+    (sale as any).currency,
+    payment?.currency,
+  ];
+
+  for (const c of candidates) {
+    if (typeof c === 'string' && c.trim().length > 0) {
+      return c.trim().toUpperCase();
+    }
+  }
+  return DEFAULT_CURRENCY;
+}
+
+function resolveCustomerName(sale: Sale): string {
+  const customer = sale.customer;
+  if (!customer) return 'Guest';
+
+  const fullName = [customer.firstName, customer.lastName]
+    .filter((p) => typeof p === 'string' && p.trim().length > 0)
+    .join(' ')
+    .trim();
+
+  if (fullName) return fullName;
+
+  const email = (customer as any).email;
+  if (typeof email === 'string' && email.trim().length > 0) return email;
+
+  return 'Customer';
+}
 
 const StatusBadge: React.FC<{ status: string }> = ({ status }) => {
   const config = STATUS_MAP[status];
@@ -288,8 +284,8 @@ const StatCard: React.FC<{
 
 const SaleBreakdownPanel: React.FC<{
   breakdown: SaleBreakdown;
-  currencySymbol?: string;
-}> = ({ breakdown, currencySymbol = '$' }) => {
+  currency: string;
+}> = ({ breakdown, currency }) => {
   const promotionLabel = breakdown.discountType
     ? DISCOUNT_TYPE_LABELS[breakdown.discountType as DiscountType] ??
       String(breakdown.discountType)
@@ -325,8 +321,7 @@ const SaleBreakdownPanel: React.FC<{
             )}
           </span>
           <span className="tabular-nums font-medium text-green-600 dark:text-green-400 shrink-0">
-            -{currencySymbol}
-            {(breakdown.promotionDiscount ?? 0).toFixed(2)}
+            -{formatCurrency(breakdown.promotionDiscount ?? 0, currency)}
           </span>
         </div>
       )}
@@ -343,18 +338,13 @@ const SaleBreakdownPanel: React.FC<{
             </span>
           </span>
           <span className="tabular-nums font-medium text-green-600 dark:text-green-400 shrink-0">
-            -{currencySymbol}
-            {(breakdown.loyaltyDiscount ?? 0).toFixed(2)}
+            -{formatCurrency(breakdown.loyaltyDiscount ?? 0, currency)}
           </span>
         </div>
       )}
     </section>
   );
 };
-
-// ============================================
-// MAIN COMPONENT
-// ============================================
 
 export function SaleDetail() {
   const params = useParams();
@@ -390,10 +380,6 @@ export function SaleDetail() {
       mountedRef.current = false;
     };
   }, []);
-
-  // ============================================
-  // LOAD
-  // ============================================
 
   const loadSale = useCallback(
     async (showLoading = true): Promise<boolean> => {
@@ -444,32 +430,29 @@ export function SaleDetail() {
     else toast.error('Failed to refresh sale');
   }, [loadSale]);
 
-  // ============================================
-  // DERIVED
-  // ============================================
-
   const items = useMemo(() => sale?.items ?? [], [sale?.items]);
   const payments = useMemo(() => sale?.payments ?? [], [sale?.payments]);
   const returns = useMemo(() => sale?.returns ?? [], [sale?.returns]);
   const refunds = useMemo(() => sale?.refunds ?? [], [sale?.refunds]);
+
+  const currency = useMemo(
+    () => (sale ? resolveSaleCurrency(sale) : DEFAULT_CURRENCY),
+    [sale],
+  );
 
   const totalUnits = useMemo(
     () => items.reduce((sum, item) => sum + item.quantity, 0),
     [items],
   );
 
-  const customerName = useMemo(() => {
-    if (!sale?.customer) return 'Guest';
-    return `${sale.customer.firstName} ${sale.customer.lastName}`.trim();
-  }, [sale?.customer]);
+  const customerName = useMemo(
+    () => (sale ? resolveCustomerName(sale) : 'Guest'),
+    [sale],
+  );
 
   const customerEmail = sale?.customer?.email || 'N/A';
   const customerPhone = sale?.customer?.phoneNumber || 'N/A';
 
-  /**
-   * The customer's loyalty level, computed locally. `loyaltyLevel` is
-   * not on the `Customer` type — see `calculateLoyaltyLevel` above.
-   */
   const loyaltyLevel = useMemo(() => {
     if (!sale?.customer) return null;
     return calculateLoyaltyLevel(sale.customer.totalSpent);
@@ -502,9 +485,34 @@ export function SaleDetail() {
     return round2(Math.max(0, sale.total - refundedTotal - returnedTotal));
   }, [sale, refunds, returns]);
 
-  // ============================================
-  // PRINT
-  // ============================================
+  const chargeInfo = useMemo(() => {
+    if (!sale) return null;
+    const payment = (sale as any).payments?.[0];
+    const gatewayCurrency =
+      typeof payment?.gatewayCurrency === 'string' &&
+      payment.gatewayCurrency.trim().length > 0
+        ? payment.gatewayCurrency.trim().toUpperCase()
+        : undefined;
+    const gatewayAmount =
+      typeof payment?.gatewayAmount === 'number'
+        ? payment.gatewayAmount
+        : undefined;
+    const rate =
+      typeof payment?.exchangeRate === 'number'
+        ? payment.exchangeRate
+        : undefined;
+    const rateSource =
+      typeof payment?.exchangeRateSource === 'string'
+        ? payment.exchangeRateSource
+        : undefined;
+
+    if (!gatewayCurrency || gatewayCurrency === currency) {
+      return null;
+    }
+    if (typeof gatewayAmount !== 'number') return null;
+
+    return { gatewayCurrency, gatewayAmount, rate, rateSource };
+  }, [sale, currency]);
 
   const handlePrint = useCallback(() => {
     if (!sale) return;
@@ -521,6 +529,8 @@ export function SaleDetail() {
     }
 
     const e = escapeHtml;
+    const fmt = (amount: number): string =>
+      e(formatCurrency(amount, currency));
 
     const businessName = e(sale.businessUnit?.name || 'Store');
     const businessAddress = e(sale.businessUnit?.address || '');
@@ -537,7 +547,7 @@ export function SaleDetail() {
           <div class="item">
             <span class="name">${e(item.product?.name ?? 'Unknown')}</span>
             <span class="qty">x${e(item.quantity)}</span>
-            <span class="price">$${e(item.total.toFixed(2))}</span>
+            <span class="price">${fmt(item.total)}</span>
           </div>
         `,
       )
@@ -552,34 +562,34 @@ export function SaleDetail() {
       promotionDiscount > 0
         ? `<div class="total-row"><span>Promotion${
             promotionCode ? ` (${e(promotionCode)})` : ''
-          }</span><span>-$${e(promotionDiscount.toFixed(2))}</span></div>`
+          }</span><span>-${fmt(promotionDiscount)}</span></div>`
         : '';
 
     const loyaltyLine =
       loyaltyPointsUsed > 0
         ? `<div class="total-row"><span>${e(
             loyaltyPointsUsed,
-          )} loyalty points</span><span>-$${e(
-            loyaltyDiscount.toFixed(2),
+          )} loyalty points</span><span>-${fmt(
+            loyaltyDiscount,
           )}</span></div>`
         : '';
 
     const genericDiscountLine =
       sale.discount > 0 && promotionDiscount === 0 && loyaltyDiscount === 0
-        ? `<div class="total-row"><span>Discount</span><span>-$${e(
-            sale.discount.toFixed(2),
+        ? `<div class="total-row"><span>Discount</span><span>-${fmt(
+            sale.discount,
           )}</span></div>`
         : '';
 
     const paymentRows = payments
       .map(
-        (p) => `<p>${e(p.paymentMethod)}: $${e(p.amount.toFixed(2))}</p>`,
+        (p) => `<p>${e(p.paymentMethod)}: ${fmt(p.amount)}</p>`,
       )
       .join('');
 
     const changeLine =
       sale.changeAmount > 0
-        ? `<p>Change: $${e(sale.changeAmount.toFixed(2))}</p>`
+        ? `<p>Change: ${fmt(sale.changeAmount)}</p>`
         : '';
 
     const customerBlock = sale.customer
@@ -628,17 +638,17 @@ export function SaleDetail() {
           </div>
           <div class="items">${itemRows}</div>
           <div class="total">
-            <div class="total-row"><span>Subtotal</span><span>$${e(
-              sale.subtotal.toFixed(2),
+            <div class="total-row"><span>Subtotal</span><span>${fmt(
+              sale.subtotal,
             )}</span></div>
-            <div class="total-row"><span>Tax</span><span>$${e(
-              sale.tax.toFixed(2),
+            <div class="total-row"><span>Tax</span><span>${fmt(
+              sale.tax,
             )}</span></div>
             ${promotionLine}
             ${loyaltyLine}
             ${genericDiscountLine}
-            <div class="total-row grand"><span>Total</span><span>$${e(
-              sale.total.toFixed(2),
+            <div class="total-row grand"><span>Total</span><span>${fmt(
+              sale.total,
             )}</span></div>
           </div>
           <div class="payment">
@@ -660,7 +670,14 @@ export function SaleDetail() {
       </html>
     `);
     printWindow.document.close();
-  }, [sale, items, payments, breakdown, customerName]);
+  }, [
+    sale,
+    items,
+    payments,
+    breakdown,
+    customerName,
+    currency,
+  ]);
 
   const handleDownloadReceipt = useCallback(() => {
     if (!sale) return;
@@ -669,10 +686,6 @@ export function SaleDetail() {
     );
     handlePrint();
   }, [sale, handlePrint]);
-
-  // ============================================
-  // EMAIL
-  // ============================================
 
   const openEmailModal = useCallback(() => {
     setEmail(sale?.customer?.email || '');
@@ -710,10 +723,6 @@ export function SaleDetail() {
     }
   }, [id, sale, email, loadSale]);
 
-  // ============================================
-  // REFUND
-  // ============================================
-
   const openRefundModal = useCallback(() => {
     setRefundReason('');
     setRefundAmountInput(refundableAmount.toFixed(2));
@@ -736,7 +745,10 @@ export function SaleDetail() {
     }
     if (amount > refundableAmount) {
       toast.error(
-        `Refund amount cannot exceed ${formatCurrency(refundableAmount)}`,
+        `Refund amount cannot exceed ${formatCurrency(
+          refundableAmount,
+          currency,
+        )}`,
       );
       return;
     }
@@ -745,7 +757,7 @@ export function SaleDetail() {
     try {
       await saleService.refundSale(id, trimmed, amount);
       if (!mountedRef.current) return;
-      toast.success(`Refunded ${formatCurrency(amount)}`);
+      toast.success(`Refunded ${formatCurrency(amount, currency)}`);
       setShowRefundModal(false);
       setRefundReason('');
       setRefundAmountInput('');
@@ -758,11 +770,15 @@ export function SaleDetail() {
     } finally {
       if (mountedRef.current) setIsRefunding(false);
     }
-  }, [id, sale, refundReason, refundAmountInput, refundableAmount, loadSale]);
-
-  // ============================================
-  // ESCAPE-CLOSE FOR MODALS
-  // ============================================
+  }, [
+    id,
+    sale,
+    currency,
+    refundReason,
+    refundAmountInput,
+    refundableAmount,
+    loadSale,
+  ]);
 
   useEffect(() => {
     if (!showEmailModal && !showRefundModal) return;
@@ -775,10 +791,6 @@ export function SaleDetail() {
     document.addEventListener('keydown', handler);
     return () => document.removeEventListener('keydown', handler);
   }, [showEmailModal, showRefundModal, isSendingEmail, isRefunding]);
-
-  // ============================================
-  // EARLY RETURNS
-  // ============================================
 
   if (loading) {
     return (
@@ -853,13 +865,8 @@ export function SaleDetail() {
     );
   }
 
-  // ============================================
-  // RENDER
-  // ============================================
-
   return (
     <div className="p-4 sm:p-6 max-w-6xl mx-auto">
-      {/* Header */}
       <div className="flex flex-wrap items-start justify-between gap-4 mb-6">
         <div className="flex items-center gap-4 min-w-0">
           <Link
@@ -949,25 +956,54 @@ export function SaleDetail() {
         </div>
       </div>
 
-      {/* Stats Cards */}
+      {chargeInfo && (
+        <div className="mb-6 flex items-start gap-3 rounded-xl border border-amber-200 dark:border-amber-900/40 bg-amber-50 dark:bg-amber-900/20 p-4 text-sm text-amber-800 dark:text-amber-200">
+          <ArrowRightLeft
+            className="w-4 h-4 flex-shrink-0 mt-0.5"
+            aria-hidden="true"
+          />
+          <div className="flex-1">
+            <p className="font-medium">
+              Charged in {chargeInfo.gatewayCurrency}
+            </p>
+            <p className="text-xs text-amber-700/90 dark:text-amber-300/90 mt-0.5 tabular-nums">
+              Gateway billed{' '}
+              {formatCurrency(
+                chargeInfo.gatewayAmount,
+                chargeInfo.gatewayCurrency,
+              )}
+              {chargeInfo.rate != null && (
+                <>
+                  {' '}at rate {chargeInfo.rate.toFixed(6)}
+                  {chargeInfo.rateSource
+                    ? ` (${chargeInfo.rateSource})`
+                    : ''}
+                </>
+              )}
+              . The ledger records this sale in {currency}.
+            </p>
+          </div>
+        </div>
+      )}
+
       <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-4 mb-6">
         <StatCard
           label="Total"
-          value={formatCurrency(sale.total)}
+          value={formatCurrency(sale.total, currency)}
           icon={DollarSign}
           color="green"
-          subtext={`Paid: ${formatCurrency(sale.paidAmount)}`}
+          subtext={`Paid: ${formatCurrency(sale.paidAmount, currency)}`}
         />
         <StatCard
           label="Subtotal"
-          value={formatCurrency(sale.subtotal)}
+          value={formatCurrency(sale.subtotal, currency)}
           icon={ShoppingBag}
           color="blue"
           subtext={`${items.length} item${items.length === 1 ? '' : 's'}`}
         />
         <StatCard
           label="Tax"
-          value={formatCurrency(sale.tax)}
+          value={formatCurrency(sale.tax, currency)}
           icon={FileText}
           color="purple"
           subtext={sale.tax > 0 ? 'Included' : 'No tax'}
@@ -975,7 +1011,9 @@ export function SaleDetail() {
         <StatCard
           label="Discount"
           value={
-            sale.discount > 0 ? `-${formatCurrency(sale.discount)}` : 'None'
+            sale.discount > 0
+              ? `-${formatCurrency(sale.discount, currency)}`
+              : 'None'
           }
           icon={TrendingDown}
           color={sale.discount > 0 ? 'green' : 'gray'}
@@ -989,7 +1027,7 @@ export function SaleDetail() {
         />
         <StatCard
           label="Change"
-          value={formatCurrency(sale.changeAmount)}
+          value={formatCurrency(sale.changeAmount, currency)}
           icon={CreditCard}
           color="orange"
           subtext={
@@ -998,7 +1036,6 @@ export function SaleDetail() {
         />
       </div>
 
-      {/* Customer & Payment Info */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
         <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 p-4">
           <h3 className="text-sm font-medium text-gray-700 dark:text-gray-300 mb-3 flex items-center gap-2">
@@ -1053,26 +1090,33 @@ export function SaleDetail() {
             Payment Information
           </h3>
           <div className="space-y-2">
-            {payments.map((payment) => (
-              <div
-                key={payment.id}
-                className="flex items-center justify-between"
-              >
-                <span className="text-sm text-gray-600 dark:text-gray-400">
-                  {payment.paymentMethod}
-                </span>
-                <span className="font-medium text-gray-900 dark:text-white tabular-nums">
-                  {formatCurrency(payment.amount)}
-                </span>
-              </div>
-            ))}
+            {payments.map((payment) => {
+              const paymentCurrency =
+                typeof (payment as any).currency === 'string' &&
+                (payment as any).currency.trim().length > 0
+                  ? (payment as any).currency.trim().toUpperCase()
+                  : currency;
+              return (
+                <div
+                  key={payment.id}
+                  className="flex items-center justify-between"
+                >
+                  <span className="text-sm text-gray-600 dark:text-gray-400">
+                    {payment.paymentMethod}
+                  </span>
+                  <span className="font-medium text-gray-900 dark:text-white tabular-nums">
+                    {formatCurrency(payment.amount, paymentCurrency)}
+                  </span>
+                </div>
+              );
+            })}
             {sale.changeAmount > 0 && (
               <div className="flex items-center justify-between border-t dark:border-gray-700 pt-2">
                 <span className="text-sm text-gray-600 dark:text-gray-400">
                   Change
                 </span>
                 <span className="font-medium text-green-600 dark:text-green-400 tabular-nums">
-                  {formatCurrency(sale.changeAmount)}
+                  {formatCurrency(sale.changeAmount, currency)}
                 </span>
               </div>
             )}
@@ -1085,7 +1129,6 @@ export function SaleDetail() {
         </div>
       </div>
 
-      {/* Items */}
       <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 overflow-hidden mb-6">
         <div className="p-4 border-b border-gray-200 dark:border-gray-700 flex items-center justify-between">
           <h3 className="font-semibold text-gray-900 dark:text-white flex items-center gap-2">
@@ -1108,6 +1151,7 @@ export function SaleDetail() {
               <div className="flex items-center gap-3 min-w-0">
                 <div className="w-12 h-12 bg-gray-100 dark:bg-gray-700 rounded-lg flex items-center justify-center overflow-hidden flex-shrink-0">
                   {item.product?.images?.[0] ? (
+                    // eslint-disable-next-line @next/next/no-img-element
                     <img
                       src={item.product.images[0]}
                       alt={item.product.name}
@@ -1137,14 +1181,14 @@ export function SaleDetail() {
                       ×{item.quantity}
                     </span>
                     <span className="tabular-nums">
-                      @ {formatCurrency(item.unitPrice)}
+                      @ {formatCurrency(item.unitPrice, currency)}
                     </span>
                   </div>
                 </div>
               </div>
               <div className="text-right flex-shrink-0">
                 <p className="font-bold text-gray-900 dark:text-white tabular-nums">
-                  {formatCurrency(item.total)}
+                  {formatCurrency(item.total, currency)}
                 </p>
               </div>
             </div>
@@ -1157,13 +1201,13 @@ export function SaleDetail() {
                 Subtotal
               </span>
               <span className="text-gray-900 dark:text-white tabular-nums">
-                {formatCurrency(sale.subtotal)}
+                {formatCurrency(sale.subtotal, currency)}
               </span>
             </div>
             <div className="flex justify-between text-sm">
               <span className="text-gray-600 dark:text-gray-400">Tax</span>
               <span className="text-gray-900 dark:text-white tabular-nums">
-                {formatCurrency(sale.tax)}
+                {formatCurrency(sale.tax, currency)}
               </span>
             </div>
             {(breakdown.promotionDiscount ?? 0) > 0 && (
@@ -1178,7 +1222,7 @@ export function SaleDetail() {
                   )}
                 </span>
                 <span className="tabular-nums">
-                  -{formatCurrency(breakdown.promotionDiscount ?? 0)}
+                  -{formatCurrency(breakdown.promotionDiscount ?? 0, currency)}
                 </span>
               </div>
             )}
@@ -1194,7 +1238,7 @@ export function SaleDetail() {
                   </span>
                 </span>
                 <span className="tabular-nums">
-                  -{formatCurrency(breakdown.loyaltyDiscount ?? 0)}
+                  -{formatCurrency(breakdown.loyaltyDiscount ?? 0, currency)}
                 </span>
               </div>
             )}
@@ -1202,24 +1246,22 @@ export function SaleDetail() {
               <div className="flex justify-between text-sm text-green-600 dark:text-green-400">
                 <span>Discount</span>
                 <span className="tabular-nums">
-                  -{formatCurrency(sale.discount)}
+                  -{formatCurrency(sale.discount, currency)}
                 </span>
               </div>
             )}
             <div className="flex justify-between font-bold text-lg pt-2 border-t border-gray-200 dark:border-gray-700">
               <span className="text-gray-900 dark:text-white">Total</span>
               <span className="text-gray-900 dark:text-white tabular-nums">
-                {formatCurrency(sale.total)}
+                {formatCurrency(sale.total, currency)}
               </span>
             </div>
           </div>
         </div>
       </div>
 
-      {/* Discount breakdown panel */}
-      <SaleBreakdownPanel breakdown={breakdown} />
+      <SaleBreakdownPanel breakdown={breakdown} currency={currency} />
 
-      {/* Notes */}
       {sale.notes && (
         <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 p-4 mb-6">
           <h4 className="font-medium text-gray-700 dark:text-gray-300 mb-2 flex items-center gap-2">
@@ -1235,7 +1277,6 @@ export function SaleDetail() {
         </div>
       )}
 
-      {/* Return History */}
       {returns.length > 0 && (
         <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 overflow-hidden mb-6">
           <div className="p-4 border-b border-gray-200 dark:border-gray-700">
@@ -1273,7 +1314,7 @@ export function SaleDetail() {
                     {ret.status}
                   </span>
                   <span className="font-bold text-gray-900 dark:text-white tabular-nums">
-                    {formatCurrency(ret.total)}
+                    {formatCurrency(ret.total, currency)}
                   </span>
                 </div>
               </div>
@@ -1282,7 +1323,6 @@ export function SaleDetail() {
         </div>
       )}
 
-      {/* Email Modal */}
       {showEmailModal && (
         <div
           className="fixed inset-0 z-50 flex items-center justify-center"
@@ -1364,7 +1404,6 @@ export function SaleDetail() {
         </div>
       )}
 
-      {/* Refund Modal */}
       {showRefundModal && (
         <div
           className="fixed inset-0 z-50 flex items-center justify-center"
@@ -1399,11 +1438,11 @@ export function SaleDetail() {
             <p className="text-sm text-gray-500 dark:text-gray-400 mb-4">
               Refundable amount:{' '}
               <span className="font-medium text-gray-900 dark:text-white tabular-nums">
-                {formatCurrency(refundableAmount)}
+                {formatCurrency(refundableAmount, currency)}
               </span>
               {refundableAmount < sale.total && (
                 <span className="block text-xs text-gray-400 mt-0.5">
-                  (Sale total was {formatCurrency(sale.total)}; partial
+                  (Sale total was {formatCurrency(sale.total, currency)}; partial
                   refunds and returns have been deducted.)
                 </span>
               )}
@@ -1418,10 +1457,10 @@ export function SaleDetail() {
                 </label>
                 <div className="relative">
                   <span
-                    className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-500 pointer-events-none"
+                    className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-500 pointer-events-none text-sm font-medium"
                     aria-hidden="true"
                   >
-                    $
+                    {currency}
                   </span>
                   <input
                     id="refund-amount"
@@ -1435,7 +1474,7 @@ export function SaleDetail() {
                       }
                     }}
                     disabled={isRefunding}
-                    className="w-full pl-7 pr-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:outline-none bg-white dark:bg-gray-700 text-gray-900 dark:text-white tabular-nums disabled:opacity-50"
+                    className="w-full pl-14 pr-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:outline-none bg-white dark:bg-gray-700 text-gray-900 dark:text-white tabular-nums disabled:opacity-50"
                   />
                 </div>
               </div>

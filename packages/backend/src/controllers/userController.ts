@@ -15,6 +15,10 @@ import { ALL_PERMISSIONS } from '../middleware/auth.js';
 
 // Import UserRole + Prisma namespace from prisma client directly
 import { UserRole, Prisma } from '../generated/prisma/index.js';
+import {
+  PERMISSION_CATALOGUE,
+  resolvePermissions,
+} from '../lib/permissions.js';
 
 // ============================================
 // VALIDATION SCHEMAS
@@ -301,6 +305,10 @@ function sanitizeUser(user: any) {
   if (!user) return null;
   const { password, ...userWithoutPassword } = user;
   const out: any = { ...userWithoutPassword };
+  out.permissions = resolvePermissions({
+    role: String(user.role ?? 'USER'),
+    permissions: Array.isArray(user.permissions) ? user.permissions : [],
+  });
   if (out.createdAt instanceof Date) out.createdAt = out.createdAt.toISOString();
   if (out.updatedAt instanceof Date) out.updatedAt = out.updatedAt.toISOString();
   if (out.lastLoginAt instanceof Date) out.lastLoginAt = out.lastLoginAt.toISOString();
@@ -309,6 +317,65 @@ function sanitizeUser(user: any) {
 
 function sanitizeUsers(users: any[]) {
   return users.map((user: any) => sanitizeUser(user));
+}
+
+function normalizeDelegatedPermissions(
+  requester: NonNullable<Request['user']>,
+  requested: string[],
+): string[] {
+  const known = new Set<string>(Object.values(PERMISSION_CATALOGUE));
+  const invalid = requested.filter(
+    (permission) => !known.has(permission) || permission === '*',
+  );
+  if (invalid.length > 0) {
+    throw new AppError(
+      `Unknown or reserved permissions cannot be assigned: ${invalid.join(', ')}`,
+      400,
+    );
+  }
+
+  const unique = [...new Set(requested)];
+  if (requester.role === UserRole.SUPER_ADMIN) return unique;
+
+  const allowed = new Set(
+    resolvePermissions({
+      role: requester.role,
+      permissions: requester.permissions ?? [],
+    }),
+  );
+  const outsideDelegation = unique.filter((permission) => !allowed.has(permission));
+  if (outsideDelegation.length > 0) {
+    throw new AppError(
+      `You cannot grant permissions you do not hold: ${outsideDelegation.join(', ')}`,
+      403,
+    );
+  }
+
+  return unique;
+}
+
+function assertUserInRequesterScope(
+  requester: NonNullable<Request['user']>,
+  target: { companyId?: string | null; businessUnits?: Array<{ businessUnitId: string; businessUnit?: { companyId?: string | null } }> },
+): void {
+  if (requester.role === UserRole.SUPER_ADMIN) return;
+
+  const requesterUnits = new Set(requester.businessUnits ?? []);
+  const sameCompany = Boolean(
+    requester.companyId &&
+      (target.companyId === requester.companyId ||
+        target.businessUnits?.some(
+          (membership) =>
+            membership.businessUnit?.companyId === requester.companyId,
+        )),
+  );
+  const sharedUnit = target.businessUnits?.some((membership) =>
+    requesterUnits.has(membership.businessUnitId),
+  );
+
+  if (!sameCompany && !sharedUnit) {
+    throw new AppError('You cannot manage users outside your assigned scope', 403);
+  }
 }
 
 /**
@@ -553,7 +620,8 @@ function getDefaultPermissionsForRole(role: UserRole): string[] {
     ],
   };
 
-  return permissionsMap[role] || [];
+  void permissionsMap[role];
+  return [];
 }
 
 async function getOrCreateDefaultBusinessUnit(companyId?: string) {
@@ -1024,19 +1092,34 @@ export const userController = {
   async getUserPermissions(req: Request, res: Response, next: NextFunction) {
     try {
       const { id } = req.params;
+      const requester = req.user;
+      if (!requester) throw new AppError('Authentication required', 401);
 
       const user = await prisma.user.findUnique({
         where: { id },
-        select: { permissions: true },
+        include: {
+          businessUnits: {
+            include: { businessUnit: { select: { companyId: true } } },
+          },
+        },
       });
 
       if (!user) {
         throw new AppError('User not found', 404);
       }
+      if (requester.role !== UserRole.SUPER_ADMIN) {
+        if (!requester.permissions?.includes('user:view')) {
+          throw new AppError('You do not have permission to view users', 403);
+        }
+        assertUserInRequesterScope(requester, user);
+      }
 
       return res.json({
         success: true,
-        data: user.permissions || [],
+        data: resolvePermissions({
+          role: user.role,
+          permissions: user.permissions,
+        }),
       });
     } catch (error) {
       return handleError(error, res, next);
@@ -1049,18 +1132,38 @@ export const userController = {
   async checkUserPermission(req: Request, res: Response, next: NextFunction) {
     try {
       const { id, permission } = req.params;
+      const requester = req.user;
+      if (!requester) throw new AppError('Authentication required', 401);
+      if (!Object.values(PERMISSION_CATALOGUE).includes(permission as any)) {
+        throw new AppError('Unknown permission', 400);
+      }
 
       const user = await prisma.user.findUnique({
         where: { id },
-        select: { permissions: true, role: true },
+        include: {
+          businessUnits: {
+            include: { businessUnit: { select: { companyId: true } } },
+          },
+        },
       });
 
       if (!user) {
         throw new AppError('User not found', 404);
       }
+      if (requester.role !== UserRole.SUPER_ADMIN) {
+        if (!requester.permissions?.includes('user:view')) {
+          throw new AppError('You do not have permission to view users', 403);
+        }
+        assertUserInRequesterScope(requester, user);
+      }
 
-      const hasPermission = user.role === UserRole.SUPER_ADMIN ||
-                           (user.permissions || []).includes(permission);
+      const effectivePermissions = resolvePermissions({
+        role: user.role,
+        permissions: user.permissions,
+      });
+      const hasPermission =
+        effectivePermissions.includes('*') ||
+        effectivePermissions.includes(permission);
 
       return res.json({
         success: true,
@@ -1222,67 +1325,84 @@ export const userController = {
         throw new AppError('User with this email already exists', 409);
       }
 
-      const currentUserId = (req as any).user?.id || (req as any).userId;
-      let currentUserRole = (req as any).user?.role || 'USER';
-
-      if (!currentUserId) {
-        currentUserRole = 'SUPER_ADMIN';
+      const requester = req.user;
+      if (!requester) throw new AppError('Authentication required', 401);
+      const currentUserId = requester.id;
+      const isSuperAdmin = requester.role === UserRole.SUPER_ADMIN;
+      if (!isSuperAdmin && !requester.permissions?.includes('user:create')) {
+        throw new AppError('You do not have permission to create users', 403);
       }
-
-      const isSuperAdmin = currentUserRole === 'SUPER_ADMIN';
-      const isAdmin = currentUserRole === 'ADMIN';
-
-      if (data.role === 'SUPER_ADMIN' && !isSuperAdmin) {
-        throw new AppError('Only SUPER_ADMIN can create SUPER_ADMIN users', 403);
+      if (
+        !isSuperAdmin &&
+        (data.role === UserRole.SUPER_ADMIN || data.role === UserRole.ADMIN)
+      ) {
+        throw new AppError('Only SUPER_ADMIN can create Admin-level users', 403);
       }
-
-      if (data.role === 'ADMIN' && !isSuperAdmin && !isAdmin) {
-        throw new AppError('Only SUPER_ADMIN or ADMIN can create ADMIN users', 403);
-      }
-
-      if (data.role === 'MANAGER' && !isSuperAdmin && !isAdmin) {
-        const isManager = currentUserRole === 'MANAGER';
-        if (!isManager) {
-          throw new AppError('Only SUPER_ADMIN, ADMIN, or MANAGER can create MANAGER users', 403);
+      if (!isSuperAdmin && data.role !== requester.role) {
+        const roleOrder: UserRole[] = [
+          UserRole.USER,
+          UserRole.CASHIER,
+          UserRole.VIEWER,
+          UserRole.EMPLOYEE,
+          UserRole.EDITOR,
+          UserRole.MANAGER,
+          UserRole.ADMIN,
+          UserRole.SUPER_ADMIN,
+        ];
+        if (roleOrder.indexOf(data.role) > roleOrder.indexOf(requester.role)) {
+          throw new AppError('You cannot create a user with a higher role', 403);
         }
+        if (!requester.permissions?.includes('user:role:update')) {
+          throw new AppError('You do not have permission to assign user roles', 403);
+        }
+      }
+
+      if (!isSuperAdmin && data.companyId && data.companyId !== requester.companyId) {
+        throw new AppError('You cannot create users outside your company', 403);
+      }
+      if (
+        !isSuperAdmin &&
+        data.businessUnitId &&
+        !requester.businessUnits?.includes(data.businessUnitId)
+      ) {
+        throw new AppError('You cannot assign users outside your business units', 403);
       }
 
       const hashedPassword = await bcrypt.hash(data.password, 10);
 
-      let userPermissions: string[] = [];
+      const userPermissions = normalizeDelegatedPermissions(
+        requester,
+        data.permissions ?? [],
+      );
 
-      if (data.permissions && data.permissions.length > 0) {
-        userPermissions = data.permissions;
-      } else {
-        userPermissions = getDefaultPermissionsForRole(data.role as UserRole);
+      const finalBusinessUnitId =
+        data.businessUnitId ||
+        (isSuperAdmin
+          ? null
+          : requester.businessUnitId || requester.businessUnits?.[0] || null);
+      const assignedBusinessUnit = finalBusinessUnitId
+        ? await prisma.businessUnit.findUnique({
+            where: { id: finalBusinessUnitId },
+            select: { id: true, companyId: true, isActive: true },
+          })
+        : null;
+
+      if (finalBusinessUnitId && !assignedBusinessUnit) {
+        throw new AppError('Selected business unit was not found', 404);
+      }
+      if (assignedBusinessUnit?.isActive === false) {
+        throw new AppError('Selected business unit is inactive', 400);
+      }
+      if (!isSuperAdmin && !finalBusinessUnitId) {
+        throw new AppError(
+          'Assign a business unit before creating a managed user',
+          400,
+        );
       }
 
-      let finalBusinessUnitId: string | null = null;
-
-      if (data.businessUnitId) {
-        const businessUnit = await prisma.businessUnit.findUnique({
-          where: { id: data.businessUnitId },
-        });
-
-        if (businessUnit) {
-          finalBusinessUnitId = data.businessUnitId;
-        }
-      }
-
-      if (!finalBusinessUnitId) {
-        const existingBusinessUnit = await prisma.businessUnit.findFirst({
-          where: data.companyId ? { companyId: data.companyId } : {},
-        });
-
-        if (existingBusinessUnit) {
-          finalBusinessUnitId = existingBusinessUnit.id;
-        } else {
-          const defaultBusinessUnit = await getOrCreateDefaultBusinessUnit(data.companyId);
-          if (defaultBusinessUnit) {
-            finalBusinessUnitId = defaultBusinessUnit.id;
-          }
-        }
-      }
+      const finalCompanyId = isSuperAdmin
+        ? data.companyId || assignedBusinessUnit?.companyId || null
+        : requester.companyId || assignedBusinessUnit?.companyId || null;
 
       const result = await prisma.$transaction(async (tx: any) => {
         const user = await tx.user.create({
@@ -1295,7 +1415,7 @@ export const userController = {
             role: data.role as UserRole,
             password: hashedPassword,
             isActive: true,
-            companyId: data.companyId || null,
+            companyId: finalCompanyId,
             permissions: userPermissions,
           },
         });
@@ -1360,35 +1480,48 @@ export const userController = {
     try {
       const { id } = req.params;
       const data = updateUserSchema.parse(req.body);
+      const requester = req.user;
+      if (!requester) throw new AppError('Authentication required', 401);
+      if (
+        data.role !== undefined ||
+        data.permissions !== undefined ||
+        data.businessUnitId !== undefined
+      ) {
+        throw new AppError(
+          'Role, permission, and business-unit changes must use their dedicated management endpoints',
+          400,
+        );
+      }
 
       const existingUser = await prisma.user.findUnique({
         where: { id },
+        include: {
+          businessUnits: {
+            include: { businessUnit: { select: { companyId: true } } },
+          },
+        },
       });
 
       if (!existingUser) {
         throw new AppError('User not found', 404);
       }
 
-      const currentUserId = (req as any).user?.id || (req as any).userId;
-      let isSuperAdmin = false;
-
-      if (currentUserId) {
-        try {
-          const currentUser = await prisma.user.findUnique({
-            where: { id: currentUserId },
-          });
-          if (currentUser) {
-            isSuperAdmin = currentUser.role === 'SUPER_ADMIN';
-          }
-        } catch (e) {}
+      const currentUserId = requester.id;
+      const isSuperAdmin = requester.role === UserRole.SUPER_ADMIN;
+      if (!isSuperAdmin && !requester.permissions?.includes('user:edit')) {
+        throw new AppError('You do not have permission to edit users', 403);
       }
+      if (!isSuperAdmin) assertUserInRequesterScope(requester, existingUser);
 
       if (existingUser.role === 'SUPER_ADMIN' && !isSuperAdmin) {
         throw new AppError('Only SUPER_ADMIN can modify SUPER_ADMIN users', 403);
       }
 
-      if (data.role === 'SUPER_ADMIN' && !isSuperAdmin) {
-        throw new AppError('Only SUPER_ADMIN can assign SUPER_ADMIN role', 403);
+      if (data.isActive !== undefined && !isSuperAdmin) {
+        const required = data.isActive ? 'user:activate' : 'user:deactivate';
+        if (!requester.permissions?.includes(required)) {
+          throw new AppError(`You do not have permission to ${required.split(':')[1]} users`, 403);
+        }
       }
 
       const updateData: any = { ...data };
@@ -1397,30 +1530,7 @@ export const userController = {
         updateData.password = await bcrypt.hash(updateData.password, 10);
       }
 
-      if (updateData.role) {
-        updateData.role = updateData.role as UserRole;
-      }
-
-      let finalBusinessUnitId: string | null = null;
-
-      if (data.businessUnitId !== undefined) {
-        if (data.businessUnitId) {
-          const businessUnit = await prisma.businessUnit.findUnique({
-            where: { id: data.businessUnitId },
-          });
-          if (!businessUnit) {
-            throw new AppError('Business unit not found', 404);
-          }
-          finalBusinessUnitId = data.businessUnitId;
-        }
-      }
-
-      if (data.permissions) {
-        if ((existingUser.role === 'ADMIN' || existingUser.role === 'SUPER_ADMIN') && !isSuperAdmin) {
-          throw new AppError('Only SUPER_ADMIN can modify permissions for ADMIN or SUPER_ADMIN users', 403);
-        }
-        updateData.permissions = data.permissions;
-      }
+      const finalBusinessUnitId = undefined;
 
       const user = await prisma.$transaction(async (tx: any) => {
         const updatedUser = await tx.user.update({
@@ -1434,23 +1544,6 @@ export const userController = {
             },
           },
         });
-
-        if (data.businessUnitId !== undefined) {
-          await tx.businessUnitUser.deleteMany({
-            where: { userId: id },
-          });
-
-          if (finalBusinessUnitId) {
-            await tx.businessUnitUser.create({
-              data: {
-                userId: id,
-                businessUnitId: finalBusinessUnitId,
-                role: data.role || existingUser.role,
-                isActive: true,
-              },
-            });
-          }
-        }
 
         await tx.auditLog.create({
           data: {
@@ -1678,50 +1771,53 @@ export const userController = {
     try {
       const { id } = req.params;
       const { role } = updateUserRoleSchema.parse(req.body);
-
-      const currentUserId = (req as any).user?.id || (req as any).userId;
-      let isSuperAdmin = false;
-
-      if (currentUserId) {
-        try {
-          const currentUser = await prisma.user.findUnique({
-            where: { id: currentUserId },
-          });
-          if (currentUser) {
-            isSuperAdmin = currentUser.role === 'SUPER_ADMIN';
-          }
-        } catch (e) {}
-      }
+      const requester = req.user;
+      if (!requester) throw new AppError('Authentication required', 401);
 
       const targetUser = await prisma.user.findUnique({
         where: { id },
+        include: {
+          businessUnits: {
+            include: { businessUnit: { select: { companyId: true } } },
+          },
+        },
       });
 
       if (!targetUser) {
         throw new AppError('User not found', 404);
       }
 
+      const isSuperAdmin = requester.role === UserRole.SUPER_ADMIN;
       if (targetUser.role === 'SUPER_ADMIN' && !isSuperAdmin) {
         throw new AppError('Only SUPER_ADMIN can modify SUPER_ADMIN users', 403);
       }
 
-      if (role === 'SUPER_ADMIN' && !isSuperAdmin) {
-        throw new AppError('Only SUPER_ADMIN can assign SUPER_ADMIN role', 403);
+      if (!isSuperAdmin) {
+        if (role === 'SUPER_ADMIN' || role === 'ADMIN') {
+          throw new AppError('Only SUPER_ADMIN can assign this role', 403);
+        }
+        if (!requester.permissions?.includes('user:role:update')) {
+          throw new AppError('You do not have permission to assign roles', 403);
+        }
+        assertUserInRequesterScope(requester, targetUser);
       }
 
-      if (role === 'ADMIN' && !isSuperAdmin) {
-        throw new AppError('Only SUPER_ADMIN can create ADMIN users', 403);
-      }
-
-      const user = await prisma.user.update({
-        where: { id },
-        data: { role: role as UserRole },
-        include: {
-          businessUnits: {
-            include: { businessUnit: true },
+      const user = await prisma.$transaction(async (tx) => {
+        const updated = await tx.user.update({
+          where: { id },
+          data: { role: role as UserRole },
+          include: {
+            businessUnits: {
+              include: { businessUnit: true },
+            },
+            company: true,
           },
-          company: true,
-        },
+        });
+        await tx.businessUnitUser.updateMany({
+          where: { userId: id },
+          data: { role: role as UserRole },
+        });
+        return updated;
       });
 
       return res.json({
@@ -1741,36 +1837,45 @@ export const userController = {
     try {
       const { id } = req.params;
       const { permissions } = updatePermissionsSchema.parse(req.body);
-
-      const currentUserId = (req as any).user?.id || (req as any).userId;
-      let isSuperAdmin = false;
-
-      if (currentUserId) {
-        try {
-          const currentUser = await prisma.user.findUnique({
-            where: { id: currentUserId },
-          });
-          if (currentUser) {
-            isSuperAdmin = currentUser.role === 'SUPER_ADMIN';
-          }
-        } catch (e) {}
-      }
+      const requester = req.user;
+      if (!requester) throw new AppError('Authentication required', 401);
 
       const targetUser = await prisma.user.findUnique({
         where: { id },
+        include: {
+          businessUnits: {
+            include: { businessUnit: { select: { companyId: true } } },
+          },
+        },
       });
 
       if (!targetUser) {
         throw new AppError('User not found', 404);
       }
 
-      if ((targetUser.role === 'ADMIN' || targetUser.role === 'SUPER_ADMIN') && !isSuperAdmin) {
+      const isSuperAdmin = requester.role === UserRole.SUPER_ADMIN;
+      if (
+        (targetUser.role === UserRole.ADMIN ||
+          targetUser.role === UserRole.SUPER_ADMIN) &&
+        !isSuperAdmin
+      ) {
         throw new AppError('Only SUPER_ADMIN can modify permissions for ADMIN or SUPER_ADMIN users', 403);
       }
 
+      if (!isSuperAdmin) {
+        if (!requester.permissions?.includes('user:permission:update')) {
+          throw new AppError('You do not have permission to assign permissions', 403);
+        }
+        assertUserInRequesterScope(requester, targetUser);
+      }
+      const delegatedPermissions = normalizeDelegatedPermissions(
+        requester,
+        permissions,
+      );
+
       const user = await prisma.user.update({
         where: { id },
-        data: { permissions: permissions as any },
+        data: { permissions: delegatedPermissions as any },
         include: {
           businessUnits: {
             include: { businessUnit: true },

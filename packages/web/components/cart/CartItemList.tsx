@@ -36,6 +36,25 @@ export interface CartItemListProps {
   emptyActionHref?: string;
   onEmptyAction?: () => void;
   skeletonCount?: number;
+
+  /**
+   * ── Phase 2: ISO 4217 currency code for every amount on the ──
+   *   lines in this list.
+   *
+   * Pass `cart.currency` from the parent. Every `CartItemCard` in
+   * the list receives it as `currency`, and each card formats its
+   * `unitPrice` and `total` in that currency.
+   *
+   * ⚠ REQUIRED, not optional. `CartItemCard.currency` is required,
+   *   so this list must supply it. Making the prop required here
+   *   too means the compiler catches a mount site that forgot to
+   *   pass it — rather than silently falling back to USD and
+   *   reintroducing the hardcoded-dollar bug on that site.
+   *
+   * See `Cart.currency` in `packages/web/types/cart.ts` for the
+   * resolution chain (business unit → platform default).
+   */
+  currency: string;
 }
 
 export function CartItemList({
@@ -51,6 +70,8 @@ export function CartItemList({
   emptyActionHref = '/shop',
   onEmptyAction,
   skeletonCount = 3,
+  // ── Phase 2: currency forwarded to every CartItemCard ────
+  currency,
 }: CartItemListProps) {
   if (isLoading) {
     return <CartSkeleton count={skeletonCount} />;
@@ -89,6 +110,8 @@ export function CartItemList({
             onRemove={onRemove}
             isUpdating={isUpdating === item.id}
             disabled={disabled}
+            // ── Phase 2: currency forwarded to the card ──
+            currency={currency}
           />
         ))}
       </AnimatePresence>

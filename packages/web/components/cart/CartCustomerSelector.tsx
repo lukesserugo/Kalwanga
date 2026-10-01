@@ -310,8 +310,22 @@ export function CartCustomerSelector({
               autoComplete="off"
               aria-busy={isSearching}
               className="w-full pl-9 pr-9 py-2 bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-brand-500 focus:border-transparent focus:outline-none text-gray-900 dark:text-white placeholder-gray-400 dark:placeholder-gray-500 disabled:opacity-50 transition-colors"
+              // ── a11y fix: explicit combobox role ────────────────
+              // The implicit role of `<input type="text">` is
+              // `textbox`, which does not support `aria-expanded`
+              // — hence the `jsx-a11y/role-supports-aria-props`
+              // warning. The correct WAI-ARIA pattern for a
+              // search-input-with-listbox is `combobox` with
+              // `aria-autocomplete="list"`, `aria-haspopup="listbox"`,
+              // and `aria-expanded` bound to the popup's open state.
+              // This matches what the component has always done
+              // semantically; it just makes the intent explicit.
+              role="combobox"
               aria-expanded={showDropdown}
+              aria-haspopup="listbox"
               aria-controls="customer-search-results"
+              aria-autocomplete="list"
+              aria-label="Search customers"
             />
             {isSearching && (
               <Loader2 className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 animate-spin text-brand-500" />
@@ -323,6 +337,7 @@ export function CartCustomerSelector({
               id="customer-search-results"
               className="absolute z-modal w-full mt-1 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-2xl shadow-card-hover max-h-60 overflow-y-auto custom-scrollbar"
               role="listbox"
+              aria-label="Customer search results"
             >
               {customers.map((customer) => (
                 <button
@@ -332,6 +347,13 @@ export function CartCustomerSelector({
                   disabled={isAssociating}
                   className="w-full text-left px-4 py-2.5 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors flex items-start gap-3 disabled:opacity-50 focus-ring"
                   role="option"
+                  // ── a11y fix: `option` requires `aria-selected` ──
+                  // This is a search-and-pick listbox with no
+                  // persistent selection state — picking a customer
+                  // closes the list and associates the choice on
+                  // the cart. Nothing is "selected" at rest, so
+                  // every option is honestly `aria-selected={false}`.
+                  aria-selected={false}
                 >
                   <div className="w-8 h-8 bg-brand-100 dark:bg-brand-900/40 rounded-full flex items-center justify-center flex-shrink-0">
                     <User className="w-4 h-4 text-brand-600 dark:text-brand-400" />

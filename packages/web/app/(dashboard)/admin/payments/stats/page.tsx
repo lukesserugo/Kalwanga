@@ -51,6 +51,43 @@ import { toast } from '../../../../../utils/toast-manager';
 import { useThemeStore } from '../../../../stores/themeStore';
 
 // ============================================
+// CURRENCY RESOLUTION
+// ============================================
+//
+// `formatCurrency` requires a currency code by design — every
+// amount must be rendered in a code that came from the backend.
+//
+// The `/payments/summary` endpoint returns aggregates without a
+// currency code, and it currently sums across all Payment rows
+// regardless of their individual `currency` column. Until the
+// backend either (a) narrows the summary to a single currency or
+// (b) returns per-currency buckets, this page can only honestly
+// label its aggregate figures in the deployment's settlement
+// currency.
+//
+// ⚠ No hardcoded fallback in this file. `NEXT_PUBLIC_DEFAULT_CURRENCY`
+//   is the single source of truth. When unset, `formatCurrency`
+//   receives an empty string and renders a bare number rather
+//   than a fabricated symbol.
+//
+// ⚠ This is documented at the "Last updated" footer as well, so an
+//   operator looking at the numbers knows what they're denominated
+//   in.
+
+const SETTLEMENT_CURRENCY =
+  process.env.NEXT_PUBLIC_DEFAULT_CURRENCY || '';
+
+/**
+ * Format an aggregate amount. All amounts on this page come from
+ * the summary endpoint, so they share a single display code —
+ * `SETTLEMENT_CURRENCY`. Per-row formatting (which would need each
+ * row's own code) is not used on this page.
+ */
+function fmt(amount: number): string {
+  return formatCurrency(amount, SETTLEMENT_CURRENCY);
+}
+
+// ============================================
 // TYPES
 // ============================================
 
@@ -95,11 +132,6 @@ type DateRange =
 
 /**
  * Resolve the resolved `{ startDate, endDate }` for a named range.
- *
- * Returns ISO strings so the backend receives the same format it
- * already expects. For `custom`, converts the user-supplied
- * `YYYY-MM-DD` values to ISO boundaries inclusive of the end-of-day
- * on the `endDate` day.
  */
 function resolveDateRange(
   range: DateRange,
@@ -154,6 +186,10 @@ function resolveDateRange(
 
 /**
  * Map a method enum to the provider that processes it.
+ *
+ * ⚠ TIGO and VODAFONE are absent — no backend handler exists. Any
+ *   historical payment with those codes falls through to
+ *   `OTHER` and renders with the generic config.
  */
 const METHOD_TO_PROVIDER: Record<string, string> = {
   CASH: 'CASH',
@@ -167,25 +203,19 @@ const METHOD_TO_PROVIDER: Record<string, string> = {
   PAYPAL: 'PAYPAL',
   FLUTTERWAVE: 'FLUTTERWAVE',
   SQUARE: 'SQUARE',
+  MPESA: 'MPESA',
   MTN: 'MTN',
   AIRTEL: 'AIRTEL',
-  TIGO: 'TIGO',
-  VODAFONE: 'VODAFONE',
 };
 
 // ============================================
 // CONSTANTS
 // ============================================
 //
-// ⚠ PAYSTACK has been removed from this project. Historical payments
-//   with a PAYSTACK provider code fall through to the generic
-//   config in `PROVIDER_CONFIGS` (`{ icon: '📊', name: code,
-//   color: 'gray' }`).
-//
-// Icon URLs are local paths under `packages/web/public/`. Add one
-// SVG per code to restore the images. Until then, the `<Image>`
-// onError handler hides the broken image and the emoji from
-// `PROVIDER_CONFIGS` renders.
+// ⚠ All provider logos are LOCAL asset paths under
+//   `packages/web/public/`. No external CDN dependency. Add one
+//   SVG per code to restore the images; until then the emoji from
+//   `PROVIDER_CONFIGS` renders.
 
 const PAYMENT_METHOD_ICONS: Record<string, any> = {
   CASH: Banknote,
@@ -199,10 +229,9 @@ const PAYMENT_METHOD_ICONS: Record<string, any> = {
   PAYPAL: Globe,
   FLUTTERWAVE: Globe,
   SQUARE: CreditCard,
+  MPESA: Smartphone,
   MTN: Smartphone,
   AIRTEL: Smartphone,
-  TIGO: Smartphone,
-  VODAFONE: Smartphone,
 };
 
 const PAYMENT_METHOD_COLORS: Record<string, string> = {
@@ -227,11 +256,10 @@ const PAYMENT_METHOD_COLORS: Record<string, string> = {
     'bg-cyan-100 text-cyan-700 dark:bg-cyan-900/30 dark:text-cyan-300',
   SQUARE:
     'bg-gray-100 text-gray-700 dark:bg-gray-700/50 dark:text-gray-300',
+  MPESA:
+    'bg-success-100 text-success-700 dark:bg-success-900/30 dark:text-success-300',
   MTN: 'bg-warning-100 text-warning-700 dark:bg-warning-900/30 dark:text-warning-300',
   AIRTEL:
-    'bg-danger-100 text-danger-700 dark:bg-danger-900/30 dark:text-danger-300',
-  TIGO: 'bg-primary-100 text-primary-700 dark:bg-primary-900/30 dark:text-primary-300',
-  VODAFONE:
     'bg-danger-100 text-danger-700 dark:bg-danger-900/30 dark:text-danger-300',
 };
 
@@ -240,10 +268,9 @@ const PROVIDER_IMAGE_URLS: Record<string, string> = {
   PAYPAL: '/icons/payments/paypal.svg',
   FLUTTERWAVE: '/icons/payments/flutterwave.svg',
   SQUARE: '/icons/payments/square.svg',
+  MPESA: '/icons/payments/mpesa.svg',
   MTN: '/icons/payments/mtn.svg',
   AIRTEL: '/icons/payments/airtel.svg',
-  TIGO: '/icons/payments/tigo.svg',
-  VODAFONE: '/icons/payments/vodafone.svg',
   CASH: '/icons/payments/cash.svg',
   MOBILE_MONEY: '/icons/payments/mobile-money.svg',
   BANK_TRANSFER: '/icons/payments/bank-transfer.svg',
@@ -322,6 +349,12 @@ const PROVIDER_CONFIGS: Record<
     bgColor: 'bg-gray-50 dark:bg-gray-800/50',
     name: 'Square',
   },
+  MPESA: {
+    icon: '📱',
+    color: 'success',
+    bgColor: 'bg-success-50 dark:bg-success-900/20',
+    name: 'M-Pesa',
+  },
   MTN: {
     icon: '📱',
     color: 'warning',
@@ -333,18 +366,6 @@ const PROVIDER_CONFIGS: Record<
     color: 'danger',
     bgColor: 'bg-danger-50 dark:bg-danger-900/20',
     name: 'Airtel Money',
-  },
-  TIGO: {
-    icon: '📱',
-    color: 'primary',
-    bgColor: 'bg-primary-50 dark:bg-primary-900/20',
-    name: 'Tigo Pesa',
-  },
-  VODAFONE: {
-    icon: '📱',
-    color: 'danger',
-    bgColor: 'bg-danger-50 dark:bg-danger-900/20',
-    name: 'Vodafone Cash',
   },
 };
 
@@ -472,22 +493,28 @@ export default function AdminPaymentStatsPage() {
     ],
   );
 
+  // ── Custom-range gate ────────────────────────────────────────
+  //
+  // Only re-run the fetch on a custom range when both dates are
+  // populated. This avoids firing a request mid-typing while the
+  // user is still picking the second date.
+  //
+  // Extracted into a named variable so the `useEffect` dependency
+  // array contains only simple expressions — ESLint's
+  // `react-hooks/exhaustive-deps` rule cannot statically analyse a
+  // ternary inside the array.
+  const customRangeKey =
+    dateRange === 'custom' && customStartDate && customEndDate
+      ? `${customStartDate}__${customEndDate}`
+      : '';
+
   // Load on mount and whenever the resolved range changes.
   useEffect(() => {
     if (canViewPayments) {
       void loadStats();
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [
-    canViewPayments,
-    dateRange,
-    // Only re-run on custom range if both dates are populated. This
-    // avoids firing a fetch mid-typing when the user hasn't finished
-    // selecting the second date.
-    dateRange === 'custom' && customStartDate && customEndDate
-      ? `${customStartDate}__${customEndDate}`
-      : '',
-  ]);
+  }, [canViewPayments, dateRange, customRangeKey]);
 
   const handleRefresh = useCallback(() => {
     void loadStats(true);
@@ -497,6 +524,10 @@ export default function AdminPaymentStatsPage() {
     try {
       const exportData = {
         period: dateRange,
+        // Include the settlement currency in the export payload so
+        // downstream tooling knows what the amounts are denominated
+        // in. When the env is unset, this is `null`.
+        currency: SETTLEMENT_CURRENCY || null,
         summary: {
           totalAmount: stats?.totalAmount,
           totalTransactions: stats?.count,
@@ -535,25 +566,6 @@ export default function AdminPaymentStatsPage() {
 
   const formatMethod = useCallback((method: string) => {
     return method.toLowerCase().replace(/_/g, ' ');
-  }, []);
-
-  const getProviderName = useCallback((provider: string) => {
-    const names: Record<string, string> = {
-      STRIPE: 'Stripe',
-      CASH: 'Cash',
-      MOBILE_MONEY: 'Mobile Money',
-      BANK_TRANSFER: 'Bank Transfer',
-      GIFT_CARD: 'Gift Card',
-      LOYALTY_POINTS: 'Loyalty Points',
-      PAYPAL: 'PayPal',
-      FLUTTERWAVE: 'Flutterwave',
-      SQUARE: 'Square',
-      MTN: 'MTN Mobile Money',
-      AIRTEL: 'Airtel Money',
-      TIGO: 'Tigo Pesa',
-      VODAFONE: 'Vodafone Cash',
-    };
-    return names[provider] || provider;
   }, []);
 
   const getProviderImageUrl = useCallback(
@@ -780,11 +792,10 @@ export default function AdminPaymentStatsPage() {
           {[
             {
               title: 'Total Revenue',
-              value: formatCurrency(stats.totalAmount),
+              value: fmt(stats.totalAmount),
               icon: DollarSign,
               color:
                 'bg-success-100 text-success-600 dark:bg-success-900/30 dark:text-success-400',
-              change: '+12.5%',
             },
             {
               title: 'Total Transactions',
@@ -792,24 +803,20 @@ export default function AdminPaymentStatsPage() {
               icon: CreditCard,
               color:
                 'bg-primary-100 text-primary-600 dark:bg-primary-900/30 dark:text-primary-400',
-              change: '+8.3%',
             },
             {
               title: 'Average Transaction',
-              value: formatCurrency(stats.averageAmount),
+              value: fmt(stats.averageAmount),
               icon: BarChart3,
               color:
                 'bg-secondary-100 text-secondary-600 dark:bg-secondary-900/30 dark:text-secondary-400',
-              change: '+5.2%',
             },
             {
               title: 'Net Revenue',
-              value: formatCurrency(stats.netAmount),
+              value: fmt(stats.netAmount),
               icon: TrendingUp,
               color:
                 'bg-brand-100 text-brand-600 dark:bg-brand-900/30 dark:text-brand-400',
-              change:
-                stats.netAmount > 0 ? '+2.1%' : '-0.5%',
             },
           ].map((stat, index) => (
             <div
@@ -832,29 +839,6 @@ export default function AdminPaymentStatsPage() {
                   >
                     {stat.value}
                   </p>
-                  <div className="flex items-center gap-1 mt-2">
-                    {stat.change.startsWith('+') ? (
-                      <TrendingUpIcon className="w-4 h-4 text-success-500" />
-                    ) : (
-                      <TrendingDownIcon className="w-4 h-4 text-danger-500" />
-                    )}
-                    <span
-                      className={`text-sm font-medium ${
-                        stat.change.startsWith('+')
-                          ? 'text-success-500'
-                          : 'text-danger-500'
-                      }`}
-                    >
-                      {stat.change}
-                    </span>
-                    <span
-                      className={`text-sm ${
-                        isDark ? 'text-gray-500' : 'text-gray-400'
-                      }`}
-                    >
-                      vs previous period
-                    </span>
-                  </div>
                 </div>
                 <div className={`p-3 rounded-lg ${stat.color}`}>
                   <stat.icon className="w-6 h-6" />
@@ -881,7 +865,7 @@ export default function AdminPaymentStatsPage() {
                     isDark ? 'text-white' : 'text-gray-900'
                   }`}
                 >
-                  {formatCurrency(stats.totalRefunds)}
+                  {fmt(stats.totalRefunds)}
                 </p>
               </div>
               <div
@@ -1020,7 +1004,7 @@ export default function AdminPaymentStatsPage() {
                                     : 'text-gray-500'
                                 }
                               >
-                                {formatCurrency(numericAmount)}
+                                {fmt(numericAmount)}
                               </span>
                               <span
                                 className={
@@ -1053,7 +1037,9 @@ export default function AdminPaymentStatsPage() {
                 stats.providerStats.map((provider) => {
                   const config =
                     PROVIDER_CONFIGS[provider.provider];
-                  const imageUrl = provider.imageUrl || '';
+                  const imageUrl = getProviderImageUrl(
+                    provider.provider,
+                  );
                   const bgColor =
                     provider.bgColor ||
                     'bg-gray-50 dark:bg-gray-700/30';
@@ -1076,21 +1062,6 @@ export default function AdminPaymentStatsPage() {
                                 (
                                   e.target as HTMLImageElement
                                 ).style.display = 'none';
-                                const parent = (
-                                  e.target as HTMLImageElement
-                                ).parentElement;
-                                if (parent) {
-                                  const fallback =
-                                    document.createElement('span');
-                                  fallback.className = `text-2xl ${
-                                    isDark
-                                      ? 'text-gray-300'
-                                      : 'text-gray-600'
-                                  }`;
-                                  fallback.textContent =
-                                    config?.icon || '📊';
-                                  parent.appendChild(fallback);
-                                }
                               }}
                             />
                           </div>
@@ -1117,7 +1088,7 @@ export default function AdminPaymentStatsPage() {
                                   : 'text-gray-500'
                               }
                             >
-                              {formatCurrency(provider.amount)}
+                              {fmt(provider.amount)}
                             </span>
                             <span
                               className={
@@ -1176,7 +1147,7 @@ export default function AdminPaymentStatsPage() {
                                   : 'text-gray-400'
                               }
                             >
-                              Avg: {formatCurrency(provider.average)}
+                              Avg: {fmt(provider.average)}
                             </span>
                           </div>
                         </div>
@@ -1206,7 +1177,9 @@ export default function AdminPaymentStatsPage() {
                   .map((provider, index) => {
                     const config =
                       PROVIDER_CONFIGS[provider.provider];
-                    const imageUrl = provider.imageUrl || '';
+                    const imageUrl = getProviderImageUrl(
+                      provider.provider,
+                    );
 
                     return (
                       <div
@@ -1229,23 +1202,6 @@ export default function AdminPaymentStatsPage() {
                                     (
                                       e.target as HTMLImageElement
                                     ).style.display = 'none';
-                                    const parent = (
-                                      e.target as HTMLImageElement
-                                    ).parentElement;
-                                    if (parent) {
-                                      const fallback =
-                                        document.createElement(
-                                          'span',
-                                        );
-                                      fallback.className = `text-lg ${
-                                        isDark
-                                          ? 'text-gray-300'
-                                          : 'text-gray-600'
-                                      }`;
-                                      fallback.textContent =
-                                        config?.icon || '📊';
-                                      parent.appendChild(fallback);
-                                    }
                                   }}
                                 />
                               </div>
@@ -1288,7 +1244,7 @@ export default function AdminPaymentStatsPage() {
                                   : 'text-gray-900'
                               }`}
                             >
-                              {formatCurrency(provider.amount)}
+                              {fmt(provider.amount)}
                             </p>
                           </div>
                           <div>
@@ -1328,7 +1284,7 @@ export default function AdminPaymentStatsPage() {
                                   : 'text-gray-900'
                               }`}
                             >
-                              {formatCurrency(provider.average)}
+                              {fmt(provider.average)}
                             </p>
                           </div>
                         </div>
@@ -1368,8 +1324,9 @@ export default function AdminPaymentStatsPage() {
               }`}
             >
               <Shield className="inline w-4 h-4 mr-1" />
-              All amounts in{' '}
-              {process.env.NEXT_PUBLIC_CURRENCY || 'USD'}
+              {SETTLEMENT_CURRENCY
+                ? `All amounts in ${SETTLEMENT_CURRENCY}`
+                : 'Settlement currency not configured'}
             </div>
           </div>
         </div>
@@ -1377,3 +1334,5 @@ export default function AdminPaymentStatsPage() {
     </div>
   );
 }
+
+

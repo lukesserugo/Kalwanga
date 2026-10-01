@@ -1122,7 +1122,7 @@ function EmailModal({ exportItem, emailAddress, setEmailAddress, onClose, onConf
           Send Export via Email
         </h3>
         <p className="text-gray-600 dark:text-gray-400 mb-4">
-          Send export "{exportItem.fileName}" via email
+          Send export &quot;{exportItem.fileName}&quot; via email
         </p>
         <div className="mb-4">
           <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">

@@ -667,19 +667,13 @@ function persistBusinessUnitId(user: User | null): void {
   }
 }
 
-const mapAuthUser = (authUser: any, clerkRole?: string): User => {
-  const role = (
-    clerkRole ||
-    authUser?.role ||
-    'USER'
-  ) as UserRole;
-
+const mapAuthUser = (authUser: any): User => {
   return {
     id: authUser?.id || '',
     email: authUser?.email || '',
     firstName: authUser?.firstName || '',
     lastName: authUser?.lastName || '',
-    role,
+    role: (authUser?.role || 'USER') as UserRole,
     companyId: authUser?.companyId,
     businessUnits: authUser?.businessUnits || [],
     isActive: authUser?.isActive !== undefined ? authUser.isActive : true,
@@ -721,10 +715,6 @@ export function AuthProvider({ children }: AuthProviderProps) {
 
   // Stable primitives from clerkUser
   const clerkUserId = clerkUser?.id ?? null;
-  const clerkPublicRole =
-    (clerkUser?.publicMetadata?.role as string) || null;
-  const clerkUnsafeRole =
-    (clerkUser?.unsafeMetadata?.role as string) || null;
   const clerkPrimaryEmail =
     clerkUser?.emailAddresses?.[0]?.emailAddress || '';
   const clerkFirstName = clerkUser?.firstName || '';
@@ -733,94 +723,19 @@ export function AuthProvider({ children }: AuthProviderProps) {
     clerkUser?.phoneNumbers?.[0]?.phoneNumber || '';
   const clerkAvatar = clerkUser?.imageUrl || '';
 
-  // ============================================
-  // CLERK SYNC — the missing piece
-  // ============================================
-  //
-  // This effect is what was missing from the original file. Without
-  // it, the frontend never tells the backend to provision a `users`
-  // row for the currently-authenticated Clerk user. The result was
-  // that every FK lookup for `userId` failed with USER_NOT_SYNCED.
-  //
-  // We fire this exactly once per Clerk user session (deduped via
-  // `syncAttemptedForRef`) so we don't hammer the endpoint on every
-  // render.
-  //
-  // The backend reads the identity from the verified Clerk JWT.
-  // The body fields below are belt-and-suspenders fallbacks for
-  // cases where the session template omits a claim.
-  const syncAttemptedForRef = useRef<string | null>(null);
-
-  useEffect(() => {
-    // Wait until Clerk has resolved the session.
-    if (!clerkLoaded) return;
-    if (!isSignedIn || !clerkUserId) return;
-
-    // Dedupe: only attempt once per Clerk user ID.
-    if (syncAttemptedForRef.current === clerkUserId) return;
-    syncAttemptedForRef.current = clerkUserId;
-
-    let cancelled = false;
-
-    (async () => {
-      try {
-        console.log('🔄 [useAuth] Syncing Clerk user with backend...');
-        const syncedUser = await authService.syncClerkUser({
-          clerkId: clerkUserId,
-          email: clerkPrimaryEmail || undefined,
-          firstName: clerkFirstName || undefined,
-          lastName: clerkLastName || undefined,
-          avatar: clerkAvatar || undefined,
-        });
-
-        if (cancelled) return;
-
-        console.log('✅ [useAuth] Clerk user synced with DB:', {
-          id: syncedUser.id,
-          clerkId: syncedUser.clerkId,
-          role: syncedUser.role,
-        });
-      } catch (syncErr) {
-        if (cancelled) return;
-
-        // Reset the dedupe ref so a future session can retry.
-        syncAttemptedForRef.current = null;
-
-        console.error('❌ [useAuth] Clerk user sync failed:', syncErr);
-        // Non-fatal — do not crash the app. The next successful
-        // sync will fix the DB row.
-      }
-    })();
-
-    return () => {
-      cancelled = true;
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [clerkLoaded, isSignedIn, clerkUserId]);
-
   const userRole = useMemo(() => {
-    if (clerkPublicRole) return clerkPublicRole;
-    if (clerkUnsafeRole) return clerkUnsafeRole;
     if (user?.role) return user.role;
-
-    const cached = readCachedUser();
-    if (cached?.role) return cached.role;
-
     return 'USER';
-  }, [clerkPublicRole, clerkUnsafeRole, user?.role]);
+  }, [user?.role]);
 
   const isSuper = useMemo(() => {
-    if (isSuperAdminRole(userRole)) return true;
-    if (isSuperAdminRole(user?.role)) return true;
-
     const perms = user?.permissions;
-    if (Array.isArray(perms) && perms.includes(WILDCARD)) return true;
-
-    const cached = readCachedUser();
-    if (cached && isSuperAdminRole(cached.role)) return true;
-
-    return false;
-  }, [userRole, user?.role, user?.permissions]);
+    return (
+      user?.role === 'SUPER_ADMIN' &&
+      Array.isArray(perms) &&
+      perms.includes(WILDCARD)
+    );
+  }, [user?.role, user?.permissions]);
 
   const hasPermission = useCallback(
     (roles: string[]): boolean => {
@@ -834,15 +749,11 @@ export function AuthProvider({ children }: AuthProviderProps) {
     (permission: string): boolean => {
       if (isSuper) return true;
       if (!user) return false;
-
-      if (user.permissions && user.permissions.length > 0) {
-        if (user.permissions.includes(WILDCARD)) return true;
-        return user.permissions.includes(permission);
-      }
-
-      const rolePermissions = ROLE_PERMISSIONS[user.role] || [];
-      if (rolePermissions.includes(WILDCARD)) return true;
-      return rolePermissions.includes(permission);
+      return (
+        Array.isArray(user.permissions) &&
+        (user.permissions.includes(WILDCARD) ||
+          user.permissions.includes(permission))
+      );
     },
     [user, isSuper]
   );
@@ -869,7 +780,6 @@ export function AuthProvider({ children }: AuthProviderProps) {
     (businessUnitId: string): boolean => {
       if (isSuper) return true;
       if (!user) return false;
-      if (user.role === 'ADMIN') return true;
       return (
         user.businessUnits?.some(
           (bu) => bu.businessUnitId === businessUnitId
@@ -1079,145 +989,41 @@ export function AuthProvider({ children }: AuthProviderProps) {
   }, []);
 
   const checkAuth = useCallback(async () => {
-    try {
-      setLoading(true);
-      setError(null);
-
-      const cachedUser = readCachedUser();
-
-      const storedBusinessUnitId =
-        typeof window !== 'undefined'
-          ? localStorage.getItem('businessUnitId')
-          : null;
-
-      if (clerkLoaded && isSignedIn && clerkUserId) {
-        const clerkRole = clerkPublicRole || clerkUnsafeRole || 'USER';
-
-        if (process.env.NODE_ENV === 'development') {
-          // eslint-disable-next-line no-console
-          console.log('Clerk role:', clerkRole);
-        }
-
-        const token =
-          typeof window !== 'undefined'
-            ? localStorage.getItem('auth_token')
-            : null;
-
-        if (token) {
-          try {
-            const userData = await authService.getCurrentUser();
-            if (userData) {
-              const mappedUser = mapAuthUser(userData, clerkRole);
-
-              if (!mappedUser.businessUnitId && storedBusinessUnitId) {
-                mappedUser.businessUnitId = storedBusinessUnitId;
-              }
-
-              if (
-                (!mappedUser.businessUnits ||
-                  mappedUser.businessUnits.length === 0) &&
-                cachedUser?.businessUnits?.length
-              ) {
-                mappedUser.businessUnits = cachedUser.businessUnits;
-              }
-
-              setUser(mappedUser);
-              setIsAuthenticated(true);
-              localStorage.setItem('user', JSON.stringify(mappedUser));
-              persistBusinessUnitId(mappedUser);
-              setLoading(false);
-              return;
-            }
-          } catch (err) {
-            console.error('Failed to get user from backend:', err);
-          }
-        }
-
-        if (cachedUser && cachedUser.id === clerkUserId) {
-          if (
-            isSuperAdminRole(clerkRole) &&
-            !isSuperAdminRole(cachedUser.role)
-          ) {
-            cachedUser.role = 'SUPER_ADMIN';
-          }
-          if (!cachedUser.businessUnitId && storedBusinessUnitId) {
-            cachedUser.businessUnitId = storedBusinessUnitId;
-          }
-          setUser(cachedUser);
-          setIsAuthenticated(true);
-          localStorage.setItem('user', JSON.stringify(cachedUser));
-          persistBusinessUnitId(cachedUser);
-          setLoading(false);
-          return;
-        }
-
-        if (isSuperAdminRole(clerkRole)) {
-          const adminUser: User = {
-            id: clerkUserId,
-            email: clerkPrimaryEmail,
-            firstName: clerkFirstName,
-            lastName: clerkLastName,
-            role: 'SUPER_ADMIN',
-            businessUnits: cachedUser?.businessUnits ?? [],
-            isActive: true,
-            permissions: cachedUser?.permissions ?? [],
-            businessUnitId:
-              cachedUser?.businessUnitId ?? storedBusinessUnitId ?? null,
-          };
-          setUser(adminUser);
-          setIsAuthenticated(true);
-          localStorage.setItem('user', JSON.stringify(adminUser));
-          persistBusinessUnitId(adminUser);
-          setLoading(false);
-          return;
-        }
-
-        try {
-          const randomPassword =
-            Math.random().toString(36).slice(-8) + 'Aa1!';
-          const userData = await authService.register({
-            email: clerkPrimaryEmail,
-            firstName: clerkFirstName,
-            lastName: clerkLastName,
-            phoneNumber: clerkPhoneNumber,
-            password: randomPassword,
-            role: clerkRole,
-          });
-          const mappedUser = mapAuthUser(userData, clerkRole);
-          setUser(mappedUser);
-          setIsAuthenticated(true);
-          localStorage.setItem('user', JSON.stringify(mappedUser));
-          persistBusinessUnitId(mappedUser);
-        } catch (err) {
-          console.error('Failed to create user in backend:', err);
-          const fallbackUser: User = {
-            id: clerkUserId,
-            email: clerkPrimaryEmail,
-            firstName: clerkFirstName,
-            lastName: clerkLastName,
-            role: clerkRole as UserRole,
-            businessUnits: cachedUser?.businessUnits ?? [],
-            isActive: true,
-            permissions: cachedUser?.permissions ?? [],
-            businessUnitId:
-              cachedUser?.businessUnitId ?? storedBusinessUnitId ?? null,
-          };
-          setUser(fallbackUser);
-          setIsAuthenticated(true);
-          localStorage.setItem('user', JSON.stringify(fallbackUser));
-          persistBusinessUnitId(fallbackUser);
-        }
-      } else if (clerkLoaded) {
-        setUser(null);
-        setIsAuthenticated(false);
-      } else {
-        // Clerk hasn't finished loading — do nothing.
-      }
-    } catch (err) {
-      console.error('Auth check failed:', err);
-      setError('Authentication failed');
+    if (!clerkLoaded) return;
+    if (!isSignedIn || !clerkUserId) {
       setUser(null);
       setIsAuthenticated(false);
+      setLoading(false);
+      return;
+    }
+
+    setLoading(true);
+    setError(null);
+    try {
+      const syncedUser = await authService.syncClerkUser({
+        clerkId: clerkUserId,
+        email: clerkPrimaryEmail || undefined,
+        firstName: clerkFirstName || undefined,
+        lastName: clerkLastName || undefined,
+        phoneNumber: clerkPhoneNumber || undefined,
+        avatar: clerkAvatar || undefined,
+      });
+      if (!syncedUser?.id || !syncedUser.isActive) {
+        throw new Error('The backend did not authorize this account.');
+      }
+
+      const mappedUser = mapAuthUser(syncedUser);
+      setUser(mappedUser);
+      setIsAuthenticated(true);
+      localStorage.setItem('user', JSON.stringify(mappedUser));
+      persistBusinessUnitId(mappedUser);
+    } catch (err) {
+      console.error('Backend authentication failed:', err);
+      setError('The account could not be verified by the server.');
+      setUser(null);
+      setIsAuthenticated(false);
+      localStorage.removeItem('user');
+      localStorage.removeItem('businessUnitId');
     } finally {
       setLoading(false);
     }
@@ -1225,28 +1031,18 @@ export function AuthProvider({ children }: AuthProviderProps) {
     clerkLoaded,
     isSignedIn,
     clerkUserId,
-    clerkPublicRole,
-    clerkUnsafeRole,
     clerkPrimaryEmail,
     clerkFirstName,
     clerkLastName,
     clerkPhoneNumber,
+    clerkAvatar,
   ]);
 
   const refreshUser = useCallback(async () => {
     try {
-      const clerkRole = clerkPublicRole || clerkUnsafeRole || undefined;
-
       const userData = await authService.getCurrentUser();
       if (userData) {
-        const mappedUser = mapAuthUser(userData, clerkRole);
-        if (!mappedUser.businessUnitId) {
-          const stored =
-            typeof window !== 'undefined'
-              ? localStorage.getItem('businessUnitId')
-              : null;
-          if (stored) mappedUser.businessUnitId = stored;
-        }
+        const mappedUser = mapAuthUser(userData);
         setUser(mappedUser);
         setIsAuthenticated(true);
         localStorage.setItem('user', JSON.stringify(mappedUser));
@@ -1254,8 +1050,12 @@ export function AuthProvider({ children }: AuthProviderProps) {
       }
     } catch (err) {
       console.error('Failed to refresh user:', err);
+      setUser(null);
+      setIsAuthenticated(false);
+      localStorage.removeItem('user');
+      localStorage.removeItem('businessUnitId');
     }
-  }, [clerkPublicRole, clerkUnsafeRole]);
+  }, []);
 
   const login = useCallback(
     async (email: string, password: string, remember?: boolean) => {
@@ -1294,8 +1094,6 @@ export function AuthProvider({ children }: AuthProviderProps) {
       localStorage.removeItem('businessUnitId');
       setUser(null);
       setIsAuthenticated(false);
-      // Reset sync dedupe so the next login re-syncs.
-      syncAttemptedForRef.current = null;
       try {
         await signOut();
       } catch (err) {

@@ -8,7 +8,7 @@ import {
   verifyEmailSchema,
   type LoginInput,
   type RegisterInput,
-} from "../schemas/auth";
+} from "../../../shared/src/schemas/auth";
 
 export class AuthValidation {
   static validateRegister(data: unknown): RegisterInput {

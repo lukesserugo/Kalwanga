@@ -33,6 +33,10 @@ export type DiscountType =
  * `checkoutController.ts`. The service normalizes alias forms
  * (`CARD`, `MPESA`, `BANK`, …) to canonical Prisma enum values
  * before writing to the database.
+ *
+ * ⚠ `PAYSTACK` was removed — no provider handler exists on the
+ *   backend. The backend's `CANONICAL_PAYMENT_METHODS` set no
+ *   longer contains it either. A request using it 400s.
  */
 export type CanonicalPaymentMethod =
   | 'CASH'
@@ -42,6 +46,8 @@ export type CanonicalPaymentMethod =
   | 'MOBILE_MONEY'
   | 'MOBILE'
   | 'MPESA'
+  | 'MTN'
+  | 'AIRTEL'
   | 'BANK_TRANSFER'
   | 'BANK'
   | 'GIFT_CARD'
@@ -54,7 +60,6 @@ export type CanonicalPaymentMethod =
   | 'OTHER'
   | 'PAYPAL'
   | 'FLUTTERWAVE'
-  | 'PAYSTACK'
   | 'SQUARE'
   | 'CHECK';
 
@@ -116,9 +121,123 @@ export type CheckoutPaymentStatus =
  * `paymentMethod === 'MOBILE_MONEY'`. Sent to the backend as
  * `mobileMoneyProvider` so it routes to the right gateway.
  *
- * When omitted, the backend defaults to `'MPESA'`.
+ * ⚠ Only MTN and AIRTEL have working handlers on the backend.
+ *   `MPESA` is handled by a separate `mpesaService` and must be
+ *   selected via `paymentMethod: 'MPESA'` rather than routed
+ *   through this field. The union is kept at three values for
+ *   wire compatibility; the UI should only present MTN and
+ *   AIRTEL as mobile-money sub-choices.
  */
 export type MobileMoneyProvider = 'MPESA' | 'MTN' | 'AIRTEL';
+
+// ============================================
+// CHARGE CONTEXT — Phase D1
+// ============================================
+//
+// When the payer's cart is denominated in a currency the chosen
+// gateway does not settle in, the backend converts the charge to
+// the gateway's own currency BEFORE the gateway is called. The
+// payer must see the converted amount and affirmatively accept it
+// before the charge proceeds.
+//
+// The flow is:
+//
+//   1. Payer picks a payment method.
+//   2. Frontend calls `POST /checkout/charge-preview` with
+//      `{ cartId, paymentMethod, mobileMoneyProvider? }`.
+//   3. Backend returns the `ChargePreviewResponse` below.
+//   4. If `charge.currency !== ledger.currency`, the frontend
+//      renders the disclosure sentence verbatim, shows the charge
+//      total in the charge currency, and requires the payer to
+//      tick a confirmation checkbox.
+//   5. On `POST /checkout/online`, the frontend sends
+//      `chargeContextAcknowledged: true` on the body.
+//
+// If the payer does not acknowledge a converted charge, the
+// backend rejects the checkout with a 409 and
+// `code: 'CHARGE_CONTEXT_REQUIRED'`.
+
+/**
+ * Response of `POST /checkout/charge-preview`.
+ *
+ * ⚠ `available: false` is a first-class outcome — the resolver
+ *   could not find an FX rate from the ledger currency to any
+ *   currency the gateway accepts. The frontend renders `reason`
+ *   and disables the confirm button. It must NOT fall back to
+ *   "charge in the ledger currency anyway" — the gateway will
+ *   reject the charge.
+ */
+export interface ChargePreviewResponse {
+  available: boolean;
+  reason?: string;
+
+  /**
+   * What the books will record. Present whenever `available` is
+   * `true` (and also on the `available: false` path, so the
+   * payer still sees their cart total).
+   */
+  ledger?: {
+    currency: string;
+    subtotal: number;
+    tax: number;
+    discount: number;
+    total: number;
+  };
+
+  /**
+   * What the gateway will bill. Present only when `available` is
+   * `true`. When `charge.currency === ledger.currency`, the two
+   * amounts match — no conversion, no disclosure, no checkbox.
+   */
+  charge?: {
+    currency: string;
+    amount: number;
+    fee: number;
+    total: number;
+  };
+
+  /**
+   * Rate applied (ledger → charge) and its provenance. Present
+   * only when `available` is `true`. `source` values you might
+   * see: `'identity'`, `'direct'`, `'inverse'`, `'pivot:...'`,
+   * `'override:<id>'`.
+   */
+  rate?: {
+    value: number;
+    source: string;
+  };
+
+  /**
+   * Plain-language disclosure sentence the payer reads before
+   * confirming. Rendered verbatim — do not paraphrase. Comes
+   * from the backend so wording changes ship without a frontend
+   * deploy, and so the exact string the payer agreed to is
+   * recorded on the Payment row's metadata.
+   */
+  disclosure?: string;
+
+  /**
+   * `true` when the payer MUST tick a checkbox before the
+   * confirm button enables. Equivalent to
+   * `charge.currency !== ledger.currency`. Sent explicitly
+   * rather than derived so the backend can change its rule
+   * without a frontend change.
+   */
+  requiresPayerConfirmation?: boolean;
+}
+
+/**
+ * Request body for `POST /checkout/charge-preview`.
+ */
+export interface ChargePreviewRequest {
+  cartId: string;
+  paymentMethod: AnyPaymentMethod;
+  /**
+   * Required when `paymentMethod === 'MOBILE_MONEY'`. Ignored
+   * otherwise.
+   */
+  mobileMoneyProvider?: MobileMoneyProvider;
+}
 
 // ============================================
 // REQUEST SHAPES
@@ -128,12 +247,12 @@ export type MobileMoneyProvider = 'MPESA' | 'MTN' | 'AIRTEL';
  * Body accepted by `POST /checkout`.
  *
  * ⚠ `POST /checkout` is the OFFLINE path (cash / bank transfer /
- *   check). Card / PayPal / Flutterwave / Paystack / Square /
- *   Mobile Money must go through `POST /checkout/online` — the
- *   backend rejects them here with a 400. The gateway-specific
- *   fields on this type are declared for forward compatibility and
- *   because the service's payload builder forwards them uniformly;
- *   they are ignored on the offline path.
+ *   check). Card / PayPal / Flutterwave / Square / Mobile Money
+ *   must go through `POST /checkout/online` — the backend rejects
+ *   them here with a 400. The gateway-specific fields on this
+ *   type are declared for forward compatibility and because the
+ *   service's payload builder forwards them uniformly; they are
+ *   ignored on the offline path.
  */
 export interface CheckoutData {
   // ── Required ─────────────────────────────────────────────
@@ -218,6 +337,22 @@ export interface CheckoutData {
   returnUrl?: string;
   /** Redirect target after a cancelled gateway flow. */
   cancelUrl?: string;
+
+  // ── Phase D1: charge-currency acknowledgement ────────────
+  /**
+   * The payer's affirmative acceptance of the converted charge
+   * amount, shown on the pre-payment screen.
+   *
+   * ⚠ Send `true` ONLY when the payer has seen the conversion
+   *   preview (via `checkoutService.chargePreview(...)`) and
+   *   ticked the confirm box. The backend rejects the checkout
+   *   with a 409 and `code: 'CHARGE_CONTEXT_REQUIRED'` when a
+   *   conversion is required and this field is absent or `false`.
+   *
+   *   When the charge currency equals the ledger currency (the
+   *   common case), this field is ignored.
+   */
+  chargeContextAcknowledged?: boolean;
 
   // ── Client-only hint ─────────────────────────────────────
   savePaymentMethod?: boolean;
@@ -484,12 +619,26 @@ export interface CheckoutReceipt {
   loyaltyDiscount?: number;
 
   /**
-   * Resolved currency for the sale (ISO 4217). Populated by the
-   * backend's currency resolver — from the business unit's
+   * Resolved ledger currency for the sale (ISO 4217). Populated by
+   * the backend's currency resolver — from the business unit's
    * `currency` column, falling back to `DEFAULT_CURRENCY` and
-   * then the registry default.
+   * then the registry default. This is what the books record.
    */
   currency?: string | null;
+
+  /**
+   * Phase D1: what the gateway actually charged in. Present only
+   * when the charge currency differed from the ledger currency.
+   * When present, `chargeAmount` is the amount billed in
+   * `chargeCurrency`, and `chargeRate` is the rate applied.
+   *
+   * ⚠ These are audit fields. The `currency` + `total` pair on
+   *   this receipt is still the authoritative ledger record.
+   */
+  chargeCurrency?: string | null;
+  chargeAmount?: number | null;
+  chargeRate?: number | null;
+  chargeRateSource?: string | null;
 }
 
 export interface CheckoutReceiptItem {

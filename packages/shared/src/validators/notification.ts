@@ -17,7 +17,7 @@ import {
   type NotificationQueryInput,
   type UpdateNotificationInput,
   type UpdatePreferencesInput,
-} from "../schemas/notification";
+} from "../../../shared/src/schemas/notification";
 
 export class NotificationValidation {
   static validateCreateNotification(data: unknown): CreateNotificationInput {

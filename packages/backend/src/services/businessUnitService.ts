@@ -1,7 +1,14 @@
 // src/services/businessUnitService.ts
 import { BaseService } from './BaseService.js';
 import { AppError } from '../middleware/errorHandler.js';
-import { Prisma, BusinessUnitType, UserRole } from '../generated/prisma/index.js';
+import {
+  Prisma,
+  BusinessUnitType,
+  UserRole,
+} from '../generated/prisma/index.js';
+import { currencyService } from './currencyService.js';
+import { currencyMigrationService } from './currencyMigrationService.js';
+import { findCurrency } from '../lib/currencies.js';
 
 interface BusinessUnitStats {
   products: number;
@@ -25,6 +32,15 @@ interface CreateBusinessUnitData {
   companyId: string;
   isActive?: boolean;
   type?: BusinessUnitType;
+  /**
+   * ISO 4217 settlement currency for this BU's ledger.
+   *
+   * When omitted, the platform default is applied via
+   * `currencyService.getDefault()` — never a hardcoded literal.
+   * Must be a `settlementAllowed: true` currency, or the call is
+   * rejected with 400.
+   */
+  currency?: string;
 }
 
 interface UpdateBusinessUnitData {
@@ -35,6 +51,59 @@ interface UpdateBusinessUnitData {
   email?: string;
   isActive?: boolean;
   type?: BusinessUnitType;
+  /**
+   * ISO 4217 settlement currency.
+   *
+   * ⚠ Changing this via `updateBusinessUnit` is BLOCKED when the BU
+   *   has any dirty records (open carts, pending sales, pending
+   *   payments, pending orders, draft invoices). Use
+   *   `changeBusinessUnitCurrency()` instead, which runs the dirty
+   *   check and offers the conversion path.
+   *
+   * This field is accepted on update ONLY when the BU is clean
+   * (dirty counts all zero). Otherwise 409.
+   */
+  currency?: string;
+}
+
+interface ChangeCurrencyParams {
+  businessUnitId: string;
+  targetCurrency: string;
+  /**
+   * When the BU has dirty records, the admin must pass `true` to
+   * acknowledge that a conversion will run. The service refuses the
+   * change without it.
+   */
+  acknowledgeDirtyRecords?: boolean;
+  /**
+   * Rate to apply for the conversion (`from → to`). Required when
+   * dirty records exist. Ignored when the BU is clean.
+   */
+  conversionRate?: number;
+  reason?: string | null;
+  userId: string;
+}
+
+interface ChangeCurrencyResult {
+  businessUnit: any;
+  mode: 'simple' | 'migrated';
+  fromCurrency: string;
+  toCurrency: string;
+  dirtyCounts?: {
+    carts: number;
+    sales: number;
+    payments: number;
+    orders: number;
+    invoices: number;
+  };
+  conversionRate?: number;
+  convertedRecords?: {
+    carts: number;
+    sales: number;
+    payments: number;
+    orders: number;
+    invoices: number;
+  };
 }
 
 export class BusinessUnitService extends BaseService {
@@ -43,25 +112,25 @@ export class BusinessUnitService extends BaseService {
   // ============================================
 
   /**
-   * Validate if a string is a valid ID (CUID or UUID)
-   * Prisma generates CUIDs by default (e.g., "cmta9eosu000050c9wv812exa")
-   * but some models might use UUIDs
+   * Validate if a string is a valid ID (CUID or UUID).
+   * Prisma generates CUIDs by default (e.g. "cmta9eosu000050c9wv812exa")
+   * but some models use UUIDs.
    */
   private isValidID(id: string): boolean {
-    // CUID pattern (starts with 'c' followed by 24 alphanumeric characters)
     const cuidRegex = /^c[a-z0-9]{24}$/i;
-    
-    // UUID pattern
-    const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-    
-    // Also accept simple alphanumeric IDs of reasonable length
+    const uuidRegex =
+      /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
     const simpleIdRegex = /^[a-zA-Z0-9_-]{10,50}$/;
-    
-    return cuidRegex.test(id) || uuidRegex.test(id) || simpleIdRegex.test(id);
+
+    return (
+      cuidRegex.test(id) ||
+      uuidRegex.test(id) ||
+      simpleIdRegex.test(id)
+    );
   }
 
   /**
-   * Validate and ensure a business unit exists
+   * Validate and ensure a business unit exists.
    */
   private async validateBusinessUnit(id: string): Promise<any> {
     if (!id) {
@@ -69,7 +138,10 @@ export class BusinessUnitService extends BaseService {
     }
 
     if (!this.isValidID(id)) {
-      throw new AppError('Invalid business unit ID format. Must be a valid ID.', 400);
+      throw new AppError(
+        'Invalid business unit ID format. Must be a valid ID.',
+        400,
+      );
     }
 
     const businessUnit = await this.prisma.businessUnit.findUnique({
@@ -84,35 +156,77 @@ export class BusinessUnitService extends BaseService {
   }
 
   /**
-   * Validate a company ID
-   * 🔥 Fixed: Removed strict ID validation that was rejecting valid CUIDs
-   * Now directly checks if the company exists in the database
+   * Validate a company ID.
    */
   private async validateCompany(id: string): Promise<any> {
     if (!id) {
       throw new AppError('Company ID is required', 400);
     }
 
-    console.log(`🔍 Validating company: ${id}`);
-
     const company = await this.prisma.company.findUnique({
       where: { id },
     });
 
     if (!company) {
-      console.error(`❌ Company not found: ${id}`);
-      
-      // Debug: List all companies
-      const allCompanies = await this.prisma.company.findMany({
-        select: { id: true, name: true },
-      });
-      console.log('📊 All companies in DB:', JSON.stringify(allCompanies, null, 2));
-      
       throw new AppError(`Company not found with ID: ${id}`, 404);
     }
 
-    console.log(`✅ Company found: ${company.name}`);
     return company;
+  }
+
+  // NOTE: `validateUser` is inherited from `BaseService`. Do NOT
+  // redeclare it here — a private redeclaration would narrow the
+  // inherited signature and TypeScript would reject the class
+  // (error 2415: property is private in subtype but not in base).
+
+  // ============================================
+  // CURRENCY HELPERS
+  // ============================================
+
+  /**
+   * Validate a candidate settlement currency code.
+   *
+   * A BU's ledger currency must be:
+   *   • a known currency in the registry
+   *   • `settlementAllowed: true` (has an FX market and at least one
+   *     gateway that settles in it)
+   *
+   * Returns the canonical uppercase code. Throws 400 otherwise.
+   * Never hardcodes a currency — the registry is the only source.
+   */
+  private assertSettlementCurrency(code: string): string {
+    const upper = code.trim().toUpperCase();
+    const meta = findCurrency(upper);
+
+    if (!meta) {
+      throw new AppError(`Unknown currency: ${upper}`, 400);
+    }
+
+    if (!meta.settlementAllowed) {
+      throw new AppError(
+        `${upper} cannot be used as a settlement currency. ` +
+          `It is display-only or has no gateway settlement support.`,
+        400,
+      );
+    }
+
+    return upper;
+  }
+
+  /**
+   * Read the current ledger currency of a BU, resolved through the
+   * registry. Used by the dirty-check path and by every audit log
+   * entry that records a currency change.
+   */
+  private async readBusinessUnitCurrency(
+    businessUnitId: string,
+  ): Promise<string> {
+    const bu = await this.prisma.businessUnit.findUnique({
+      where: { id: businessUnitId },
+      select: { currency: true },
+    });
+    if (!bu) throw new AppError('Business unit not found', 404);
+    return currencyService.resolveForBusiness(bu.currency);
   }
 
   // ============================================
@@ -120,10 +234,7 @@ export class BusinessUnitService extends BaseService {
   // ============================================
 
   /**
-   * Get all business units with pagination and filtering
-   */
-  /**
-   * Get all business units with pagination and filtering
+   * Get all business units with pagination and filtering.
    */
   async getAllBusinessUnits(params: {
     page?: number;
@@ -136,26 +247,25 @@ export class BusinessUnitService extends BaseService {
     includeDeleted?: boolean;
   }) {
     try {
-      const { 
-        page = 1, 
-        limit = 10, 
-        search, 
+      const {
+        page = 1,
+        limit = 10,
+        search,
         companyId,
         isActive,
         sortBy = 'createdAt',
         sortOrder = 'desc',
         includeDeleted = false,
       } = params;
-      
+
       const skip = (page - 1) * limit;
 
       const where: any = {};
 
-      // ✅ Exclude soft-deleted units unless explicitly requested
       if (!includeDeleted) {
         where.deletedAt = null;
       }
-      
+
       if (search) {
         where.OR = [
           { name: { contains: search, mode: 'insensitive' } },
@@ -164,12 +274,12 @@ export class BusinessUnitService extends BaseService {
           { phone: { contains: search, mode: 'insensitive' } },
         ];
       }
-      
+
       if (companyId) {
         await this.validateCompany(companyId);
         where.companyId = companyId;
       }
-      
+
       if (isActive !== undefined) where.isActive = isActive;
 
       const [businessUnits, total] = await Promise.all([
@@ -215,6 +325,11 @@ export class BusinessUnitService extends BaseService {
 
       const enhancedBusinessUnits = businessUnits.map((bu: any) => ({
         ...bu,
+        // Resolve the display symbol at read time from the registry.
+        // Never persisted — the registry is the single source.
+        currencySymbol:
+          currencyService.tryGetCurrency(bu.currency)?.symbol ??
+          bu.currency,
         activeUserCount: bu.users.length,
         totalProductCount: bu._count.products,
         totalInventoryCount: bu._count.inventory,
@@ -230,11 +345,12 @@ export class BusinessUnitService extends BaseService {
       };
     } catch (error) {
       this.handleError(error, 'BusinessUnitService.getAllBusinessUnits');
+      throw error;
     }
   }
 
   /**
-   * Get business unit by ID with full details
+   * Get business unit by ID with full details.
    */
   async getBusinessUnitById(id: string) {
     try {
@@ -304,22 +420,28 @@ export class BusinessUnitService extends BaseService {
 
       return {
         ...businessUnit,
+        // Derived symbol — never stored.
+        currencySymbol:
+          currencyService.tryGetCurrency(businessUnit.currency)?.symbol ??
+          businessUnit.currency,
         stats,
         counts: businessUnit._count,
       };
     } catch (error) {
       this.handleError(error, 'BusinessUnitService.getBusinessUnitById');
+      throw error;
     }
   }
 
   /**
-   * Create a new business unit
+   * Create a new business unit.
+   *
+   * When `currency` is supplied, it must be a valid settlement
+   * currency. When omitted, the platform default applies (from the
+   * registry, never a hardcoded literal).
    */
   async createBusinessUnit(data: CreateBusinessUnitData) {
     try {
-      console.log('📦 createBusinessUnit called with:', data);
-      
-      // Validate required fields
       if (!data.name) {
         throw new AppError('Business unit name is required', 400);
       }
@@ -330,15 +452,19 @@ export class BusinessUnitService extends BaseService {
         throw new AppError('Company ID is required', 400);
       }
 
-      // Check if company exists, if not, create it
+      // ── Resolve the settlement currency ────────────────────
+      // Explicit value → validate as settlement currency.
+      // Omitted → registry default (UGX unless overridden by env).
+      const resolvedCurrency = data.currency
+        ? this.assertSettlementCurrency(data.currency)
+        : currencyService.getDefault();
+
+      // Ensure the company exists; create a stub if not.
       let company = await this.prisma.company.findUnique({
         where: { id: data.companyId },
       });
 
       if (!company) {
-        console.warn(`⚠️ Company ${data.companyId} not found, attempting to create`);
-        
-        // Try to find by name or create new
         company = await this.prisma.company.findFirst({
           where: { name: data.name },
         });
@@ -347,15 +473,18 @@ export class BusinessUnitService extends BaseService {
           company = await this.prisma.company.create({
             data: {
               name: data.name,
-              email: data.email || `${data.code.toLowerCase()}@company.com`,
+              email:
+                data.email ||
+                `${data.code.toLowerCase()}@company.com`,
               phone: data.phone || '',
+              // Company-level default also resolved from the
+              // registry, never hardcoded.
+              currency: resolvedCurrency,
             },
           });
-          console.log(`✅ Created new company: ${company.name} (${company.id})`);
         }
       }
 
-      // Create business unit
       const businessUnit = await this.prisma.businessUnit.create({
         data: {
           name: data.name.trim(),
@@ -366,19 +495,31 @@ export class BusinessUnitService extends BaseService {
           companyId: company.id,
           isActive: data.isActive ?? true,
           type: data.type || 'STORE',
+          currency: resolvedCurrency,
         },
       });
 
-      console.log(`✅ Business unit created: ${businessUnit.name} (${businessUnit.code})`);
-      return businessUnit;
+      return {
+        ...businessUnit,
+        currencySymbol:
+          currencyService.tryGetCurrency(businessUnit.currency)?.symbol ??
+          businessUnit.currency,
+      };
     } catch (error) {
-      console.error('❌ Error in createBusinessUnit:', error);
       this.handleError(error, 'BusinessUnitService.createBusinessUnit');
+      throw error;
     }
   }
 
   /**
-   * Update business unit
+   * Update business unit non-currency fields.
+   *
+   * ⚠ Currency changes via this method are BLOCKED when the BU has
+   *   dirty records. Use `changeBusinessUnitCurrency()` instead —
+   *   it runs the dirty check and offers the conversion path.
+   *
+   * When the BU is clean (all dirty counts zero), a `currency` field
+   * in `data` is accepted and applied directly.
    */
   async updateBusinessUnit(id: string, data: UpdateBusinessUnitData) {
     try {
@@ -404,32 +545,78 @@ export class BusinessUnitService extends BaseService {
           },
         });
         if (existing) {
-          throw new AppError(`Business unit code "${data.code}" already exists`, 400);
+          throw new AppError(
+            `Business unit code "${data.code}" already exists`,
+            400,
+          );
         }
       }
 
-      // Prepare update data
+      // ── Currency change gate ──────────────────────────────
+      // If the caller sent a currency different from the current
+      // one, run the dirty check. Clean BUs get a simple swap;
+      // dirty BUs are refused here (the admin must use the
+      // dedicated changeCurrency endpoint which handles the
+      // conversion).
+      let currencyChange: string | null = null;
+      if (data.currency !== undefined) {
+        const target = this.assertSettlementCurrency(data.currency);
+        const current = currencyService.resolveForBusiness(
+          businessUnit.currency,
+        );
+        if (target !== current) {
+          const dirty =
+            await currencyMigrationService.countDirtyRecords(id);
+          const totalDirty =
+            dirty.carts +
+            dirty.sales +
+            dirty.payments +
+            dirty.orders +
+            dirty.invoices;
+
+          if (totalDirty > 0) {
+            await currencyMigrationService.logBlockedChange({
+              businessUnitId: id,
+              attemptedCurrency: target,
+              currentCurrency: current,
+              dirtyCounts: dirty,
+              userId: 'system',
+            });
+            throw new AppError(
+              `Cannot change currency from ${current} to ${target}: ` +
+                `the business unit has ${totalDirty} dirty record(s). ` +
+                `Use the dedicated currency-change endpoint to run a ` +
+                `conversion first.`,
+              409,
+            );
+          }
+
+          currencyChange = target;
+        }
+      }
+
       const updateData: any = {};
       if (data.name !== undefined) updateData.name = data.name.trim();
-      if (data.code !== undefined) updateData.code = data.code.toUpperCase().trim();
-      if (data.address !== undefined) updateData.address = data.address || null;
+      if (data.code !== undefined)
+        updateData.code = data.code.toUpperCase().trim();
+      if (data.address !== undefined)
+        updateData.address = data.address || null;
       if (data.phone !== undefined) updateData.phone = data.phone || null;
       if (data.email !== undefined) updateData.email = data.email || null;
-      if (data.isActive !== undefined) updateData.isActive = data.isActive;
+      if (data.isActive !== undefined)
+        updateData.isActive = data.isActive;
       if (data.type !== undefined) updateData.type = data.type;
+      if (currencyChange !== null)
+        updateData.currency = currencyChange;
 
-      // Update in transaction with audit log
-      const updatedBusinessUnit = await this.prisma.$transaction(async (tx: Prisma.TransactionClient) => {
-        const updated = await tx.businessUnit.update({
-          where: { id },
-          data: updateData,
-          include: {
-            company: true,
-          },
-        });
+      const updatedBusinessUnit = await this.prisma.$transaction(
+        async (tx: Prisma.TransactionClient) => {
+          const updated = await tx.businessUnit.update({
+            where: { id },
+            data: updateData,
+            include: { company: true },
+          });
 
-        // Log the update
-        try {
           await tx.auditLog.create({
             data: {
               action: 'UPDATE',
@@ -437,28 +624,224 @@ export class BusinessUnitService extends BaseService {
               entityId: id,
               userId: 'system',
               entityName: updated.name,
-              severity: 'INFO',
+              businessUnitId: id,
+              severity: currencyChange ? 'HIGH' : 'INFO',
               changes: {
                 updatedFields: Object.keys(data),
+                currencyChange: currencyChange
+                  ? {
+                      from: currencyService.resolveForBusiness(
+                        businessUnit.currency,
+                      ),
+                      to: currencyChange,
+                    }
+                  : undefined,
               },
             },
           });
-        } catch (logError) {
-          console.warn('Failed to create audit log:', logError);
-        }
 
-        return updated;
-      });
+          return updated;
+        },
+      );
 
-      console.log(`✅ Business unit updated: ${updatedBusinessUnit.name} (${updatedBusinessUnit.code})`);
-      return updatedBusinessUnit;
+      return {
+        ...updatedBusinessUnit,
+        currencySymbol:
+          currencyService.tryGetCurrency(
+            updatedBusinessUnit.currency,
+          )?.symbol ?? updatedBusinessUnit.currency,
+      };
     } catch (error) {
       this.handleError(error, 'BusinessUnitService.updateBusinessUnit');
+      throw error;
     }
   }
 
   /**
-   * Delete business unit (soft delete preferred)
+   * Change the settlement currency of a business unit.
+   *
+   * THE single entry point for admin currency changes. Behaviour:
+   *
+   *   1. Validate the target is a `settlementAllowed` currency.
+   *   2. Count dirty records (open carts, pending sales/payments/
+   *      orders, draft invoices).
+   *   3. If dirty and `acknowledgeDirtyRecords !== true`:
+   *        • log the blocked attempt
+   *        • throw 409 with the counts, so the UI can prompt
+   *   4. If dirty and acknowledged:
+   *        • require `conversionRate` (finite, positive)
+   *        • run `currencyMigrationService.convertBusinessUnitCurrency`
+   *        • return `mode: 'migrated'`
+   *   5. If clean:
+   *        • simple `businessUnit.update({ currency })`
+   *        • return `mode: 'simple'`
+   *
+   * The BU's currency is never mutated without an audit entry.
+   * Every path writes one.
+   */
+  async changeBusinessUnitCurrency(
+    params: ChangeCurrencyParams,
+  ): Promise<ChangeCurrencyResult> {
+    try {
+      const {
+        businessUnitId,
+        targetCurrency,
+        acknowledgeDirtyRecords = false,
+        conversionRate,
+        reason = null,
+        userId,
+      } = params;
+
+      if (!userId) {
+        throw new AppError('User ID is required', 400);
+      }
+
+      await this.validateBusinessUnit(businessUnitId);
+
+      const target = this.assertSettlementCurrency(targetCurrency);
+      const current = await this.readBusinessUnitCurrency(
+        businessUnitId,
+      );
+
+      if (target === current) {
+        throw new AppError(
+          `Business unit already uses ${target}`,
+          400,
+        );
+      }
+
+      const dirty =
+        await currencyMigrationService.countDirtyRecords(businessUnitId);
+      const totalDirty =
+        dirty.carts +
+        dirty.sales +
+        dirty.payments +
+        dirty.orders +
+        dirty.invoices;
+
+      // ── Path A: dirty, not acknowledged → block + audit ──
+      if (totalDirty > 0 && !acknowledgeDirtyRecords) {
+        await currencyMigrationService.logBlockedChange({
+          businessUnitId,
+          attemptedCurrency: target,
+          currentCurrency: current,
+          dirtyCounts: dirty,
+          userId,
+        });
+        throw new AppError(
+          `Cannot change currency from ${current} to ${target}: ` +
+            `the business unit has ${totalDirty} dirty record(s) ` +
+            `(carts: ${dirty.carts}, sales: ${dirty.sales}, ` +
+            `payments: ${dirty.payments}, orders: ${dirty.orders}, ` +
+            `invoices: ${dirty.invoices}). ` +
+            `Re-send the request with ` +
+            `acknowledgeDirtyRecords=true and a conversionRate to ` +
+            `run the conversion.`,
+          409,
+        );
+      }
+
+      // ── Path B: dirty, acknowledged → convert ────────────
+      if (totalDirty > 0 && acknowledgeDirtyRecords) {
+        if (
+          typeof conversionRate !== 'number' ||
+          !Number.isFinite(conversionRate) ||
+          conversionRate <= 0
+        ) {
+          throw new AppError(
+            'conversionRate must be a positive finite number when ' +
+              'converting a business unit with dirty records',
+            400,
+          );
+        }
+
+        const result =
+          await currencyMigrationService.convertBusinessUnitCurrency({
+            businessUnitId,
+            targetCurrency: target,
+            rate: conversionRate,
+            reason,
+            userId,
+          });
+
+        const refreshed = await this.prisma.businessUnit.findUnique({
+          where: { id: businessUnitId },
+          include: { company: true },
+        });
+
+        return {
+          businessUnit: refreshed
+            ? {
+                ...refreshed,
+                currencySymbol:
+                  currencyService.tryGetCurrency(refreshed.currency)
+                    ?.symbol ?? refreshed.currency,
+              }
+            : null,
+          mode: 'migrated',
+          fromCurrency: result.fromCurrency,
+          toCurrency: result.toCurrency,
+          dirtyCounts: dirty,
+          conversionRate: result.conversionRate,
+          convertedRecords: result.convertedRecords,
+        };
+      }
+
+      // ── Path C: clean → simple swap + audit ──────────────
+      const updated = await this.prisma.$transaction(
+        async (tx: Prisma.TransactionClient) => {
+          const bu = await tx.businessUnit.update({
+            where: { id: businessUnitId },
+            data: { currency: target },
+            include: { company: true },
+          });
+
+          await tx.auditLog.create({
+            data: {
+              action: 'UPDATE',
+              entityType: 'BUSINESS_UNIT',
+              entityId: businessUnitId,
+              entityName: 'BU currency change',
+              userId,
+              businessUnitId,
+              severity: 'HIGH',
+              changes: {
+                kind: 'CURRENCY_CHANGE',
+                fromCurrency: current,
+                toCurrency: target,
+                mode: 'simple',
+                reason,
+              },
+            },
+          });
+
+          return bu;
+        },
+      );
+
+      return {
+        businessUnit: {
+          ...updated,
+          currencySymbol:
+            currencyService.tryGetCurrency(updated.currency)?.symbol ??
+            updated.currency,
+        },
+        mode: 'simple',
+        fromCurrency: current,
+        toCurrency: target,
+        dirtyCounts: dirty,
+      };
+    } catch (error) {
+      this.handleError(
+        error,
+        'BusinessUnitService.changeBusinessUnitCurrency',
+      );
+      throw error;
+    }
+  }
+
+  /**
+   * Delete business unit (soft delete preferred).
    */
   async deleteBusinessUnit(id: string) {
     try {
@@ -467,16 +850,10 @@ export class BusinessUnitService extends BaseService {
       const businessUnit = await this.prisma.businessUnit.findUnique({
         where: { id },
         include: {
-          products: {
-            where: { isActive: true },
-          },
+          products: { where: { isActive: true } },
           inventory: true,
-          users: {
-            where: { isActive: true },
-          },
-          sales: {
-            take: 1,
-          },
+          users: { where: { isActive: true } },
+          sales: { take: 1 },
         },
       });
 
@@ -484,33 +861,30 @@ export class BusinessUnitService extends BaseService {
         throw new AppError('Business unit not found', 404);
       }
 
-      const hasAssociations = 
-        businessUnit.products.length > 0 || 
+      const hasAssociations =
+        businessUnit.products.length > 0 ||
         businessUnit.inventory.length > 0 ||
         businessUnit.users.length > 0 ||
         businessUnit.sales.length > 0;
 
       if (hasAssociations) {
-        // Soft delete
-        const archived = await this.prisma.$transaction(async (tx: Prisma.TransactionClient) => {
-          const updated = await tx.businessUnit.update({
-            where: { id },
-            data: {
-              isActive: false,
-            },
-          });
+        const archived = await this.prisma.$transaction(
+          async (tx: Prisma.TransactionClient) => {
+            const updated = await tx.businessUnit.update({
+              where: { id },
+              data: { isActive: false },
+            });
 
-          await tx.businessUnitUser.updateMany({
-            where: { businessUnitId: id, isActive: true },
-            data: { isActive: false },
-          });
+            await tx.businessUnitUser.updateMany({
+              where: { businessUnitId: id, isActive: true },
+              data: { isActive: false },
+            });
 
-          await tx.product.updateMany({
-            where: { businessUnitId: id, isActive: true },
-            data: { isActive: false },
-          });
+            await tx.product.updateMany({
+              where: { businessUnitId: id, isActive: true },
+              data: { isActive: false },
+            });
 
-          try {
             await tx.auditLog.create({
               data: {
                 action: 'UPDATE',
@@ -518,6 +892,7 @@ export class BusinessUnitService extends BaseService {
                 entityId: id,
                 userId: 'system',
                 entityName: businessUnit.name,
+                businessUnitId: id,
                 severity: 'HIGH',
                 changes: {
                   isActive: { old: true, new: false },
@@ -525,27 +900,23 @@ export class BusinessUnitService extends BaseService {
                 },
               },
             });
-          } catch (logError) {
-            console.warn('Failed to create audit log:', logError);
-          }
 
-          return updated;
-        });
+            return updated;
+          },
+        );
 
-        return { 
-          message: 'Business unit archived (soft deleted) due to associated records',
+        return {
+          message:
+            'Business unit archived (soft deleted) due to associated records',
           data: archived,
           softDeleted: true,
         };
       }
 
-      // Hard delete if no associations
-      await this.prisma.$transaction(async (tx: Prisma.TransactionClient) => {
-        await tx.businessUnit.delete({
-          where: { id },
-        });
+      await this.prisma.$transaction(
+        async (tx: Prisma.TransactionClient) => {
+          await tx.businessUnit.delete({ where: { id } });
 
-        try {
           await tx.auditLog.create({
             data: {
               action: 'DELETE',
@@ -556,51 +927,62 @@ export class BusinessUnitService extends BaseService {
               severity: 'HIGH',
             },
           });
-        } catch (logError) {
-          console.warn('Failed to create audit log:', logError);
-        }
-      });
+        },
+      );
 
-      return { 
+      return {
         message: 'Business unit deleted successfully',
         softDeleted: false,
       };
     } catch (error) {
       this.handleError(error, 'BusinessUnitService.deleteBusinessUnit');
+      throw error;
     }
   }
 
   /**
-   * Bulk delete business units
+   * Bulk delete business units.
    */
-  async bulkDeleteBusinessUnits(ids: string[]): Promise<{ 
-    deletedCount: number; 
+  async bulkDeleteBusinessUnits(ids: string[]): Promise<{
+    deletedCount: number;
     softDeletedCount: number;
     errors: string[];
-    results: Array<{ id: string; success: boolean; message: string; softDeleted?: boolean }>;
+    results: Array<{
+      id: string;
+      success: boolean;
+      message: string;
+      softDeleted?: boolean;
+    }>;
   }> {
     try {
       if (!ids || ids.length === 0) {
         throw new AppError('No business unit IDs provided', 400);
       }
 
-      // Validate all IDs
       for (const id of ids) {
         if (!this.isValidID(id)) {
           throw new AppError(`Invalid ID format: ${id}`, 400);
         }
       }
 
-      const results: Array<{ id: string; success: boolean; message: string; softDeleted?: boolean }> = [];
+      const results: Array<{
+        id: string;
+        success: boolean;
+        message: string;
+        softDeleted?: boolean;
+      }> = [];
       const errors: string[] = [];
       let deletedCount = 0;
       let softDeletedCount = 0;
 
-      // Process each business unit deletion
       for (const id of ids) {
         try {
           const result = await this.deleteBusinessUnit(id);
-          if (result && typeof result === 'object' && 'softDeleted' in result) {
+          if (
+            result &&
+            typeof result === 'object' &&
+            'softDeleted' in result
+          ) {
             const deleteResult = result as any;
             if (deleteResult.softDeleted) {
               softDeletedCount++;
@@ -615,8 +997,11 @@ export class BusinessUnitService extends BaseService {
             });
           }
         } catch (error) {
-          const errorMessage = error instanceof Error ? error.message : 'Unknown error';
-          errors.push(`Failed to delete business unit ${id}: ${errorMessage}`);
+          const errorMessage =
+            error instanceof Error ? error.message : 'Unknown error';
+          errors.push(
+            `Failed to delete business unit ${id}: ${errorMessage}`,
+          );
           results.push({
             id,
             success: false,
@@ -625,19 +1010,18 @@ export class BusinessUnitService extends BaseService {
         }
       }
 
-      return {
-        deletedCount,
-        softDeletedCount,
-        errors,
-        results,
-      };
+      return { deletedCount, softDeletedCount, errors, results };
     } catch (error) {
-      this.handleError(error, 'BusinessUnitService.bulkDeleteBusinessUnits');
+      this.handleError(
+        error,
+        'BusinessUnitService.bulkDeleteBusinessUnits',
+      );
+      throw error;
     }
   }
 
   /**
-   * Get comprehensive business unit statistics
+   * Get comprehensive business unit statistics.
    */
   async getBusinessUnitStats(id: string): Promise<BusinessUnitStats> {
     try {
@@ -665,9 +1049,7 @@ export class BusinessUnitService extends BaseService {
           where: { businessUnitId: id },
           _sum: { quantity: true },
         }),
-        this.prisma.sale.count({
-          where: { businessUnitId: id },
-        }),
+        this.prisma.sale.count({ where: { businessUnitId: id } }),
         this.prisma.sale.aggregate({
           where: { businessUnitId: id },
           _sum: { total: true },
@@ -685,10 +1067,7 @@ export class BusinessUnitService extends BaseService {
           },
         }),
         this.prisma.inventory.count({
-          where: {
-            businessUnitId: id,
-            quantity: 0,
-          },
+          where: { businessUnitId: id, quantity: 0 },
         }),
         this.prisma.sale.aggregate({
           where: {
@@ -719,17 +1098,18 @@ export class BusinessUnitService extends BaseService {
       };
     } catch (error) {
       this.handleError(error, 'BusinessUnitService.getBusinessUnitStats');
+      throw error;
     }
   }
 
   /**
-   * Get business unit users
+   * Get business unit users.
    */
   async getBusinessUnitUsers(businessUnitId: string) {
     try {
       await this.validateBusinessUnit(businessUnitId);
 
-      const users = await this.prisma.businessUnitUser.findMany({
+      return await this.prisma.businessUnitUser.findMany({
         where: { businessUnitId, isActive: true },
         include: {
           user: {
@@ -747,40 +1127,45 @@ export class BusinessUnitService extends BaseService {
         },
         orderBy: { user: { firstName: 'asc' } },
       });
-
-      return users;
     } catch (error) {
-      this.handleError(error, 'BusinessUnitService.getBusinessUnitUsers');
+      this.handleError(
+        error,
+        'BusinessUnitService.getBusinessUnitUsers',
+      );
+      throw error;
     }
   }
 
   /**
-   * Add user to business unit
+   * Add user to business unit.
    */
-  async addUserToBusinessUnit(businessUnitId: string, userId: string, role?: UserRole) {
+  async addUserToBusinessUnit(
+    businessUnitId: string,
+    userId: string,
+    role?: UserRole,
+  ) {
     try {
       await this.validateBusinessUnit(businessUnitId);
       await this.validateUser(userId);
 
       const existing = await this.prisma.businessUnitUser.findFirst({
-        where: {
-          businessUnitId,
-          userId,
-        },
+        where: { businessUnitId, userId },
       });
 
       if (existing) {
         if (existing.isActive) {
-          throw new AppError('User is already assigned to this business unit', 400);
-        } else {
-          return await this.prisma.businessUnitUser.update({
-            where: { id: existing.id },
-            data: {
-              isActive: true,
-              role: role || existing.role || UserRole.USER,
-            },
-          });
+          throw new AppError(
+            'User is already assigned to this business unit',
+            400,
+          );
         }
+        return await this.prisma.businessUnitUser.update({
+          where: { id: existing.id },
+          data: {
+            isActive: true,
+            role: role || existing.role || UserRole.USER,
+          },
+        });
       }
 
       return await this.prisma.businessUnitUser.create({
@@ -792,141 +1177,147 @@ export class BusinessUnitService extends BaseService {
         },
       });
     } catch (error) {
-      this.handleError(error, 'BusinessUnitService.addUserToBusinessUnit');
+      this.handleError(
+        error,
+        'BusinessUnitService.addUserToBusinessUnit',
+      );
+      throw error;
     }
   }
 
   /**
-   * Remove user from business unit
+   * Remove user from business unit.
    */
-  async removeUserFromBusinessUnit(businessUnitId: string, userId: string) {
+  async removeUserFromBusinessUnit(
+    businessUnitId: string,
+    userId: string,
+  ) {
     try {
       await this.validateBusinessUnit(businessUnitId);
       await this.validateUser(userId);
 
       const association = await this.prisma.businessUnitUser.findFirst({
-        where: {
-          businessUnitId,
-          userId,
-        },
+        where: { businessUnitId, userId },
       });
 
       if (!association) {
-        throw new AppError('User is not assigned to this business unit', 404);
+        throw new AppError(
+          'User is not assigned to this business unit',
+          404,
+        );
       }
 
       return await this.prisma.businessUnitUser.update({
         where: { id: association.id },
-        data: {
-          isActive: false,
-        },
+        data: { isActive: false },
       });
     } catch (error) {
-      this.handleError(error, 'BusinessUnitService.removeUserFromBusinessUnit');
+      this.handleError(
+        error,
+        'BusinessUnitService.removeUserFromBusinessUnit',
+      );
+      throw error;
     }
   }
 
   /**
-   * Get or create a default business unit for a company
+   * Get or create a default business unit for a company.
    */
   async getOrCreateDefaultBusinessUnit(companyId: string): Promise<any> {
     try {
-      await this.validateCompany(companyId);
-
-      const company = await this.prisma.company.findUnique({
-        where: { id: companyId },
-      });
-
-      if (!company) {
-        throw new AppError('Company not found', 404);
-      }
+      const company = await this.validateCompany(companyId);
 
       const existing = await this.prisma.businessUnit.findFirst({
-        where: {
-          companyId: companyId,
-          isActive: true,
-        },
+        where: { companyId, isActive: true },
         orderBy: { createdAt: 'asc' },
       });
 
       if (existing) {
-        console.log(`✅ Using existing business unit: ${existing.id} (${existing.name})`);
         return existing;
       }
 
-      const newBusinessUnit = await this.prisma.businessUnit.create({
+      // Inherit the company's currency when it has one, else fall
+      // through to the registry default. Never hardcoded.
+      const inheritedCurrency = currencyService.resolveForBusiness(
+        company.currency ?? null,
+      );
+
+      return await this.prisma.businessUnit.create({
         data: {
           name: `${company.name} - Default Unit`,
           code: `BU-${Date.now().toString().slice(-6)}`,
           isActive: true,
-          companyId: companyId,
+          companyId,
           type: 'STORE',
+          currency: inheritedCurrency,
         },
       });
-
-      console.log(`✅ Created default business unit: ${newBusinessUnit.id} (${newBusinessUnit.name})`);
-      return newBusinessUnit;
     } catch (error) {
-      this.handleError(error, 'BusinessUnitService.getOrCreateDefaultBusinessUnit');
+      this.handleError(
+        error,
+        'BusinessUnitService.getOrCreateDefaultBusinessUnit',
+      );
+      throw error;
     }
   }
 
   /**
-   * Ensure a user has at least one business unit
+   * Ensure a user has at least one business unit.
    */
-  async ensureUserBusinessUnit(userId: string, companyId: string): Promise<any> {
+  async ensureUserBusinessUnit(
+    userId: string,
+    companyId: string,
+  ): Promise<any> {
     try {
       await this.validateUser(userId);
       await this.validateCompany(companyId);
 
-      const userBusinessUnits = await this.prisma.businessUnitUser.findMany({
-        where: { 
-          userId,
-          isActive: true,
-        },
-        include: {
-          businessUnit: true,
-        },
-      });
+      const userBusinessUnits =
+        await this.prisma.businessUnitUser.findMany({
+          where: { userId, isActive: true },
+          include: { businessUnit: true },
+        });
 
       if (userBusinessUnits.length > 0) {
-        const active = userBusinessUnits.find((ub: any) => ub.businessUnit.isActive);
+        const active = userBusinessUnits.find(
+          (ub: any) => ub.businessUnit.isActive,
+        );
         if (active) {
-          console.log(`✅ User already has business unit: ${active.businessUnit.id}`);
           return active.businessUnit;
         }
       }
 
-      const businessUnit = await this.getOrCreateDefaultBusinessUnit(companyId);
+      const businessUnit =
+        await this.getOrCreateDefaultBusinessUnit(companyId);
 
       await this.prisma.businessUnitUser.create({
         data: {
-          userId: userId,
+          userId,
           businessUnitId: businessUnit.id,
           role: UserRole.EMPLOYEE,
           isActive: true,
         },
       });
 
-      console.log(`✅ Assigned user ${userId} to business unit ${businessUnit.id}`);
       return businessUnit;
     } catch (error) {
-      this.handleError(error, 'BusinessUnitService.ensureUserBusinessUnit');
+      this.handleError(
+        error,
+        'BusinessUnitService.ensureUserBusinessUnit',
+      );
+      throw error;
     }
   }
 
   /**
-   * Get business units by company
+   * Get business units by company.
    */
   async getBusinessUnitsByCompany(companyId: string): Promise<any[]> {
     try {
       await this.validateCompany(companyId);
 
       const businessUnits = await this.prisma.businessUnit.findMany({
-        where: {
-          companyId: companyId,
-          isActive: true,
-        },
+        where: { companyId, isActive: true },
         include: {
           _count: {
             select: {
@@ -939,16 +1330,28 @@ export class BusinessUnitService extends BaseService {
         orderBy: { name: 'asc' },
       });
 
-      return businessUnits;
+      return businessUnits.map((bu: any) => ({
+        ...bu,
+        currencySymbol:
+          currencyService.tryGetCurrency(bu.currency)?.symbol ??
+          bu.currency,
+      }));
     } catch (error) {
-      this.handleError(error, 'BusinessUnitService.getBusinessUnitsByCompany');
+      this.handleError(
+        error,
+        'BusinessUnitService.getBusinessUnitsByCompany',
+      );
+      throw error;
     }
   }
 
   /**
-   * Get business unit by code
+   * Get business unit by code.
    */
-  async getBusinessUnitByCode(code: string, companyId?: string): Promise<any> {
+  async getBusinessUnitByCode(
+    code: string,
+    companyId?: string,
+  ): Promise<any> {
     try {
       if (!code) {
         throw new AppError('Business unit code is required', 400);
@@ -981,17 +1384,30 @@ export class BusinessUnitService extends BaseService {
       });
 
       if (!businessUnit) {
-        throw new AppError(`Business unit with code "${code}" not found`, 404);
+        throw new AppError(
+          `Business unit with code "${code}" not found`,
+          404,
+        );
       }
 
-      return businessUnit;
+      return {
+        ...businessUnit,
+        currencySymbol:
+          currencyService.tryGetCurrency(businessUnit.currency)?.symbol ??
+          businessUnit.currency,
+      };
     } catch (error) {
-      this.handleError(error, 'BusinessUnitService.getBusinessUnitByCode');
+      this.handleError(
+        error,
+        'BusinessUnitService.getBusinessUnitByCode',
+      );
+      throw error;
     }
   }
 
   /**
-   * Get business unit with full details including products and inventory
+   * Get business unit with full details including products and
+   * inventory.
    */
   async getBusinessUnitWithDetails(id: string): Promise<any> {
     try {
@@ -1020,9 +1436,7 @@ export class BusinessUnitService extends BaseService {
             where: { isActive: true },
             include: {
               category: true,
-              variants: {
-                where: { isActive: true },
-              },
+              variants: { where: { isActive: true } },
             },
             orderBy: { name: 'asc' },
           },
@@ -1053,9 +1467,18 @@ export class BusinessUnitService extends BaseService {
         throw new AppError('Business unit not found', 404);
       }
 
-      return businessUnit;
+      return {
+        ...businessUnit,
+        currencySymbol:
+          currencyService.tryGetCurrency(businessUnit.currency)?.symbol ??
+          businessUnit.currency,
+      };
     } catch (error) {
-      this.handleError(error, 'BusinessUnitService.getBusinessUnitWithDetails');
+      this.handleError(
+        error,
+        'BusinessUnitService.getBusinessUnitWithDetails',
+      );
+      throw error;
     }
   }
 }

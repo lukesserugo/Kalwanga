@@ -14,7 +14,7 @@ import {
 import { formatCurrency } from '../../utils/formatters';
 import { toast } from '../../utils/toast-manager';
 
-interface CartItemCardProps {
+export interface CartItemCardProps {
   id: string;
   productId: string;
   productName: string;
@@ -33,6 +33,29 @@ interface CartItemCardProps {
   onRemove: (itemId: string) => Promise<void> | void;
   isUpdating?: boolean;
   disabled?: boolean;
+
+  /**
+   * ── Phase 2: ISO 4217 currency code for this line's amounts. ───
+   *
+   * Pass `cart.currency` from the parent. Both `unitPrice` and
+   * `total` are denominated in this currency, and every
+   * `formatCurrency` call inside this component threads it through
+   * as the second argument so the line renders in the cart's own
+   * currency rather than the formatter's USD default.
+   *
+   * ⚠ REQUIRED, not optional. This component is only ever mounted
+   *   from the cart page, which always has a `Cart` in hand — so
+   *   there is no legitimate call site without a currency. Making
+   *   the prop required forces the compiler to catch a future mount
+   *   site that forgets to pass it; an optional prop with a `'USD'`
+   *   fallback would silently reintroduce the hardcoded-dollar bug
+   *   on that forgotten site.
+   *
+   * On a synthetic (empty) cart this field is still populated — the
+   * backend resolves it from the business unit even when no cart row
+   * exists. See `Cart.currency` in `packages/web/types/cart.ts`.
+   */
+  currency: string;
 }
 
 const PLACEHOLDER_IMAGE =
@@ -84,6 +107,8 @@ export function CartItemCard({
   onRemove,
   isUpdating = false,
   disabled = false,
+  // ── Phase 2: currency code for every amount on this line ──
+  currency,
 }: CartItemCardProps) {
   const [imageFailed, setImageFailed] = useState(false);
 
@@ -203,7 +228,13 @@ export function CartItemCard({
 
         <div className="flex flex-wrap items-center gap-2 mt-1.5">
           <span className="text-sm font-medium text-gray-900 dark:text-white tabular-nums">
-            {formatCurrency(unitPrice)}
+            {/*
+              ── Phase 2: unit price in the cart's own currency ──
+              `currency` is passed down from `CartPage`, which reads
+              it from `cart.currency` (resolved server-side from
+              the business unit).
+            */}
+            {formatCurrency(unitPrice, currency)}
           </span>
 
           {!isInStock && (
@@ -230,7 +261,8 @@ export function CartItemCard({
             onChange={handleQuantityChange}
           />
           <span className="text-sm font-semibold text-gray-900 dark:text-white tabular-nums">
-            {formatCurrency(total)}
+            {/* ── Phase 2: line total in the cart's currency ── */}
+            {formatCurrency(total, currency)}
           </span>
         </div>
       </div>
@@ -247,7 +279,8 @@ export function CartItemCard({
 
         <div className="flex flex-col items-end min-w-[80px]">
           <span className="text-sm font-semibold text-gray-900 dark:text-white tabular-nums">
-            {formatCurrency(total)}
+            {/* ── Phase 2: line total in the cart's currency ── */}
+            {formatCurrency(total, currency)}
           </span>
           <button
             type="button"

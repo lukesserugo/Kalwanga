@@ -21,20 +21,57 @@ interface CartDiscountInputProps {
   onDiscountCleared?: () => void;
   disabled?: boolean;
   className?: string;
+
+  /**
+   * ── Phase 2: ISO 4217 currency code for the cart. ─────────────
+   *
+   * Pass `cart.currency` from the parent. The applied-discount
+   * amount (`currentDiscount`) is denominated in this currency, and
+   * `formatCurrency(currentDiscount, currency)` renders it
+   * correctly.
+   *
+   * ⚠ Optional for backward compatibility with callers that have
+   *   not been migrated yet. When omitted, `formatCurrency` falls
+   *   back to `'USD'` — which is what every caller got before
+   *   Phase 2, so the unmigrated behaviour is unchanged.
+   */
+  currency?: string;
+
+  /**
+   * ── Phase 2: display symbol for `currency`. ───────────────────
+   *
+   * Pass `cart.currencySymbol` from the parent. Used as the label
+   * of the `FIXED` option in the discount-type `<select>` and as
+   * the suffix in the "applied" pill.
+   *
+   * ⚠ Optional for backward compatibility. When omitted, the
+   *   component falls back to a local `window.__TENANT_CURRENCY__`
+   *   shim that maps a short list of ISO codes to symbols. That
+   *   shim is a migration aid, not a contract — the authoritative
+   *   symbol comes from the backend via `cart.currencySymbol`.
+   */
+  currencySymbol?: string;
 }
 
 /**
- * Resolve the currency symbol the tenant is transacting in.
+ * Resolve the currency symbol for the DISPLAY-ONLY fallback path.
  *
- * Prefers a value set by the app shell at boot (see
- * `_app.tsx` / `layout.tsx` — `window.__TENANT_CURRENCY__`). Falls back
- * to `$` so a client that hasn't wired the global still renders.
+ * ⚠ Phase 2: this is now a FALLBACK, not the primary path. The
+ *   primary path is the `currencySymbol` prop, which comes from the
+ *   backend (`cart.currencySymbol`) and is authoritative for the
+ *   cart's business unit.
  *
- * ⚠ This is a display-only suffix. The actual currency used for the
- *   discount calculation is decided server-side by
- *   `cartService.applyDiscount` and the currency resolver.
+ *   This shim exists so an unmigrated caller still renders *some*
+ *   symbol rather than a bare `$`. It reads a global the app shell
+ *   may or may not set (`window.__TENANT_CURRENCY__`) and maps a
+ *   short list of ISO codes to symbols. It is NOT the source of
+ *   truth — `BusinessUnit.currency` is, and the backend resolves it
+ *   through `currencyService.resolveForBusiness`.
+ *
+ *   Once every caller passes `currencySymbol` explicitly, this
+ *   function can be deleted.
  */
-function getCurrencySymbol(): string {
+function getFallbackCurrencySymbol(): string {
   if (typeof window === 'undefined') return '$';
   const currency = (window as any).__TENANT_CURRENCY__;
   switch (currency) {
@@ -66,6 +103,13 @@ export function CartDiscountInput({
   onDiscountCleared,
   disabled = false,
   className = '',
+  // ── Phase 2: currency props ──────────────────────────────
+  // Optional for backward compatibility. See the prop JSDoc.
+  // When omitted, the component degrades to the same
+  // `formatCurrency(amount)` (USD) + `getFallbackCurrencySymbol()`
+  // behaviour it had before Phase 2.
+  currency,
+  currencySymbol: currencySymbolProp,
 }: CartDiscountInputProps) {
   const { isAuthenticated } = useAuth();
   const errorId = useId();
@@ -77,7 +121,19 @@ export function CartDiscountInput({
   const [error, setError] = useState<string | null>(null);
 
   const hasApplied = currentDiscount > 0;
-  const currencySymbol = getCurrencySymbol();
+
+  // ── Phase 2: resolve the currency symbol ─────────────────
+  // Prefer the prop (authoritative — comes from `cart.currencySymbol`,
+  // resolved server-side). Fall back to the local shim only when
+  // the caller hasn't migrated yet.
+  const currencySymbol =
+    currencySymbolProp ?? getFallbackCurrencySymbol();
+
+  // ── Phase 2: resolve the currency code for formatting ────
+  // Same precedence: prop first (from `cart.currency`), USD
+  // fallback for unmigrated callers so `formatCurrency` behaves
+  // exactly as it did before Phase 2.
+  const resolvedCurrency = currency ?? 'USD';
 
   const handleApplyDiscount = useCallback(
     async (e: React.FormEvent) => {
@@ -148,7 +204,15 @@ export function CartDiscountInput({
           <div className="flex items-center gap-2 min-w-0">
             <Tag className="w-4 h-4 text-success-600 dark:text-success-400 shrink-0" />
             <span className="text-sm font-medium text-success-700 dark:text-success-300 tabular-nums">
-              {formatCurrency(currentDiscount)}
+              {/*
+                ── Phase 2: format in the cart's own currency ──
+                `formatCurrency(currentDiscount, resolvedCurrency)`
+                renders the amount with the correct ISO code. When
+                the caller is unmigrated (`currency` undefined),
+                `resolvedCurrency` is `'USD'` and the render is
+                identical to the pre-Phase-2 behaviour.
+              */}
+              {formatCurrency(currentDiscount, resolvedCurrency)}
             </span>
             <span className="text-xs text-success-500 dark:text-success-400">
               applied
@@ -233,6 +297,12 @@ export function CartDiscountInput({
           aria-label="Discount type"
         >
           <option value="PERCENTAGE">%</option>
+          {/*
+            ── Phase 2: the FIXED option label is the resolved ──
+            currency symbol, not a hardcoded `$`. `currencySymbol`
+            resolves from the prop first, falling back to the
+            local shim only for unmigrated callers.
+          */}
           <option value="FIXED">{currencySymbol}</option>
         </select>
 

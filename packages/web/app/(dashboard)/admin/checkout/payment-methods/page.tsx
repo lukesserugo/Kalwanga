@@ -33,9 +33,9 @@ import { toast } from '../../../../../utils/toast-manager';
 // ICON MAP
 // ============================================
 //
-// ⚠ PAYSTACK has been removed from this project. A historical
-//   method with `code === 'PAYSTACK'` falls through to the
-//   `CreditCard` default in `getIconForCode`.
+// ⚠ PAYSTACK, TIGO, and VODAFONE have been removed from this
+//   project. A historical method with any of those codes falls
+//   through to the `CreditCard` default in `getIconForCode`.
 
 const PAYMENT_METHOD_ICONS: Record<
   string,
@@ -48,6 +48,8 @@ const PAYMENT_METHOD_ICONS: Record<
   MOBILE_MONEY: QrCode,
   MOBILE: QrCode,
   MPESA: QrCode,
+  MTN: QrCode,
+  AIRTEL: QrCode,
   BANK_TRANSFER: Building,
   BANK: Building,
   GIFT_CARD: Gift,

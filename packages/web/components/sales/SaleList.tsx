@@ -31,11 +31,10 @@ import type { Sale } from '../../types/sale';
 import { Table } from '../common/Table';
 import { Pagination } from '../common/Pagination';
 import { Modal } from '../common/Modal';
+import { formatCurrency } from '../../utils/formatters';
 import { toast } from '../../utils/toast-manager';
 
-// ============================================================
-// TYPES
-// ============================================================
+const DEFAULT_CURRENCY = 'USD';
 
 interface SalesStats {
   totalRevenue: number;
@@ -58,10 +57,6 @@ type DiscountFilter = 'all' | 'discounted';
 
 const SEARCH_DEBOUNCE_MS = 300;
 
-// ============================================================
-// CONSTANTS — static class maps
-// ============================================================
-
 const STATUS_BADGE_STYLES: Record<string, string> = {
   COMPLETED: 'bg-green-100 text-green-700',
   PENDING: 'bg-yellow-100 text-yellow-700',
@@ -75,10 +70,6 @@ const STATUS_BADGE_STYLES: Record<string, string> = {
 };
 
 const DEFAULT_STATUS_BADGE = 'bg-blue-100 text-blue-700';
-
-// ============================================================
-// HELPERS
-// ============================================================
 
 function extractErrorMessage(error: unknown, fallback: string): string {
   if (!error) return fallback;
@@ -110,12 +101,6 @@ function escapeHtml(value: unknown): string {
     .replace(/'/g, '&#39;');
 }
 
-function toIsoString(value: string | Date | null | undefined): string {
-  if (!value) return '';
-  if (value instanceof Date) return value.toISOString();
-  return String(value);
-}
-
 function parseMoney(input: string): number {
   if (!input) return 0;
   const n = parseFloat(input);
@@ -127,17 +112,41 @@ function round2(value: number): number {
   return Math.round(value * 100) / 100;
 }
 
-// ============================================================
-// SUB-COMPONENTS
-// ============================================================
+function resolveSaleCurrency(sale: Sale, fallback?: string): string {
+  const payment = (sale as any).payments?.[0];
 
-/**
- * Compact breakdown hint for the receipt cell of a table row.
- *
- * Renders nothing when the sale carries no promotion or loyalty
- * attribution. Uses `saleService.describeBreakdown` so the wording
- * matches the receipt and detail page.
- */
+  const candidates = [
+    payment?.displayCurrency,
+    (sale as any).currency,
+    payment?.currency,
+    fallback,
+  ];
+
+  for (const c of candidates) {
+    if (typeof c === 'string' && c.trim().length > 0) {
+      return c.trim().toUpperCase();
+    }
+  }
+  return DEFAULT_CURRENCY;
+}
+
+function resolveCustomerName(sale: Sale): string {
+  const customer = sale.customer;
+  if (!customer) return 'Guest';
+
+  const fullName = [customer.firstName, customer.lastName]
+    .filter((p) => typeof p === 'string' && p.trim().length > 0)
+    .join(' ')
+    .trim();
+
+  if (fullName) return fullName;
+
+  const email = (customer as any).email;
+  if (typeof email === 'string' && email.trim().length > 0) return email;
+
+  return 'Customer';
+}
+
 const BreakdownHint: React.FC<{ sale: Sale }> = ({ sale }) => {
   if (!saleService.hasBreakdown(sale)) return null;
 
@@ -167,10 +176,6 @@ const BreakdownHint: React.FC<{ sale: Sale }> = ({ sale }) => {
   );
 };
 
-// ============================================================
-// COMPONENT
-// ============================================================
-
 export function SaleList() {
   const mountedRef = useRef(true);
   const fetchRequestIdRef = useRef(0);
@@ -178,6 +183,7 @@ export function SaleList() {
   const [sales, setSales] = useState<Sale[]>([]);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
+  const [listCurrency, setListCurrency] = useState<string>(DEFAULT_CURRENCY);
 
   const [filters, setFilters] = useState<SaleFilters>({
     search: '',
@@ -188,10 +194,6 @@ export function SaleList() {
     userId: '',
   });
 
-  /**
-   * Debounced version of `filters.search`. Only this value drives
-   * `loadSales`, so typing doesn't fire a fetch per keystroke.
-   */
   const [debouncedSearch, setDebouncedSearch] = useState('');
 
   const [pagination, setPagination] = useState({
@@ -214,6 +216,7 @@ export function SaleList() {
     todayRevenue: 0,
     todaySales: 0,
   });
+  const [statsCurrency, setStatsCurrency] = useState<string>(DEFAULT_CURRENCY);
   const [showStats, setShowStats] = useState(false);
   const [discountFilter, setDiscountFilter] = useState<DiscountFilter>('all');
 
@@ -224,8 +227,6 @@ export function SaleList() {
     };
   }, []);
 
-  // ── Debounce the search input ────────────────────────────
-
   useEffect(() => {
     const timer = setTimeout(() => {
       setDebouncedSearch(filters.search);
@@ -233,7 +234,6 @@ export function SaleList() {
     return () => clearTimeout(timer);
   }, [filters.search]);
 
-  // Reset to page 1 whenever the effective filter set changes.
   useEffect(() => {
     setPagination((prev) => (prev.page === 1 ? prev : { ...prev, page: 1 }));
   }, [
@@ -244,10 +244,6 @@ export function SaleList() {
     filters.customerId,
     filters.userId,
   ]);
-
-  // ============================================================
-  // DATA LOADING
-  // ============================================================
 
   const loadSales = useCallback(async (): Promise<boolean> => {
     const requestId = ++fetchRequestIdRef.current;
@@ -270,6 +266,7 @@ export function SaleList() {
       if (!mountedRef.current) return false;
 
       setSales(result.data ?? []);
+      setListCurrency(result.currency ?? DEFAULT_CURRENCY);
       setPagination((prev) => ({
         ...prev,
         total: result.total ?? 0,
@@ -313,6 +310,10 @@ export function SaleList() {
         todayRevenue: data.todayRevenue ?? 0,
         todaySales: data.todaySales ?? 0,
       });
+      const cur = (data as any).currency;
+      if (typeof cur === 'string' && cur.trim().length > 0) {
+        setStatsCurrency(cur.trim().toUpperCase());
+      }
     } catch (error) {
       console.error('[SaleList] stats load failed:', error);
     }
@@ -326,10 +327,6 @@ export function SaleList() {
     void loadStats();
   }, [loadStats]);
 
-  // ============================================================
-  // HANDLERS
-  // ============================================================
-
   const handleRefresh = useCallback(async () => {
     const ok = await loadSales();
     void loadStats();
@@ -337,11 +334,6 @@ export function SaleList() {
     else toast.error('Failed to refresh sales');
   }, [loadSales, loadStats]);
 
-  /**
-   * Refundable amount for the currently-selected sale. Total minus
-   * any completed refunds and settled returns, matching the backend's
-   * computation.
-   */
   const refundableAmount = useMemo(() => {
     if (!selectedSale) return 0;
     const refundedTotal = (selectedSale.refunds ?? [])
@@ -355,10 +347,17 @@ export function SaleList() {
     );
   }, [selectedSale]);
 
+  const selectedSaleCurrency = useMemo(
+    () =>
+      selectedSale
+        ? resolveSaleCurrency(selectedSale, listCurrency)
+        : listCurrency,
+    [selectedSale, listCurrency],
+  );
+
   const openRefundModal = useCallback((sale: Sale) => {
     setSelectedSale(sale);
     setRefundReason('');
-    // Default to full refund — the operator can reduce it.
     setRefundAmountInput(
       round2(
         Math.max(
@@ -404,7 +403,10 @@ export function SaleList() {
     }
     if (amount > refundableAmount) {
       toast.warning(
-        `Refund cannot exceed ${refundableAmount.toFixed(2)}`,
+        `Refund cannot exceed ${formatCurrency(
+          refundableAmount,
+          selectedSaleCurrency,
+        )}`,
       );
       return;
     }
@@ -414,13 +416,14 @@ export function SaleList() {
       await saleService.refundSale(selectedSale.id, trimmed, amount);
       if (!mountedRef.current) return;
 
-      toast.success(`Refunded ${amount.toFixed(2)}`);
+      toast.success(
+        `Refunded ${formatCurrency(amount, selectedSaleCurrency)}`,
+      );
       setShowRefundModal(false);
       setSelectedSale(null);
       setRefundReason('');
       setRefundAmountInput('');
 
-      // Refresh both list and stats after a state change.
       void loadSales();
       void loadStats();
     } catch (error) {
@@ -433,6 +436,7 @@ export function SaleList() {
     }
   }, [
     selectedSale,
+    selectedSaleCurrency,
     refundReason,
     refundAmountInput,
     refundableAmount,
@@ -442,7 +446,7 @@ export function SaleList() {
 
   const handleExport = useCallback(async () => {
     try {
-      const blob = await saleService.exportSales({
+      const result = await saleService.exportSales({
         startDate:
           filters.startDate ||
           new Date(Date.now() - 30 * 24 * 60 * 60 * 1000)
@@ -453,10 +457,10 @@ export function SaleList() {
         format: 'csv',
       });
 
-      const url = URL.createObjectURL(blob);
+      const url = URL.createObjectURL(result.blob);
       const anchor = document.createElement('a');
       anchor.href = url;
-      anchor.download = `sales-${new Date().toISOString().split('T')[0]}.csv`;
+      anchor.download = result.filename;
       document.body.appendChild(anchor);
       anchor.click();
       document.body.removeChild(anchor);
@@ -470,67 +474,72 @@ export function SaleList() {
     }
   }, [filters.startDate, filters.endDate]);
 
-  const handlePrintReceipt = useCallback((sale: Sale) => {
-    const printWindow = window.open('', '_blank', 'noopener,noreferrer');
-    if (!printWindow) {
-      toast.error('Please allow pop-ups to print receipts');
-      return;
-    }
-    try {
-      printWindow.opener = null;
-    } catch {
-      /* ignore */
-    }
+  const handlePrintReceipt = useCallback(
+    (sale: Sale) => {
+      const printWindow = window.open('', '_blank', 'noopener,noreferrer');
+      if (!printWindow) {
+        toast.error('Please allow pop-ups to print receipts');
+        return;
+      }
+      try {
+        printWindow.opener = null;
+      } catch {
+        /* ignore */
+      }
 
-    const e = escapeHtml;
+      const e = escapeHtml;
+      const currency = resolveSaleCurrency(sale, listCurrency);
 
-    const receiptNumber = e(sale.receiptNumber);
-    const saleDate = e(new Date(sale.saleDate).toLocaleString());
+      const receiptNumber = e(sale.receiptNumber);
+      const saleDate = e(new Date(sale.saleDate).toLocaleString());
 
-    const itemRows = (sale.items ?? [])
-      .map(
-        (item) => `
+      const fmt = (amount: number): string =>
+        e(formatCurrency(amount, currency));
+
+      const itemRows = (sale.items ?? [])
+        .map(
+          (item) => `
           <tr>
             <td>${e(item.product?.name ?? 'Product')} x${e(item.quantity)}</td>
-            <td style="text-align: right;">$${e(item.total.toFixed(2))}</td>
+            <td style="text-align: right;">${fmt(item.total)}</td>
           </tr>
         `,
-      )
-      .join('');
+        )
+        .join('');
 
-    const breakdown = saleService.extractBreakdown(sale);
-    const promotionDiscount = breakdown.promotionDiscount ?? 0;
-    const promotionCode = breakdown.promotionCode ?? null;
-    const loyaltyPointsUsed = breakdown.loyaltyPointsUsed ?? 0;
-    const loyaltyDiscount = breakdown.loyaltyDiscount ?? 0;
+      const breakdown = saleService.extractBreakdown(sale);
+      const promotionDiscount = breakdown.promotionDiscount ?? 0;
+      const promotionCode = breakdown.promotionCode ?? null;
+      const loyaltyPointsUsed = breakdown.loyaltyPointsUsed ?? 0;
+      const loyaltyDiscount = breakdown.loyaltyDiscount ?? 0;
 
-    const promotionLine =
-      promotionDiscount > 0
-        ? `<tr>
+      const promotionLine =
+        promotionDiscount > 0
+          ? `<tr>
              <td>Promotion${promotionCode ? ` (${e(promotionCode)})` : ''}</td>
-             <td style="text-align: right;">-$${e(promotionDiscount.toFixed(2))}</td>
+             <td style="text-align: right;">-${fmt(promotionDiscount)}</td>
            </tr>`
-        : '';
+          : '';
 
-    const loyaltyLine =
-      loyaltyPointsUsed > 0
-        ? `<tr>
+      const loyaltyLine =
+        loyaltyPointsUsed > 0
+          ? `<tr>
              <td>${e(loyaltyPointsUsed)} loyalty points</td>
-             <td style="text-align: right;">-$${e(loyaltyDiscount.toFixed(2))}</td>
+             <td style="text-align: right;">-${fmt(loyaltyDiscount)}</td>
            </tr>`
-        : '';
+          : '';
 
-    const rawDiscountLine =
-      sale.discount > 0 &&
-      promotionDiscount === 0 &&
-      loyaltyDiscount === 0
-        ? `<tr>
+      const rawDiscountLine =
+        sale.discount > 0 &&
+        promotionDiscount === 0 &&
+        loyaltyDiscount === 0
+          ? `<tr>
              <td>Discount</td>
-             <td style="text-align: right;">-$${e(sale.discount.toFixed(2))}</td>
+             <td style="text-align: right;">-${fmt(sale.discount)}</td>
            </tr>`
-        : '';
+          : '';
 
-    printWindow.document.write(`
+      printWindow.document.write(`
       <!doctype html>
       <html>
         <head><meta charset="utf-8" /><title>Receipt #${receiptNumber}</title></head>
@@ -542,18 +551,18 @@ export function SaleList() {
           <table style="width: 100%; font-size: 13px;">
             <tr>
               <td>Subtotal</td>
-              <td style="text-align: right;">$${e(sale.subtotal.toFixed(2))}</td>
+              <td style="text-align: right;">${fmt(sale.subtotal)}</td>
             </tr>
             <tr>
               <td>Tax</td>
-              <td style="text-align: right;">$${e(sale.tax.toFixed(2))}</td>
+              <td style="text-align: right;">${fmt(sale.tax)}</td>
             </tr>
             ${promotionLine}
             ${loyaltyLine}
             ${rawDiscountLine}
             <tr style="font-weight: bold; font-size: 16px;">
               <td>Total</td>
-              <td style="text-align: right;">$${e(sale.total.toFixed(2))}</td>
+              <td style="text-align: right;">${fmt(sale.total)}</td>
             </tr>
           </table>
           <script>
@@ -564,37 +573,20 @@ export function SaleList() {
         </body>
       </html>
     `);
-    printWindow.document.close();
-  }, []);
+      printWindow.document.close();
+    },
+    [listCurrency],
+  );
 
-  // ============================================================
-  // DERIVED
-  // ============================================================
-
-  /**
-   * Applies the client-side "Discounted" filter without touching the
-   * backend.
-   */
   const visibleSales = useMemo(() => {
     if (discountFilter === 'all') return sales;
     return sales.filter((s) => saleService.hasBreakdown(s));
   }, [sales, discountFilter]);
 
-  /**
-   * Count of discounted sales on the current page. The chip shows
-   * how many rows will remain after the filter is applied.
-   */
   const discountedCount = useMemo(
     () => sales.filter((s) => saleService.hasBreakdown(s)).length,
     [sales],
   );
-
-  // ============================================================
-  // COLUMNS
-  // ============================================================
-  // Memoized so `Table` doesn't receive a fresh array on every
-  // render.
-  // ============================================================
 
   const columns = useMemo(
     () => [
@@ -619,10 +611,7 @@ export function SaleList() {
         render: (sale: Sale) => (
           <div>
             <p className="font-medium text-gray-900 dark:text-white">
-              {sale.customer
-                ? `${sale.customer.firstName} ${sale.customer.lastName}`.trim() ||
-                  'Guest'
-                : 'Guest'}
+              {resolveCustomerName(sale)}
             </p>
             {sale.customer?.email && (
               <p className="text-sm text-gray-500 dark:text-gray-400 truncate">
@@ -646,19 +635,30 @@ export function SaleList() {
         key: 'total',
         header: 'Total',
         render: (sale: Sale) => {
+          const currency = resolveSaleCurrency(sale, listCurrency);
           const breakdown = saleService.extractBreakdown(sale);
           const hasBreakdown = saleService.hasBreakdown(sale);
           const hasBoth =
             (breakdown.promotionDiscount ?? 0) > 0 &&
             (breakdown.loyaltyDiscount ?? 0) > 0;
+
+          const displayTotal =
+            typeof (sale as any).displayTotal === 'number'
+              ? (sale as any).displayTotal
+              : sale.total;
+          const displayDiscount =
+            typeof (sale as any).displayDiscount === 'number'
+              ? (sale as any).displayDiscount
+              : sale.discount ?? 0;
+
           return (
             <div>
               <p className="font-bold text-gray-900 dark:text-white tabular-nums">
-                {sale.total.toFixed(2)}
+                {formatCurrency(displayTotal, currency)}
               </p>
-              {sale.discount > 0 && (
+              {displayDiscount > 0 && (
                 <p className="text-sm text-green-600 dark:text-green-400 tabular-nums">
-                  -{sale.discount.toFixed(2)}
+                  -{formatCurrency(displayDiscount, currency)}
                 </p>
               )}
               {hasBreakdown && hasBoth && (
@@ -675,16 +675,19 @@ export function SaleList() {
       {
         key: 'payment',
         header: 'Payment',
-        render: (sale: Sale) => (
-          <div>
-            <span className="px-2 py-1 bg-gray-100 dark:bg-gray-700 rounded-full text-xs text-gray-700 dark:text-gray-300">
-              {sale.payments?.[0]?.paymentMethod || 'N/A'}
-            </span>
-            <p className="text-sm text-gray-500 dark:text-gray-400 mt-1 tabular-nums">
-              Paid: {(sale.paidAmount ?? 0).toFixed(2)}
-            </p>
-          </div>
-        ),
+        render: (sale: Sale) => {
+          const currency = resolveSaleCurrency(sale, listCurrency);
+          return (
+            <div>
+              <span className="px-2 py-1 bg-gray-100 dark:bg-gray-700 rounded-full text-xs text-gray-700 dark:text-gray-300">
+                {sale.payments?.[0]?.paymentMethod || 'N/A'}
+              </span>
+              <p className="text-sm text-gray-500 dark:text-gray-400 mt-1 tabular-nums">
+                Paid: {formatCurrency(sale.paidAmount ?? 0, currency)}
+              </p>
+            </div>
+          );
+        },
       },
       {
         key: 'status',
@@ -742,16 +745,13 @@ export function SaleList() {
         ),
       },
     ],
-    [handlePrintReceipt, openRefundModal],
+    [handlePrintReceipt, openRefundModal, listCurrency],
   );
 
-  // ============================================================
-  // RENDER
-  // ============================================================
+  const displayCurrency = statsCurrency ?? listCurrency;
 
   return (
     <div className="p-6">
-      {/* Header */}
       <div className="flex justify-between items-center mb-6 flex-wrap gap-3">
         <div>
           <h1 className="text-2xl font-bold text-gray-900 dark:text-white">
@@ -794,7 +794,6 @@ export function SaleList() {
         </div>
       </div>
 
-      {/* Error banner */}
       {loadError && (
         <div
           role="alert"
@@ -808,7 +807,6 @@ export function SaleList() {
         </div>
       )}
 
-      {/* Stats Cards */}
       {showStats && (
         <div className="grid grid-cols-1 md:grid-cols-5 gap-4 mb-6">
           <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm p-4 border border-gray-200 dark:border-gray-700">
@@ -816,7 +814,7 @@ export function SaleList() {
               Total Revenue
             </p>
             <p className="text-2xl font-bold text-gray-900 dark:text-white tabular-nums">
-              ${(stats.totalRevenue ?? 0).toFixed(2)}
+              {formatCurrency(stats.totalRevenue ?? 0, displayCurrency)}
             </p>
           </div>
           <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm p-4 border border-gray-200 dark:border-gray-700">
@@ -832,20 +830,20 @@ export function SaleList() {
               Average Ticket
             </p>
             <p className="text-2xl font-bold text-gray-900 dark:text-white tabular-nums">
-              ${(stats.averageTicket ?? 0).toFixed(2)}
+              {formatCurrency(stats.averageTicket ?? 0, displayCurrency)}
             </p>
           </div>
           <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm p-4 border border-gray-200 dark:border-gray-700">
             <p className="text-sm text-gray-500 dark:text-gray-400">
-              Today's Revenue
+              Today&apos;s Revenue
             </p>
             <p className="text-2xl font-bold text-blue-600 dark:text-blue-400 tabular-nums">
-              ${(stats.todayRevenue ?? 0).toFixed(2)}
+              {formatCurrency(stats.todayRevenue ?? 0, displayCurrency)}
             </p>
           </div>
           <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm p-4 border border-gray-200 dark:border-gray-700">
             <p className="text-sm text-gray-500 dark:text-gray-400">
-              Today's Sales
+              Today&apos;s Sales
             </p>
             <p className="text-2xl font-bold text-blue-600 dark:text-blue-400 tabular-nums">
               {stats.todaySales}
@@ -854,7 +852,6 @@ export function SaleList() {
         </div>
       )}
 
-      {/* Filters */}
       <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm p-4 mb-6 border border-gray-200 dark:border-gray-700">
         <div className="flex flex-wrap gap-4 items-center">
           <div className="flex-1 min-w-[200px]">
@@ -910,7 +907,6 @@ export function SaleList() {
           </select>
         </div>
 
-        {/* Discount filter chips */}
         <div className="flex items-center gap-2 mt-3 pt-3 border-t border-gray-100 dark:border-gray-700">
           <Sparkles
             className="w-3.5 h-3.5 text-gray-400"
@@ -956,7 +952,6 @@ export function SaleList() {
         </div>
       </div>
 
-      {/* Table */}
       <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm overflow-hidden border border-gray-200 dark:border-gray-700">
         <Table columns={columns} data={visibleSales} loading={loading} />
         <div className="border-t border-gray-200 dark:border-gray-700 p-4">
@@ -970,7 +965,6 @@ export function SaleList() {
         </div>
       </div>
 
-      {/* Refund Modal */}
       <Modal
         isOpen={showRefundModal}
         onClose={closeRefundModal}
@@ -983,11 +977,16 @@ export function SaleList() {
                 Receipt: #{selectedSale.receiptNumber}
               </p>
               <p className="text-sm text-gray-600 dark:text-gray-400 tabular-nums">
-                Refundable: {refundableAmount.toFixed(2)}
+                Refundable:{' '}
+                {formatCurrency(refundableAmount, selectedSaleCurrency)}
                 {refundableAmount < selectedSale.total && (
                   <span className="block text-xs text-gray-400 dark:text-gray-500">
-                    (Sale total was {selectedSale.total.toFixed(2)}; partial
-                    refunds and returns have been deducted.)
+                    (Sale total was{' '}
+                    {formatCurrency(
+                      selectedSale.total,
+                      selectedSaleCurrency,
+                    )}
+                    ; partial refunds and returns have been deducted.)
                   </span>
                 )}
               </p>
@@ -1016,10 +1015,10 @@ export function SaleList() {
               </label>
               <div className="relative">
                 <span
-                  className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-500 pointer-events-none"
+                  className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-500 pointer-events-none text-sm font-medium"
                   aria-hidden="true"
                 >
-                  $
+                  {selectedSaleCurrency}
                 </span>
                 <input
                   id="list-refund-amount"
@@ -1033,7 +1032,7 @@ export function SaleList() {
                     }
                   }}
                   disabled={isRefunding}
-                  className="w-full pl-7 pr-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 bg-white dark:bg-gray-700 text-gray-900 dark:text-white tabular-nums focus:outline-none disabled:opacity-50"
+                  className="w-full pl-14 pr-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 bg-white dark:bg-gray-700 text-gray-900 dark:text-white tabular-nums focus:outline-none disabled:opacity-50"
                 />
               </div>
             </div>

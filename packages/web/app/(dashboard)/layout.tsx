@@ -3,7 +3,8 @@
 'use client';
 
 import { useEffect, useState, useMemo } from 'react';
-import { useAuth, useUser } from '@clerk/nextjs';
+import { useAuth as useClerkAuth } from '@clerk/nextjs';
+import { useAuth as useBackendAuth } from '../../hooks/useAuth';
 import { useRouter, usePathname } from 'next/navigation';
 import { motion } from 'framer-motion';
 import Sidebar from '../../components/layout/Sidebar';
@@ -43,23 +44,17 @@ import { BrowserNotificationPrompt } from '../../components/notifications/Browse
 // CANONICAL PERMISSION IMPORTS
 // ============================================
 //
-// All role → permission decisions live in `types/permissions.ts`.
-// The layout only consumes them — no local role tables, no local
-// builders. This guarantees the sidebar, header, route guard, and
-// every other consumer agrees on who has what.
+// Permission flags are built from the backend-resolved permission
+// strings. Role names and Clerk metadata never grant UI access.
 //
 //   UserPermissions           — the boolean-flag interface
-//   ALL_ACCESS_PERMISSIONS    — the wildcard flag set (SUPER_ADMIN)
 //   NO_ACCESS_PERMISSIONS     — the locked-out baseline
-//   buildPermissionsForRole   — role string → UserPermissions
-//   isSuperAdminRole          — single source of truth for the role
+//   buildPermissionsFromSet   — backend permission strings → flags
 
 import {
   UserPermissions,
-  ALL_ACCESS_PERMISSIONS,
   NO_ACCESS_PERMISSIONS,
-  buildPermissionsForRole,
-  isSuperAdminRole,
+  buildPermissionsFromSet,
 } from '../../types/permissions';
 
 // ============================================================
@@ -173,31 +168,6 @@ function isUnderPath(path: string, prefix: string): boolean {
 }
 
 /**
- * Extract a role string from Clerk's flexible metadata. Returns
- * `null` when nothing usable is present, so `buildPermissionsForRole`
- * can decide the fallback (which is the locked-out baseline, not
- * admin). Returning 'ADMIN' here would silently grant admin
- * permissions to an unidentified user — that was a bug in the
- * previous version.
- */
-function extractRole(user: ReturnType<typeof useUser>['user']): string | null {
-  if (!user) return null;
-
-  const candidates: unknown[] = [
-    (user.publicMetadata as Record<string, unknown> | undefined)?.role,
-    (user.unsafeMetadata as Record<string, unknown> | undefined)?.role,
-  ];
-
-  for (const candidate of candidates) {
-    if (typeof candidate === 'string' && candidate.trim().length > 0) {
-      return candidate.trim();
-    }
-  }
-
-  return null;
-}
-
-/**
  * Decide whether the current user has access to a given path.
  *
  * Access rules, in priority order:
@@ -285,8 +255,12 @@ export default function DashboardLayout({
 }: {
   children: React.ReactNode;
 }) {
-  const { isLoaded, isSignedIn } = useAuth();
-  const { user } = useUser();
+  const { isLoaded, isSignedIn } = useClerkAuth();
+  const {
+    user: backendUser,
+    isLoading: backendLoading,
+    isSuperAdmin,
+  } = useBackendAuth();
   const router = useRouter();
   const pathname = usePathname();
 
@@ -294,59 +268,20 @@ export default function DashboardLayout({
   const [isMobileOpen, setIsMobileOpen] = useState<boolean>(false);
 
   // ------------------------------------------------------------
-  // DERIVED ROLE + PERMISSIONS
-  //
-  // Flow:
-  //   1. role         = extractRole(user)   — null when unset
-  //   2. isSuperAdmin = isSuperAdminRole(role)
-  //   3. permissions  = isSuperAdmin
-  //                     ? ALL_ACCESS_PERMISSIONS
-  //                     : buildPermissionsForRole(role) ?? NO_ACCESS_PERMISSIONS
-  //
-  // We memoize on `role` (a primitive string) rather than on
-  // `user` (an object whose identity Clerk may refresh). That
-  // means the heavy permission memo only recomputes when the
-  // role actually changes — not on every Clerk metadata refresh,
-  // not on every parent re-render.
-  //
-  // The super-admin short-circuit lives here as well as inside
-  // `buildPermissionsForRole` — belt and braces. If either layer
-  // gains a bug, the other keeps super admins working.
+  // DERIVED BACKEND PERMISSIONS
   // ------------------------------------------------------------
-  const role = useMemo(() => extractRole(user), [user]);
-
-  const { userPermissions, isSuperAdmin } = useMemo<{
-    userPermissions: UserPermissions;
-    isSuperAdmin: boolean;
-  }>(() => {
-    // No role metadata yet (signed out, or signed in but Clerk
-    // hasn't populated metadata). Grant everything so the layout
-    // doesn't render a half-built sidebar — the loading gate
-    // (`permissionsReady`) hides this frame from the user.
-    if (!role) {
-      return {
-        userPermissions: ALL_ACCESS_PERMISSIONS,
-        isSuperAdmin: false,
-      };
-    }
-
-    if (isSuperAdminRole(role)) {
-      return {
-        userPermissions: ALL_ACCESS_PERMISSIONS,
-        isSuperAdmin: true,
-      };
-    }
-
-    return {
-      userPermissions: buildPermissionsForRole(role) ?? NO_ACCESS_PERMISSIONS,
-      isSuperAdmin: false,
-    };
-  }, [role]);
+  const backendPermissions = backendUser?.permissions ?? [];
+  const userPermissions = useMemo<UserPermissions>(
+    () => buildPermissionsFromSet(backendPermissions),
+    [backendPermissions],
+  );
 
   // Permissions are ready when Clerk has loaded AND either the
   // user is present (permissions derived above) or the user is
   // definitively signed out.
-  const permissionsReady = isLoaded && (!isSignedIn || Boolean(user));
+  const permissionsReady =
+    isLoaded &&
+    (!isSignedIn || (!backendLoading && Boolean(backendUser)));
 
   // ------------------------------------------------------------
   // SIDEBAR STATE

@@ -10,18 +10,14 @@ import React, {
 } from 'react';
 import {
   X,
-  DollarSign,
+  Banknote,
   Check,
   Loader2,
   Percent,
 } from 'lucide-react';
 
 import { toast } from '../../../utils/toast-manager';
-import { formatCurrency } from '../../../utils/formatters';
-
-// ============================================
-// TYPES
-// ============================================
+import { formatPosCurrency, pickPosCurrency } from './posDisplay';
 
 export interface PriceOverrideData {
   productName: string;
@@ -39,6 +35,11 @@ export interface PriceOverrideModalProps {
    * rejected promise keeps the modal open and surfaces the error.
    */
   onConfirm: (data: PriceOverrideData) => Promise<void> | void;
+  /**
+   * Optional ISO 4217 currency code supplied by the parent. Used to
+   * format the summary block. Never hardcode.
+   */
+  currency?: string;
 }
 
 type OverrideType = 'fixed' | 'percentage';
@@ -59,16 +60,7 @@ const REASON_OPTIONS: ReasonOption[] = [
   { value: 'other', label: 'Other' },
 ];
 
-/**
- * Accepts digits with at most one decimal point and up to two
- * decimal places, or the empty string. Used to filter keystrokes
- * before they reach state, so the value is always parseable.
- */
 const DECIMAL_INPUT_PATTERN = /^\d*(\.\d{0,2})?$/;
-
-// ============================================
-// HELPERS
-// ============================================
 
 function parseMoney(input: string): number {
   if (!input) return 0;
@@ -101,21 +93,12 @@ function extractErrorMessage(error: unknown, fallback: string): string {
   return fallback;
 }
 
-// ============================================
-// COMPONENT
-// ============================================
-
 export function PriceOverrideModal({
   isOpen,
   onClose,
   onConfirm,
+  currency: currencyProp,
 }: PriceOverrideModalProps) {
-  // ── Form state ────────────────────────────────────────────
-  //
-  // Prices are kept as raw strings while editing so partial inputs
-  // (`""`, `"0."`, `"."`) round-trip cleanly. The numeric value is
-  // derived only when needed.
-
   const [productName, setProductName] = useState('');
   const [originalPriceInput, setOriginalPriceInput] = useState('');
   const [newPriceInput, setNewPriceInput] = useState('');
@@ -136,8 +119,6 @@ export function PriceOverrideModal({
     };
   }, []);
 
-  // ── Reset on open transition ──────────────────────────────
-
   const wasOpenRef = useRef(false);
   useEffect(() => {
     const wasOpen = wasOpenRef.current;
@@ -156,14 +137,13 @@ export function PriceOverrideModal({
     }
   }, [isOpen]);
 
-  // Focus the first input when the modal opens.
   useEffect(() => {
     if (!isOpen) return;
     const t = setTimeout(() => firstInputRef.current?.focus(), 0);
     return () => clearTimeout(t);
   }, [isOpen]);
 
-  // ── Derived numeric values ────────────────────────────────
+  const currency = pickPosCurrency(currencyProp);
 
   const originalPrice = useMemo(
     () => parseMoney(originalPriceInput),
@@ -183,27 +163,16 @@ export function PriceOverrideModal({
     [originalPrice, newPrice],
   );
 
-  // ── Percentage mode: keep newPrice derived ────────────────
-  //
-  // In percentage mode the operator sets `originalPrice` and
-  // `discountPercent`; the new price is computed. This keeps the
-  // percentage and the price from drifting apart.
-  //
-  // In fixed mode the operator edits `newPrice` directly.
-
   useEffect(() => {
     if (overrideType !== 'percentage') return;
     if (originalPrice <= 0) return;
     if (discountPercent <= 0) {
-      // A 0% discount means the new price equals the original.
       setNewPriceInput(originalPrice.toFixed(2));
       return;
     }
     const computed = round2(originalPrice * (1 - discountPercent / 100));
     setNewPriceInput(computed.toFixed(2));
   }, [overrideType, originalPrice, discountPercent]);
-
-  // ── Validation ────────────────────────────────────────────
 
   const validationError = useMemo((): string | null => {
     if (!productName.trim()) return 'Product name is required';
@@ -221,12 +190,8 @@ export function PriceOverrideModal({
 
   const canSubmit = validationError === null && !isSubmitting;
 
-  // ── Input change handlers ─────────────────────────────────
-
   const handleMoneyInput = useCallback(
-    (
-      setter: React.Dispatch<React.SetStateAction<string>>,
-    ) =>
+    (setter: React.Dispatch<React.SetStateAction<string>>) =>
       (e: React.ChangeEvent<HTMLInputElement>) => {
         const next = e.target.value;
         if (next === '' || DECIMAL_INPUT_PATTERN.test(next)) {
@@ -250,13 +215,9 @@ export function PriceOverrideModal({
     [],
   );
 
-  // ── Submit ────────────────────────────────────────────────
-
   const handleSubmit = useCallback(async () => {
     if (isSubmitting) return;
     if (validationError) {
-      // Belt-and-suspenders: the button is disabled when invalid,
-      // but Enter or a programmatic call could bypass it.
       toast.warning(validationError);
       return;
     }
@@ -309,8 +270,6 @@ export function PriceOverrideModal({
     onClose();
   }, [isSubmitting, onClose]);
 
-  // ── Keyboard: Escape closes, Cmd/Ctrl+Enter submits ───────
-
   useEffect(() => {
     if (!isOpen) return;
 
@@ -329,8 +288,6 @@ export function PriceOverrideModal({
     return () => document.removeEventListener('keydown', handler);
   }, [isOpen, canSubmit, handleClose, handleSubmit]);
 
-  // ── Render ────────────────────────────────────────────────
-
   if (!isOpen) return null;
 
   return (
@@ -345,14 +302,13 @@ export function PriceOverrideModal({
         className="bg-white dark:bg-gray-800 rounded-xl w-full max-w-md max-h-[90vh] overflow-y-auto shadow-2xl border border-gray-200 dark:border-gray-700"
         onClick={(e) => e.stopPropagation()}
       >
-        {/* Header */}
         <div className="p-6 border-b border-gray-200 dark:border-gray-700 flex items-center justify-between flex-shrink-0">
           <div>
             <h2
               id="price-override-title"
               className="text-xl font-bold text-gray-900 dark:text-white flex items-center gap-2"
             >
-              <DollarSign
+              <Banknote
                 className="w-5 h-5 text-purple-500"
                 aria-hidden="true"
               />
@@ -373,9 +329,7 @@ export function PriceOverrideModal({
           </button>
         </div>
 
-        {/* Form */}
         <div className="p-6 space-y-4">
-          {/* Product Name */}
           <div>
             <label
               htmlFor="price-override-product"
@@ -399,7 +353,6 @@ export function PriceOverrideModal({
             />
           </div>
 
-          {/* Price Inputs */}
           <div className="grid grid-cols-2 gap-4">
             <div>
               <label
@@ -410,10 +363,10 @@ export function PriceOverrideModal({
               </label>
               <div className="relative">
                 <span
-                  className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-500 pointer-events-none"
+                  className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-500 pointer-events-none text-sm font-medium"
                   aria-hidden="true"
                 >
-                  $
+                  {currency ?? ''}
                 </span>
                 <input
                   id="price-override-original"
@@ -422,7 +375,7 @@ export function PriceOverrideModal({
                   value={originalPriceInput}
                   onChange={handleMoneyInput(setOriginalPriceInput)}
                   disabled={isSubmitting}
-                  className="w-full pl-7 pr-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:outline-none bg-white dark:bg-gray-700 text-gray-900 dark:text-white tabular-nums disabled:opacity-50"
+                  className="w-full pl-14 pr-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:outline-none bg-white dark:bg-gray-700 text-gray-900 dark:text-white tabular-nums disabled:opacity-50"
                   placeholder="0.00"
                 />
               </div>
@@ -441,10 +394,10 @@ export function PriceOverrideModal({
               </label>
               <div className="relative">
                 <span
-                  className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-500 pointer-events-none"
+                  className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-500 pointer-events-none text-sm font-medium"
                   aria-hidden="true"
                 >
-                  $
+                  {currency ?? ''}
                 </span>
                 <input
                   id="price-override-new"
@@ -454,7 +407,7 @@ export function PriceOverrideModal({
                   onChange={handleMoneyInput(setNewPriceInput)}
                   disabled={isSubmitting || overrideType === 'percentage'}
                   readOnly={overrideType === 'percentage'}
-                  className={`w-full pl-7 pr-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:outline-none bg-white dark:bg-gray-700 text-gray-900 dark:text-white tabular-nums disabled:opacity-50 ${
+                  className={`w-full pl-14 pr-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:outline-none bg-white dark:bg-gray-700 text-gray-900 dark:text-white tabular-nums disabled:opacity-50 ${
                     overrideType === 'percentage'
                       ? 'bg-gray-50 dark:bg-gray-800 cursor-not-allowed'
                       : ''
@@ -465,7 +418,6 @@ export function PriceOverrideModal({
             </div>
           </div>
 
-          {/* Override Type */}
           <div>
             <span className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
               Override Type
@@ -491,7 +443,7 @@ export function PriceOverrideModal({
                     : 'border-gray-300 dark:border-gray-600 hover:bg-gray-50 dark:hover:bg-gray-700'
                 }`}
               >
-                <DollarSign className="w-4 h-4" aria-hidden="true" />
+                <Banknote className="w-4 h-4" aria-hidden="true" />
                 Fixed Amount
               </button>
               <button
@@ -515,7 +467,6 @@ export function PriceOverrideModal({
             </div>
           </div>
 
-          {/* Discount Percentage */}
           {overrideType === 'percentage' && (
             <div>
               <label
@@ -545,7 +496,6 @@ export function PriceOverrideModal({
             </div>
           )}
 
-          {/* Reason */}
           <div>
             <label
               htmlFor="price-override-reason"
@@ -588,7 +538,6 @@ export function PriceOverrideModal({
             )}
           </div>
 
-          {/* Summary */}
           {originalPrice > 0 && newPrice > 0 && newPrice <= originalPrice && (
             <div className="p-4 bg-gray-50 dark:bg-gray-700/50 rounded-lg">
               <div className="flex justify-between text-sm">
@@ -596,7 +545,7 @@ export function PriceOverrideModal({
                   Original Price
                 </span>
                 <span className="text-gray-900 dark:text-white tabular-nums">
-                  {formatCurrency(originalPrice)}
+                  {formatPosCurrency(originalPrice, currency)}
                 </span>
               </div>
               <div className="flex justify-between text-sm">
@@ -604,7 +553,7 @@ export function PriceOverrideModal({
                   New Price
                 </span>
                 <span className="text-blue-600 dark:text-blue-400 font-medium tabular-nums">
-                  {formatCurrency(newPrice)}
+                  {formatPosCurrency(newPrice, currency)}
                 </span>
               </div>
               <div className="flex justify-between text-sm font-medium pt-2 border-t border-gray-200 dark:border-gray-600">
@@ -612,26 +561,25 @@ export function PriceOverrideModal({
                   Total Savings
                 </span>
                 <span className="text-green-600 dark:text-green-400 tabular-nums">
-                  {formatCurrency(savings)}
+                  {formatPosCurrency(savings, currency)}
                 </span>
               </div>
             </div>
           )}
 
-          {/* Inline validation hint */}
-          {validationError && (productName.trim().length > 0 ||
-            originalPriceInput.length > 0 ||
-            newPriceInput.length > 0 ||
-            reason.length > 0) && (
-            <div
-              role="alert"
-              className="text-xs text-red-600 dark:text-red-400"
-            >
-              {validationError}
-            </div>
-          )}
+          {validationError &&
+            (productName.trim().length > 0 ||
+              originalPriceInput.length > 0 ||
+              newPriceInput.length > 0 ||
+              reason.length > 0) && (
+              <div
+                role="alert"
+                className="text-xs text-red-600 dark:text-red-400"
+              >
+                {validationError}
+              </div>
+            )}
 
-          {/* Submit error from onConfirm */}
           {submitError && (
             <div
               role="alert"
@@ -641,7 +589,6 @@ export function PriceOverrideModal({
             </div>
           )}
 
-          {/* Actions */}
           <div className="flex gap-3 pt-4 border-t border-gray-200 dark:border-gray-700">
             <button
               type="button"

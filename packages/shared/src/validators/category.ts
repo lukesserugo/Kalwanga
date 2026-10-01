@@ -9,7 +9,7 @@ import {
   type CategoryWithProductsQueryInput,
   type CreateCategoryInput,
   type UpdateCategoryInput,
-} from "../schemas/category";
+} from "../../../shared/src/schemas/category";
 
 export class CategoryValidation {
   static validateCreateCategory(data: unknown): CreateCategoryInput {

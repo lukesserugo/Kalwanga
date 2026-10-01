@@ -9,7 +9,6 @@ import {
   useRef,
 } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import Image from 'next/image';
 import {
   CreditCard,
   Gift,
@@ -46,6 +45,13 @@ import type {
   NextAction,
   OnlineCheckoutResponse,
 } from '../../services/checkoutService';
+import {
+  MobileMoneyProviderPicker,
+  validatePhoneForProvider,
+  MOBILE_PROVIDERS,
+  type MobileProvider,
+} from './MobileMoneyProviderPicker';
+import { getProviderLogo } from './ProviderLogos';
 
 // ============================================
 // STRIPE BOOTSTRAP
@@ -70,79 +76,13 @@ function getStripePromise(): Promise<Stripe | null> {
 }
 
 // ============================================
-// MOBILE MONEY PROVIDERS
+// MOBILE-MONEY ROUTING
 // ============================================
 
-export type MobileProvider = 'MPESA' | 'MTN' | 'AIRTEL';
+type MobileRouting = 'mpesa' | 'generic';
 
-interface MobileProviderSpec {
-  id: MobileProvider;
-  name: string;
-  description: string;
-  iconUrl: string;
-  phonePlaceholder: string;
-  nationalDigits: number;
-  countryCode: string;
-}
-
-const MOBILE_PROVIDERS: MobileProviderSpec[] = [
-  {
-    id: 'MPESA',
-    name: 'M-Pesa',
-    description: 'Safaricom STK push',
-    iconUrl: 'https://cdn-icons-png.flaticon.com/512/825/825507.png',
-    phonePlaceholder: '+254 712 345 678',
-    nationalDigits: 9,
-    countryCode: '254',
-  },
-  {
-    id: 'MTN',
-    name: 'MTN Mobile Money',
-    description: 'MTN MoMo prompt',
-    iconUrl: 'https://cdn-icons-png.flaticon.com/512/825/825507.png',
-    phonePlaceholder: '+256 770 000 000',
-    nationalDigits: 9,
-    countryCode: '256',
-  },
-  {
-    id: 'AIRTEL',
-    name: 'Airtel Money',
-    description: 'Airtel Money prompt',
-    iconUrl: 'https://cdn-icons-png.flaticon.com/512/825/825507.png',
-    phonePlaceholder: '+256 700 000 000',
-    nationalDigits: 9,
-    countryCode: '256',
-  },
-];
-
-function validatePhoneForProvider(
-  phone: string,
-  provider: MobileProvider,
-): string | null {
-  const spec = MOBILE_PROVIDERS.find((p) => p.id === provider);
-  if (!spec) return 'Unknown mobile money provider';
-
-  const digits = phone.replace(/\D/g, '');
-
-  if (digits.length === 0) {
-    return `Phone number is required for ${spec.name}`;
-  }
-
-  const national = digits.startsWith(spec.countryCode)
-    ? digits.slice(spec.countryCode.length)
-    : digits.startsWith('0')
-      ? digits.slice(1)
-      : digits;
-
-  if (national.length < spec.nationalDigits) {
-    return `Enter a valid ${spec.name} number (at least ${spec.nationalDigits} digits)`;
-  }
-
-  if (digits.length > 15) {
-    return 'Phone number is too long';
-  }
-
-  return null;
+function getMobileRouting(provider: MobileProvider): MobileRouting {
+  return provider === 'MPESA' ? 'mpesa' : 'generic';
 }
 
 // ============================================
@@ -151,45 +91,21 @@ function validatePhoneForProvider(
 
 export interface PaymentFormProps {
   amount: number;
-
-  /**
-   * Optional currency.
-   *
-   * ⚠ When omitted, the field is NOT sent to the backend and the
-   *   backend resolves it from the business unit (then
-   *   `DEFAULT_CURRENCY`, then the registry default — `UGX`).
-   *   Do NOT default this to `'USD'` on the client — that is the
-   *   bug the backend's `resolveCurrency` was written to fix, and
-   *   every gateway except Stripe/USD-only deployments rejects the
-   *   mismatch.
-   */
   currency?: string;
-
   paymentMethod: string;
   provider?: string;
   customerId?: string;
   customerLoyaltyPoints?: number;
-
   saleId?: string;
   cartId?: string;
   businessUnitId?: string;
   cashRegisterId?: string;
   cashRegisterSessionId?: string;
-
   defaultMobileProvider?: MobileProvider;
   defaultPhoneNumber?: string;
-
   returnUrl?: string;
   cancelUrl?: string;
-
-  /**
-   * Optional Stripe PaymentIntent client secret supplied by the
-   * parent. When set, `PaymentForm` mounts `<Elements>` immediately
-   * and skips its internal Pay button — the parent owns the
-   * `processOnlineCheckout` step for card methods.
-   */
   stripeClientSecret?: string | null;
-
   onSuccess?: (payment: any) => void;
   onError?: (error: any) => void;
   onCancel?: () => void;
@@ -201,41 +117,9 @@ export interface PaymentFormProps {
 // PROVIDER METADATA
 // ============================================
 //
-// The image map and the config map are keyed by the payment
-// method / provider code the backend accepts. Every value in the
-// backend's `PAYMENT_METHODS` needs an entry here, or the picker
-// falls through to the Stripe config by default.
-
-const PROVIDER_IMAGE_URLS: Record<string, string> = {
-  STRIPE: 'https://stripe.com/img/v3/home/social.png',
-  PAYPAL:
-    'https://www.paypalobjects.com/webstatic/mktg/logo/pp_cc_mark_111x69.jpg',
-  FLUTTERWAVE: 'https://flutterwave.com/images/logo/flyer.png',
-  SQUARE: 'https://squareup.com/icons/square_logo.svg',
-  MPESA: 'https://cdn-icons-png.flaticon.com/512/825/825507.png',
-  MTN: 'https://cdn-icons-png.flaticon.com/512/825/825507.png',
-  AIRTEL: 'https://cdn-icons-png.flaticon.com/512/825/825507.png',
-  TIGO: 'https://cdn-icons-png.flaticon.com/512/825/825507.png',
-  VODAFONE: 'https://cdn-icons-png.flaticon.com/512/825/825507.png',
-};
-
-/**
- * @deprecated The dark-mode image map is identical to the light
- *   one. Kept so a future dark-mode-specific asset can be added
- *   without changing the lookup function.
- */
-const PROVIDER_DARK_IMAGE_URLS: Record<string, string> = {
-  STRIPE: 'https://stripe.com/img/v3/home/social.png',
-  PAYPAL:
-    'https://www.paypalobjects.com/webstatic/mktg/logo/pp_cc_mark_111x69.jpg',
-  FLUTTERWAVE: 'https://flutterwave.com/images/logo/flyer.png',
-  SQUARE: 'https://squareup.com/icons/square_logo.svg',
-  MPESA: 'https://cdn-icons-png.flaticon.com/512/825/825507.png',
-  MTN: 'https://cdn-icons-png.flaticon.com/512/825/825507.png',
-  AIRTEL: 'https://cdn-icons-png.flaticon.com/512/825/825507.png',
-  TIGO: 'https://cdn-icons-png.flaticon.com/512/825/825507.png',
-  VODAFONE: 'https://cdn-icons-png.flaticon.com/512/825/825507.png',
-};
+// Text metadata only — artwork is now served by
+// `ProviderLogos.tsx` as inline React SVGs. There is no image
+// URL map anymore, and no runtime fetch to `/icons/payments/`.
 
 const PROVIDER_CONFIGS: Record<
   string,
@@ -283,17 +167,35 @@ const PROVIDER_CONFIGS: Record<
     color: 'red',
     description: 'Airtel Money prompt',
   },
-  TIGO: {
-    icon: '📱',
-    name: 'Tigo Pesa',
-    color: 'blue',
-    description: 'Tigo Pesa prompt',
+  CASH: {
+    icon: '💰',
+    name: 'Cash',
+    color: 'green',
+    description: 'Cash payment at the counter',
   },
-  VODAFONE: {
+  MOBILE_MONEY: {
     icon: '📱',
-    name: 'Vodafone Cash',
-    color: 'red',
-    description: 'Vodafone Cash prompt',
+    name: 'Mobile Money',
+    color: 'purple',
+    description: 'Mobile money payment',
+  },
+  BANK_TRANSFER: {
+    icon: '🏦',
+    name: 'Bank Transfer',
+    color: 'indigo',
+    description: 'Direct bank transfer',
+  },
+  GIFT_CARD: {
+    icon: '🎁',
+    name: 'Gift Card',
+    color: 'pink',
+    description: 'Gift card redemption',
+  },
+  LOYALTY_POINTS: {
+    icon: '⭐',
+    name: 'Loyalty Points',
+    color: 'yellow',
+    description: 'Loyalty points redemption',
   },
 };
 
@@ -433,99 +335,6 @@ function StripeCardSubForm({
 }
 
 // ============================================
-// MOBILE PROVIDER PICKER
-// ============================================
-
-interface MobileProviderPickerProps {
-  selected: MobileProvider;
-  onSelect: (provider: MobileProvider) => void;
-  disabled?: boolean;
-}
-
-function MobileProviderPicker({
-  selected,
-  onSelect,
-  disabled,
-}: MobileProviderPickerProps) {
-  const { isDark } = useThemeStore();
-
-  return (
-    <div>
-      <p
-        className={`text-sm font-medium mb-2 ${
-          isDark ? 'text-gray-300' : 'text-gray-700'
-        }`}
-      >
-        Choose your mobile money provider
-      </p>
-
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-        {MOBILE_PROVIDERS.map((provider) => {
-          const isActive = selected === provider.id;
-
-          return (
-            <button
-              key={provider.id}
-              type="button"
-              onClick={() => !disabled && onSelect(provider.id)}
-              disabled={disabled}
-              className={`relative p-3 border-2 rounded-xl text-left transition duration-250 focus-ring disabled:opacity-50 disabled:cursor-not-allowed ${
-                isActive
-                  ? 'border-brand-500 bg-brand-50 dark:bg-brand-900/20 shadow-soft'
-                  : 'border-gray-200 dark:border-gray-600 hover:border-brand-300 dark:hover:border-brand-500'
-              }`}
-              aria-pressed={isActive}
-            >
-              <div className="flex items-center gap-3">
-                <div
-                  className={`w-10 h-10 rounded-lg flex items-center justify-center flex-shrink-0 ${
-                    isActive
-                      ? 'bg-brand-100 dark:bg-brand-900/30'
-                      : 'bg-gray-100 dark:bg-gray-700'
-                  }`}
-                >
-                  <Image
-                    src={provider.iconUrl}
-                    alt={provider.name}
-                    width={24}
-                    height={24}
-                    className="rounded object-contain"
-                    onError={(e) => {
-                      (e.target as HTMLImageElement).style.display = 'none';
-                    }}
-                  />
-                </div>
-                <div className="min-w-0 flex-1">
-                  <p
-                    className={`text-sm font-medium truncate ${
-                      isActive
-                        ? 'text-brand-600 dark:text-brand-400'
-                        : 'text-gray-900 dark:text-white'
-                    }`}
-                  >
-                    {provider.name}
-                  </p>
-                  <p
-                    className={`text-2xs truncate ${
-                      isDark ? 'text-gray-400' : 'text-gray-500'
-                    }`}
-                  >
-                    {provider.description}
-                  </p>
-                </div>
-                {isActive && (
-                  <CheckCircle className="w-4 h-4 text-brand-500 flex-shrink-0" />
-                )}
-              </div>
-            </button>
-          );
-        })}
-      </div>
-    </div>
-  );
-}
-
-// ============================================
 // MAIN COMPONENT
 // ============================================
 
@@ -563,8 +372,6 @@ export function PaymentForm(props: PaymentFormProps): JSX.Element {
   const [processing, setProcessing] = useState(false);
 
   // ── Provider selection ──────────────────────────────────────
-  // The mobile-money network is chosen separately by the mobile
-  // picker. This is the *gateway* selector for card methods.
   const [selectedProvider, setSelectedProvider] = useState<string>(
     provider ?? 'STRIPE',
   );
@@ -591,10 +398,6 @@ export function PaymentForm(props: PaymentFormProps): JSX.Element {
   const [awaitingMessage, setAwaitingMessage] = useState<string>('');
 
   // ── Idempotency key ─────────────────────────────────────────
-  // A stable per-attempt key. Reset on success and explicit cancel
-  // so a legitimate second payment in the same session does not
-  // hit the backend's idempotency short-circuit and return the
-  // first Payment row.
   const idempotencyKeyRef = useRef<string | null>(null);
   const ensureIdempotencyKey = useCallback((): string => {
     if (!idempotencyKeyRef.current) {
@@ -609,9 +412,15 @@ export function PaymentForm(props: PaymentFormProps): JSX.Element {
     idempotencyKeyRef.current = null;
   }, []);
 
-  // Sync parent-supplied clientSecret into local state. This
-  // mounts <Elements> as soon as the prop arrives — no
-  // intermediate "Pay" button required.
+  // ── Currency-aware formatter ────────────────────────────────
+  const renderCurrency =
+    currency || process.env.NEXT_PUBLIC_DEFAULT_CURRENCY || 'UGX';
+
+  const fmt = useCallback(
+    (value: number): string => formatCurrency(value, renderCurrency),
+    [renderCurrency],
+  );
+
   useEffect(() => {
     if (!stripeClientSecret) return;
     if (stripeClientSecret === localStripeClientSecret) return;
@@ -636,15 +445,18 @@ export function PaymentForm(props: PaymentFormProps): JSX.Element {
 
   // ── Provider lookups ─────────────────────────────────────────
 
-  const getProviderImageUrl = (providerCode: string): string => {
-    return isDark && PROVIDER_DARK_IMAGE_URLS[providerCode]
-      ? PROVIDER_DARK_IMAGE_URLS[providerCode]
-      : PROVIDER_IMAGE_URLS[providerCode] || '';
-  };
-
   const getProviderConfig = (providerCode: string) => {
     return PROVIDER_CONFIGS[providerCode] || PROVIDER_CONFIGS.STRIPE;
   };
+
+  /**
+   * Resolve the inline logo component for a provider code. The
+   * `ProviderLogos` module does the case-insensitive lookup;
+   * this wrapper exists only so call sites read the same as
+   * before.
+   */
+  const getProviderLogoComponent = (providerCode: string) =>
+    getProviderLogo(providerCode);
 
   const getAvailableProviders = (): string[] => {
     const methodProviders: Record<string, string[]> = {
@@ -654,15 +466,8 @@ export function PaymentForm(props: PaymentFormProps): JSX.Element {
       BANK_TRANSFER: ['FLUTTERWAVE'],
       GIFT_CARD: ['STRIPE'],
       LOYALTY_POINTS: ['STRIPE'],
-      // Direct sub-provider requests. The form does not currently
-      // route through this branch — the mobile picker handles the
-      // network selection for MOBILE_MONEY. Included so a caller
-      // that passes `paymentMethod: 'MTN'` directly gets a working
-      // provider list.
       MTN: ['MTN'],
       AIRTEL: ['AIRTEL'],
-      TIGO: ['TIGO'],
-      VODAFONE: ['VODAFONE'],
     };
     return methodProviders[paymentMethod] || ['STRIPE'];
   };
@@ -686,7 +491,7 @@ export function PaymentForm(props: PaymentFormProps): JSX.Element {
 
   // ── Validation ───────────────────────────────────────────────
 
-  const validate = (): boolean => {
+  const validate = useCallback((): boolean => {
     const newErrors: Record<string, string> = {};
 
     if (paymentMethod === 'MOBILE_MONEY') {
@@ -714,10 +519,6 @@ export function PaymentForm(props: PaymentFormProps): JSX.Element {
       }
     }
 
-    // Square requires a card nonce from the Square Web SDK. This
-    // form has no nonce-capture flow yet, so a `SQUARE` submission
-    // without a nonce would reach the backend and 400 with
-    // "Card nonce is required". Catch it up front.
     if (paymentMethod === 'SQUARE') {
       newErrors.square =
         'Square requires the Square Web SDK card form. Please use Stripe for card payments.';
@@ -725,7 +526,14 @@ export function PaymentForm(props: PaymentFormProps): JSX.Element {
 
     setErrors(newErrors);
     return Object.keys(newErrors).length === 0;
-  };
+  }, [
+    paymentMethod,
+    phoneNumber,
+    mobileProvider,
+    giftCardCode,
+    loyaltyPoints,
+    maxPoints,
+  ]);
 
   // ── Handle gateway nextAction ────────────────────────────────
 
@@ -834,7 +642,9 @@ export function PaymentForm(props: PaymentFormProps): JSX.Element {
 
       if (saleId) {
         if (paymentMethod === 'MOBILE_MONEY') {
-          if (mobileProvider === 'MPESA') {
+          const routing: MobileRouting = getMobileRouting(mobileProvider);
+
+          if (routing === 'mpesa') {
             const response = await paymentService.initiateMpesaSTKPush({
               phoneNumber,
               amount: finalAmount || amount,
@@ -844,9 +654,6 @@ export function PaymentForm(props: PaymentFormProps): JSX.Element {
               idempotencyKey,
               accountReference: `SALE-${saleId}`,
               transactionDesc: `Payment for sale ${saleId}`,
-              // `currency` is intentionally omitted when the caller
-              // did not supply one — M-Pesa enforces KES via the
-              // backend's `assertProviderAccepts('MPESA', 'KES')`.
               currency,
             });
 
@@ -862,11 +669,9 @@ export function PaymentForm(props: PaymentFormProps): JSX.Element {
           }
 
           const response = await paymentService.initiateMobileMoneyPayment({
-            provider: mobileProvider,
+            provider: mobileProvider as 'MTN' | 'AIRTEL',
             phoneNumber,
             amount: finalAmount || amount,
-            // `currency` omitted when the caller did not supply one
-            // — MTN/Airtel derive it from their country config.
             currency,
             saleId,
             customerId,
@@ -896,9 +701,6 @@ export function PaymentForm(props: PaymentFormProps): JSX.Element {
         if (isCardMethod && selectedProvider === 'STRIPE') {
           const intent = await paymentService.createPaymentIntent({
             amount: finalAmount || amount,
-            // `currency` omitted when the caller did not supply one
-            // — the backend defaults to the platform default
-            // (env DEFAULT_CURRENCY → 'UGX').
             currency,
             description: `Payment for sale ${saleId}`,
             metadata: {
@@ -923,8 +725,6 @@ export function PaymentForm(props: PaymentFormProps): JSX.Element {
           customerId,
           cashRegisterId,
           cashRegisterSessionId,
-          // `currency` omitted when the caller did not supply one
-          // — the backend resolves from `businessUnitId`.
           currency,
           businessUnitId,
           idempotencyKey,
@@ -955,12 +755,6 @@ export function PaymentForm(props: PaymentFormProps): JSX.Element {
       }
 
       // ── No saleId, no cartId: direct payment endpoint ──────
-      //
-      // The backend's `processPaymentSchema` rejects unknown keys
-      // and does not read a top-level `provider` — the concrete
-      // provider is derived from `paymentMethod`. `provider` is
-      // moved into `metadata.provider`, which the mobile-money and
-      // Square handlers do read.
       const paymentData: Record<string, unknown> = {
         amount: finalAmount || amount,
         paymentMethod,
@@ -972,7 +766,6 @@ export function PaymentForm(props: PaymentFormProps): JSX.Element {
         } as Record<string, unknown>,
       };
 
-      // Forward `currency` only when the caller supplied one.
       if (currency) {
         paymentData.currency = currency;
       }
@@ -1028,14 +821,14 @@ export function PaymentForm(props: PaymentFormProps): JSX.Element {
     paymentMethod,
     currency,
     customerId,
-    selectedProvider,
-    cartId,
-    saleId,
     businessUnitId,
     cashRegisterId,
     cashRegisterSessionId,
     returnUrl,
     cancelUrl,
+    saleId,
+    cartId,
+    selectedProvider,
     loyaltyPoints,
     phoneNumber,
     mobileProvider,
@@ -1043,12 +836,13 @@ export function PaymentForm(props: PaymentFormProps): JSX.Element {
     bankReference,
     cardNumber,
     localStripeClientSecret,
-    onSuccess,
-    onError,
-    onAwaitingConfirmation,
+    validate,
     handleNextAction,
     ensureIdempotencyKey,
     resetIdempotencyKey,
+    onSuccess,
+    onError,
+    onAwaitingConfirmation,
   ]);
 
   // ── Stripe callbacks ─────────────────────────────────────────
@@ -1077,10 +871,6 @@ export function PaymentForm(props: PaymentFormProps): JSX.Element {
   ]);
 
   const handleStripeError = useCallback((message: string): void => {
-    // ⚠ Do NOT reset the idempotency key here. A user-recoverable
-    //   error (decline, 3DS fail) should let the retry reuse the
-    //   same key so the backend's idempotency short-circuit can
-    //   return the original Payment if one exists.
     toast.error(message);
   }, []);
 
@@ -1096,7 +886,7 @@ export function PaymentForm(props: PaymentFormProps): JSX.Element {
     if (availableProviders.length <= 1) return null;
 
     const config = getProviderConfig(selectedProvider);
-    const imageUrl = getProviderImageUrl(selectedProvider);
+    const Logo = getProviderLogoComponent(selectedProvider);
 
     return (
       <div className="mb-4">
@@ -1119,18 +909,9 @@ export function PaymentForm(props: PaymentFormProps): JSX.Element {
                 : 'bg-white border-gray-300 text-gray-900 hover:bg-gray-50'
             } ${showProviderDropdown ? 'ring-2 ring-brand-500' : ''}`}
           >
-            {imageUrl ? (
+            {Logo ? (
               <div className="relative w-8 h-8 flex-shrink-0">
-                <Image
-                  src={imageUrl}
-                  alt={config.name}
-                  width={32}
-                  height={32}
-                  className="rounded object-contain"
-                  onError={(e) => {
-                    (e.target as HTMLImageElement).style.display = 'none';
-                  }}
-                />
+                <Logo className="w-8 h-8 rounded object-contain" />
               </div>
             ) : (
               <span className="text-xl">{config.icon}</span>
@@ -1160,8 +941,7 @@ export function PaymentForm(props: PaymentFormProps): JSX.Element {
             >
               {availableProviders.map((providerCode) => {
                 const providerConfig = getProviderConfig(providerCode);
-                const providerImageUrl =
-                  getProviderImageUrl(providerCode);
+                const ProviderLogo = getProviderLogoComponent(providerCode);
                 const isSelected = selectedProvider === providerCode;
 
                 return (
@@ -1183,20 +963,9 @@ export function PaymentForm(props: PaymentFormProps): JSX.Element {
                           : 'hover:bg-gray-50 text-gray-700'
                     } ${isSelected ? 'border-l-4 border-brand-500' : ''}`}
                   >
-                    {providerImageUrl ? (
+                    {ProviderLogo ? (
                       <div className="relative w-8 h-8 flex-shrink-0">
-                        <Image
-                          src={providerImageUrl}
-                          alt={providerConfig.name}
-                          width={32}
-                          height={32}
-                          className="rounded object-contain"
-                          onError={(e) => {
-                            (
-                              e.target as HTMLImageElement
-                            ).style.display = 'none';
-                          }}
-                        />
+                        <ProviderLogo className="w-8 h-8 rounded object-contain" />
                       </div>
                     ) : (
                       <span className="text-xl">{providerConfig.icon}</span>
@@ -1368,7 +1137,7 @@ export function PaymentForm(props: PaymentFormProps): JSX.Element {
 
     return (
       <div className="space-y-4">
-        <MobileProviderPicker
+        <MobileMoneyProviderPicker
           selected={mobileProvider}
           onSelect={setMobileProvider}
         />
@@ -1529,7 +1298,7 @@ export function PaymentForm(props: PaymentFormProps): JSX.Element {
             isDark ? 'text-gray-400' : 'text-gray-500'
           }`}
         >
-          Discount: {formatCurrency(loyaltyDiscount)}
+          Discount: {fmt(loyaltyDiscount)}
         </p>
       </div>
 
@@ -1745,7 +1514,7 @@ export function PaymentForm(props: PaymentFormProps): JSX.Element {
             isDark ? 'text-white' : 'text-gray-900'
           }`}
         >
-          Amount: {formatCurrency(finalAmount || amount)}
+          Amount: {fmt(finalAmount || amount)}
         </p>
         {onCancel && (
           <button onClick={onCancel} className="mt-6 btn-brand">
@@ -1790,16 +1559,16 @@ export function PaymentForm(props: PaymentFormProps): JSX.Element {
 
   const payButtonLabel = (() => {
     if (paymentMethod === 'MOBILE_MONEY') {
-      return `Send Payment Prompt — ${formatCurrency(finalAmount || amount)}`;
+      return `Send Payment Prompt — ${fmt(finalAmount || amount)}`;
     }
     if (paymentMethod === 'PAYPAL') {
-      return `Continue to PayPal — ${formatCurrency(finalAmount || amount)}`;
+      return `Continue to PayPal — ${fmt(finalAmount || amount)}`;
     }
     if (paymentMethod === 'FLUTTERWAVE') {
-      return `Continue to Flutterwave — ${formatCurrency(finalAmount || amount)}`;
+      return `Continue to Flutterwave — ${fmt(finalAmount || amount)}`;
     }
     if (paymentMethod === 'SQUARE') {
-      return `Pay ${formatCurrency(finalAmount || amount)}`;
+      return `Pay ${fmt(finalAmount || amount)}`;
     }
     if (
       (paymentMethod === 'CREDIT_CARD' ||
@@ -1807,9 +1576,9 @@ export function PaymentForm(props: PaymentFormProps): JSX.Element {
       !isInlineCardProvider(selectedProvider)
     ) {
       const config = getProviderConfig(selectedProvider);
-      return `Continue to ${config.name} — ${formatCurrency(finalAmount || amount)}`;
+      return `Continue to ${config.name} — ${fmt(finalAmount || amount)}`;
     }
-    return `Pay ${formatCurrency(finalAmount || amount)}`;
+    return `Pay ${fmt(finalAmount || amount)}`;
   })();
 
   return (
@@ -1833,7 +1602,7 @@ export function PaymentForm(props: PaymentFormProps): JSX.Element {
                 isDark ? 'text-white' : 'text-gray-900'
               }`}
             >
-              {formatCurrency(finalAmount || amount)}
+              {fmt(finalAmount || amount)}
             </span>
           </div>
           {loyaltyDiscount > 0 && (
@@ -1846,7 +1615,7 @@ export function PaymentForm(props: PaymentFormProps): JSX.Element {
                 Loyalty Discount
               </span>
               <span className="text-sm tabular-nums text-success-600 dark:text-success-400">
-                -{formatCurrency(loyaltyDiscount)}
+                -{fmt(loyaltyDiscount)}
               </span>
             </div>
           )}

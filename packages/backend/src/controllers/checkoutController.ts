@@ -50,6 +50,8 @@ const CANONICAL_PAYMENT_METHODS = [
   'MOBILE_MONEY',
   'MOBILE',
   'MPESA',
+  'MTN',
+  'AIRTEL',
   'BANK_TRANSFER',
   'BANK',
   'GIFT_CARD',
@@ -157,6 +159,35 @@ const processCheckoutPaymentSchema = z.object({
 });
 
 // ============================================
+// CHARGE-PREVIEW SCHEMA (D1)
+// ============================================
+//
+// Body for `POST /checkout/charge-preview`. The payer has selected
+// a payment method on the cart / checkout screen and wants to see
+// the exact amount the gateway will charge, in the gateway's own
+// currency, before committing.
+//
+// ⚠ `cartId` is required. `paymentMethod` is required — the
+//   preview is specific to a gateway (Stripe settles in one set of
+//   currencies, MTN in another).
+//
+// ⚠ `mobileMoneyProvider` is required when the method is mobile
+//   money, because MTN and Airtel settle in different country
+//   currencies. It is optional otherwise and ignored.
+//
+// ⚠ The response NEVER mutates anything. It is a read-only
+//   computation. `available: false` is a valid outcome and the
+//   frontend renders the `reason` verbatim.
+
+const chargePreviewSchema = z
+  .object({
+    cartId: z.string().min(1, 'Cart ID is required'),
+    paymentMethod: paymentMethodSchema,
+    mobileMoneyProvider: mobileMoneyProviderSchema.optional(),
+  })
+  .strict();
+
+// ============================================
 // HELPERS
 // ============================================
 
@@ -189,6 +220,52 @@ function resolveCartId(req: Request): string | undefined {
     id?: string;
   };
   return cartId ?? id ?? undefined;
+}
+
+/**
+ * Read the payer's chosen display currency off the request.
+ *
+ * Source: the `X-Display-Currency` header, set by the frontend
+ * `currencyService` axios interceptor. Absent means the payer has
+ * not overridden the ledger currency; the response carries no
+ * `display*` fields and the client renders ledger amounts.
+ *
+ * The value is a HINT, never a ledger input. `cartService` and
+ * `checkoutService` only use it to compute additive `display*`
+ * fields on the response and to influence the charge-currency
+ * fallback when the gateway's settlement currency is unset. Every
+ * amount written to a Payment, Sale, or Cart row is denominated in
+ * the business unit's currency.
+ *
+ * Returns `undefined` for absent / empty / whitespace-only values.
+ * Uppercases what it returns so downstream consumers see a
+ * canonical `'EUR'`, not `'eur'`.
+ */
+function getDisplayCurrency(req: Request): string | undefined {
+  const raw = req.headers['x-display-currency'];
+  const value = Array.isArray(raw) ? raw[0] : raw;
+  if (typeof value !== 'string') return undefined;
+  const trimmed = value.trim();
+  if (!trimmed) return undefined;
+  return trimmed.toUpperCase();
+}
+
+/**
+ * Read the payer's affirmative acceptance of the converted charge
+ * amount off the request body.
+ *
+ * ⚠ This MUST be a literal `true`. Anything else — `false`, `null`,
+ *   `undefined`, `"true"`, `1` — is treated as NOT acknowledged.
+ *   The whole point is that the payer saw the converted amount on
+ *   the pre-payment screen and ticked the confirm box. A truthy
+ *   string must never satisfy the gate.
+ *
+ * ⚠ The frontend sends this field on `POST /checkout/online` only.
+ *   Offline checkouts never convert (their gateway currency is the
+ *   ledger currency), so the field is not read on that path.
+ */
+function getChargeContextAcknowledged(req: Request): boolean {
+  return req.body?.chargeContextAcknowledged === true;
 }
 
 /**
@@ -257,10 +334,15 @@ function toInt(value: unknown, fallback: number): number {
  * ⚠ Phase 2: No currency field is normalized here. Checkout bodies
  *   do not carry a currency — the business unit's own `currency`
  *   column is the authority (see `checkoutService.processCheckout`).
- *   A caller that sends `currency` or `currencySymbol` on a
- *   checkout body has it silently dropped by the shared schema's
- *   `.strict()` check (which will 400 it). That is intentional:
- *   currency is not a client-supplied value on this endpoint.
+ *
+ * ⚠ Phase D1: `chargeContextAcknowledged` IS normalized here. It
+ *   is a payer-supplied boolean that gates the online checkout
+ *   when the resolved charge currency differs from the ledger
+ *   currency. It is threaded through to the service as-is.
+ *
+ * ⚠ The payer's display currency is NOT read from the body. It
+ *   arrives on the `X-Display-Currency` header and is read via
+ *   `getDisplayCurrency(req)`.
  *
  * ⚠ `null` normalization: the schemas declare several fields as
  *   `.optional().nullable()`, which means a client can send
@@ -322,6 +404,13 @@ function normalizeCheckoutBody(body: any) {
     promotionCode: b.promotionCode ?? b.promotion_code ?? undefined,
     promotionDiscount:
       b.promotionDiscount ?? b.promotion_discount ?? undefined,
+
+    // ── Phase D1: charge-currency acknowledgement ─────────────
+    // Only accepted as a literal `true`. Anything else is
+    // coerced to `false` so the service's gate is never
+    // satisfied by a truthy-but-not-boolean value.
+    chargeContextAcknowledged:
+      (b.chargeContextAcknowledged ?? b.charge_context_acknowledged) === true,
   };
 
   // Coerce numeric strings
@@ -400,10 +489,14 @@ export const checkoutController = {
   //   authoritative — the Phase 1/2 contract requires that the
   //   currency come from a single, trusted source.
   //
-  // ⚠ `customerId` is declared `.optional().nullable()` on the
-  //   schema so a client can send `null` to mean "no customer".
-  //   `CheckoutData.customerId` is `string | undefined`, so the
-  //   value is collapsed with `?? undefined` below.
+  // ⚠ Phase 3a: `displayCurrency` (read from the
+  //   `X-Display-Currency` header) is forwarded to the service.
+  //   The service records it on the Payment row as an audit fact.
+  //   It NEVER mutates `amount`.
+  //
+  // ⚠ Phase D1: offline methods never convert. Their charge
+  //   currency is the ledger currency, so no acknowledgement is
+  //   required and `chargeContextAcknowledged` is not forwarded.
 
   async createCheckout(req: Request, res: Response, next: NextFunction) {
     try {
@@ -443,17 +536,8 @@ export const checkoutController = {
         throw new AppError('Cart does not belong to this user', 403);
       }
 
-      // Ignore any caller-supplied `businessUnitId`. The cart's own
-      // BU is authoritative; letting a client pick a different one
-      // opens a cross-BU write surface (stock checks, currency,
-      // audit row, Sale.businessUnitId).
-      //
-      // ⚠ Null-collapse on `customerId`: schema declares it
-      //   `.optional().nullable()` → `string | null | undefined`.
-      //   Service interface declares `string | undefined`. The
-      //   `?? undefined` here (and on discountType / promotionCode)
-      //   is the boundary coercion that keeps the two contracts in
-      //   agreement without loosening the service types.
+      const displayCurrency = getDisplayCurrency(req);
+
       const result = await checkoutService.processCheckout(
         {
           cartId: validatedData.cartId,
@@ -474,6 +558,7 @@ export const checkoutController = {
           discountType: validatedData.discountType ?? null,
           promotionCode: validatedData.promotionCode ?? null,
           promotionDiscount: validatedData.promotionDiscount,
+          displayCurrency: displayCurrency ?? null,
         },
         userId,
       );
@@ -499,8 +584,8 @@ export const checkoutController = {
   // ============================================
   //
   // The public web checkout entry point. Creates a PENDING Sale +
-  // PENDING Payment, calls the gateway, and returns a `nextAction`
-  // the frontend switches on:
+  // PENDING Payment, resolves the charge context, and calls the
+  // gateway. Returns a `nextAction` the frontend switches on:
   //
   //   CONFIRM_STRIPE  → frontend confirms with Stripe.js
   //   REDIRECT        → window.location.href = url
@@ -511,29 +596,19 @@ export const checkoutController = {
   // ⚠ `paidAmount` is NOT read from the body. The total is entirely
   //   server-computed from the cart + product prices + loyalty.
   //
+  // ⚠ Phase D1: When the resolved charge currency differs from
+  //   the ledger currency, `chargeContextAcknowledged` MUST be
+  //   `true` in the body. The frontend reads this off the charge
+  //   preview (`POST /checkout/charge-preview`) and shows the
+  //   payer the converted amount plus the disclosure sentence; the
+  //   payer ticks a confirm box which sets this field. If the
+  //   field is missing or false, the service rejects with 409 and
+  //   the frontend re-fetches the preview.
+  //
   // ⚠ On gateway failure the sale is marked CANCELLED, inventory is
   //   restored, and the service re-throws with the provider's own
   //   status code and message. This controller forwards that status
   //   verbatim.
-  //
-  // ── Idempotency semantics ──────────────────────────────────
-  //
-  // The service short-circuits when the incoming `idempotencyKey`
-  // matches an existing Sale. The reply shape depends on the
-  // matched Sale's status:
-  //
-  //   PENDING / PROCESSING  → 201 with `nextAction: OFFLINE`
-  //   COMPLETED             → 200 with `nextAction: NONE`
-  //   CANCELLED             → **409 Conflict**
-  //
-  // ⚠ Phase 2: The PENDING `Payment` row created by
-  //   `checkoutService.processOnlineCheckout` carries an explicit
-  //   `currency` resolved from the business unit. Phase 1 removed
-  //   the schema default on that column, so this is the only source.
-  //   This controller does not see or forward a currency.
-  //
-  // ⚠ `customerId` null-collapse: same reasoning as
-  //   `createCheckout` above.
 
   async createOnlineCheckout(
     req: Request,
@@ -577,9 +652,9 @@ export const checkoutController = {
         throw new AppError('Cart does not belong to this user', 403);
       }
 
-      // ⚠ Null-collapse on `customerId`: same reason as
-      //   `createCheckout`. `OnlineCheckoutData.customerId` is
-      //   `string | undefined`.
+      const displayCurrency = getDisplayCurrency(req);
+      const chargeContextAcknowledged = getChargeContextAcknowledged(req);
+
       const result = await checkoutService.processOnlineCheckout(
         {
           cartId: validatedData.cartId,
@@ -590,8 +665,6 @@ export const checkoutController = {
           discount: validatedData.discount,
           notes: validatedData.notes,
           applyLoyaltyPoints: validatedData.applyLoyaltyPoints,
-          // Same as the offline path: the cart's BU is
-          // authoritative. Drop the caller-supplied value.
           businessUnitId: undefined,
           customerEmail: validatedData.customerEmail,
           customerPhone: validatedData.customerPhone,
@@ -618,6 +691,13 @@ export const checkoutController = {
           discountType: validatedData.discountType ?? null,
           promotionCode: validatedData.promotionCode ?? null,
           promotionDiscount: validatedData.promotionDiscount,
+
+          // ── Phase D1 ─────────────────────────────────────────
+          // The payer's affirmative acceptance of the converted
+          // charge amount. Only `true` satisfies the service's
+          // gate; see `getChargeContextAcknowledged` above.
+          displayCurrency: displayCurrency ?? null,
+          chargeContextAcknowledged,
         },
         userId,
       );
@@ -667,13 +747,32 @@ export const checkoutController = {
         });
       }
 
+      // ── Charge-currency gate rejection ────────────────────
+      //
+      // The service throws a 409 with a specific message when the
+      // converted charge requires acknowledgement that wasn't
+      // given. Surface the charge preview alongside so the
+      // frontend can render the confirm screen without an extra
+      // round-trip.
+      const statusCode = getErrorStatusCode(error);
+      if (
+        statusCode === 409 &&
+        typeof error?.message === 'string' &&
+        error.message.includes('converted amount')
+      ) {
+        return res.status(409).json({
+          success: false,
+          message: error.message,
+          code: 'CHARGE_CONTEXT_REQUIRED',
+        });
+      }
+
       // ── Status-code passthrough ──────────────────────────
       //
       // `AppError` exposes its status as `status`; axios / Stripe
       // SDK errors use `statusCode` or `response.status`; and
       // sometimes the status lives on the wrapped `cause`.
       // `getErrorStatusCode` walks the whole chain.
-      const statusCode = getErrorStatusCode(error);
       if (typeof statusCode === 'number') {
         return res.status(statusCode).json({
           success: false,
@@ -703,6 +802,70 @@ export const checkoutController = {
         });
       }
 
+      next(error);
+    }
+  },
+
+  // ============================================
+  // CHARGE PREVIEW (Phase D1)
+  // ============================================
+  //
+  // POST /checkout/charge-preview
+  //
+  // The payer has selected a payment method and needs to see the
+  // exact amount the gateway will charge, in the gateway's own
+  // currency, before confirming. This endpoint resolves the charge
+  // context and returns the DTO the confirm screen renders.
+  //
+  // ⚠ Never returns 5xx for a missing FX rate. `available: false`
+  //   is a first-class outcome; the frontend renders the `reason`
+  //   and disables the confirm button. The actual checkout WILL
+  //   fail if the rate is still unavailable, but the payer sees
+  //   why on the preview screen, not after committing.
+  //
+  // ⚠ Read-only. Nothing is written to the cart, sale, or payment.
+  //   Repeated calls are free.
+  //
+  // ⚠ The `X-Display-Currency` header is read and forwarded. It
+  //   influences the charge-currency fallback (when the gateway's
+  //   settlement currency is unset) but never overrides an
+  //   explicit `*_SETTLEMENT_CURRENCY` env var or the provider's
+  //   country currency for mobile money.
+
+  async chargePreview(req: Request, res: Response, next: NextFunction) {
+    try {
+      const userId = getUserId(req);
+      if (!userId) throw new AppError('User ID is required', 400);
+
+      const validatedData = chargePreviewSchema.parse(req.body);
+
+      // Ownership check — same shape as the checkout handlers. The
+      // preview is read-only but we still scope it to the caller's
+      // own cart so a caller can't probe another user's amounts.
+      const cart = await cartService.getCartById(validatedData.cartId);
+      if (!cart) throw new AppError('Cart not found', 404);
+      if (cart.userId !== userId) {
+        throw new AppError('Cart does not belong to this user', 403);
+      }
+
+      const displayCurrency = getDisplayCurrency(req);
+
+      const preview = await checkoutService.previewCheckoutCharge({
+        cartId: validatedData.cartId,
+        paymentMethod: validatedData.paymentMethod,
+        mobileMoneyProvider:
+          validatedData.mobileMoneyProvider ?? null,
+        displayCurrency: displayCurrency ?? null,
+      });
+
+      res.status(200).json({
+        success: true,
+        data: preview,
+      });
+    } catch (error) {
+      if (error instanceof z.ZodError) {
+        return res.status(400).json(zodErrorResponse(error));
+      }
       next(error);
     }
   },
@@ -1377,6 +1540,20 @@ export const checkoutController = {
     }
   },
 
+  /**
+   * GET /checkout/payment-methods
+   *
+   * Returns the payment methods available for the caller's active
+   * business unit. The service filters each method against the
+   * registry — a method whose gateway can't charge in the BU's
+   * currency is returned with `enabled: false`.
+   *
+   * ⚠ The BU is resolved from the authenticated user's membership
+   *   (`user.businessUnits[0].businessUnit.id`). If the user has no
+   *   active BU, the service returns the unfiltered list — this is
+   *   a backwards-compatible fallback for callers that predate the
+   *   currency filter.
+   */
   async getPaymentMethods(
     req: Request,
     res: Response,
@@ -1386,7 +1563,32 @@ export const checkoutController = {
       const userId = getUserId(req);
       if (!userId) throw new AppError('User ID is required', 400);
 
-      const paymentMethods = await checkoutService.getPaymentMethods();
+      // Resolve the user's active BU so the service can filter
+      // methods by the registry's supported currencies.
+      let businessUnitId: string | undefined;
+      try {
+        const user = await (checkoutService as any).prisma.user.findUnique({
+          where: { id: userId },
+          select: {
+            businessUnits: {
+              where: { isActive: true },
+              take: 1,
+              select: { businessUnitId: true },
+            },
+          },
+        });
+        businessUnitId =
+          user?.businessUnits?.[0]?.businessUnitId ?? undefined;
+      } catch (err) {
+        logger.warn(
+          '[checkout] Could not resolve business unit for payment methods:',
+          err,
+        );
+      }
+
+      const paymentMethods = await checkoutService.getPaymentMethods(
+        businessUnitId,
+      );
 
       res.status(200).json({
         success: true,

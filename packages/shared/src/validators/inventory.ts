@@ -17,7 +17,7 @@ import {
   type RestockItemDto,
   type ReturnItemDto,
   type UpdateItemDto,
-} from "../schemas/inventory";
+} from "../../../shared/src/schemas/inventory";
 
 export class InventoryValidation {
   static validateCreateItem(data: unknown): CreateItemDto {

@@ -3,7 +3,6 @@
 'use client';
 
 import { useState, useCallback, useMemo } from 'react';
-import Image from 'next/image';
 import {
   CreditCard,
   Banknote,
@@ -23,19 +22,12 @@ import {
 } from 'lucide-react';
 import { useThemeStore } from '../../app/stores/themeStore';
 import { PaymentProvider } from '../../services/paymentService';
+import { getProviderLogo } from '../payments/ProviderLogos';
 
 // ============================================
 // TYPES
 // ============================================
 
-/**
- * The shape of a single selectable payment method.
- *
- * Callers can pass through the backend's auto-seeded providers by
- * mapping a `PaymentProviderStatus` into this shape. The optional
- * `isHealthy` / `configured` fields let the tile reflect the
- * provider's real state instead of always rendering as selectable.
- */
 export interface PaymentMethod {
   id: string;
   name: string;
@@ -44,36 +36,12 @@ export interface PaymentMethod {
   description: string;
   enabled: boolean;
   requiresDetails?: boolean;
-  /**
-   * Provider identifier.
-   *
-   * ⚠ Typed as `PaymentProvider | string` because two conventions
-   *   are in circulation in this codebase:
-   *
-   *     • `PaymentProvider.STRIPE` — the lowercase enum value
-   *       from `services/paymentService.ts`.
-   *     • `'STRIPE'` — the uppercase code the backend uses in
-   *       `PaymentProviderEnum` and in `metadata.provider`.
-   *
-   *   `getProviderConfig` normalizes both to uppercase before
-   *   lookup, so either form resolves. A caller that has one and
-   *   needs the other doesn't have to cast.
-   */
   provider?: PaymentProvider | string;
   providerName?: string;
-  providerImageUrl?: string;
-  providerDarkImageUrl?: string;
   popular?: boolean;
   recommended?: boolean;
   comingSoon?: boolean;
-
-  /** Backend `isHealthy` flag. When `false`, the tile renders
-   *  as disabled with a "Provider unavailable" tooltip. */
   isHealthy?: boolean;
-
-  /** Backend `configured` flag. When `false` and the caller
-   *  opts in via `respectConfiguration`, the tile renders
-   *  disabled with a "Not configured" tooltip. */
   configured?: boolean;
 }
 
@@ -82,48 +50,17 @@ interface PaymentMethodSelectorProps {
   onSelect: (methodId: string) => void;
   availableMethods?: PaymentMethod[];
   showProviderInfo?: boolean;
-  /** When true, methods whose `configured` field is false render
-   *  as disabled. Defaults to false so callers that don't pass
-   *  configuration info keep the current "everything selectable"
-   *  behaviour. */
   respectConfiguration?: boolean;
   className?: string;
 }
 
 // ============================================
-// PROVIDER IMAGES
+// PROVIDER TEXT CONFIG
 // ============================================
 //
-// Local asset paths under `packages/web/public/`. Add one SVG per
-// code to restore the images. Until then, the `<Image>` onError
-// handler creates an emoji fallback from `PROVIDER_CONFIGS`.
-//
-// ⚠ No external CDN dependencies — every request stays on the
-//   deployment's own origin.
-
-const PROVIDER_IMAGE_URLS: Record<string, string> = {
-  STRIPE: '/icons/payments/stripe.svg',
-  PAYPAL: '/icons/payments/paypal.svg',
-  FLUTTERWAVE: '/icons/payments/flutterwave.svg',
-  SQUARE: '/icons/payments/square.svg',
-  MTN: '/icons/payments/mtn.svg',
-  AIRTEL: '/icons/payments/airtel.svg',
-  TIGO: '/icons/payments/tigo.svg',
-  VODAFONE: '/icons/payments/vodafone.svg',
-  CASH: '/icons/payments/cash.svg',
-  MOBILE_MONEY: '/icons/payments/mobile-money.svg',
-  BANK_TRANSFER: '/icons/payments/bank-transfer.svg',
-  GIFT_CARD: '/icons/payments/gift-card.svg',
-  LOYALTY_POINTS: '/icons/payments/loyalty-points.svg',
-};
-
-/**
- * @deprecated The dark-mode image map is intentionally empty. If
- *   you later add dark-mode-specific logos, add them here — the
- *   lookup helper falls through to `PROVIDER_IMAGE_URLS` for any
- *   code not present in this map.
- */
-const PROVIDER_DARK_IMAGE_URLS: Record<string, string> = {};
+// Only text metadata lives here now. The artwork comes from
+// `getProviderLogo`, which returns an inline React SVG
+// component — no image URL, no `/public/` file, no 404.
 
 const PROVIDER_CONFIGS: Record<
   string,
@@ -152,12 +89,7 @@ const PROVIDER_CONFIGS: Record<
   },
   MTN: { icon: '📱', name: 'MTN Mobile Money', color: 'warning' },
   AIRTEL: { icon: '📱', name: 'Airtel Money', color: 'danger' },
-  TIGO: { icon: '📱', name: 'Tigo Pesa', color: 'primary' },
-  VODAFONE: {
-    icon: '📱',
-    name: 'Vodafone Cash',
-    color: 'danger',
-  },
+  MPESA: { icon: '📱', name: 'M-Pesa', color: 'green' },
 };
 
 // ============================================
@@ -174,8 +106,6 @@ const DEFAULT_PAYMENT_METHODS: PaymentMethod[] = [
     enabled: true,
     provider: PaymentProvider.CASH,
     providerName: 'Cash Payment',
-    providerImageUrl: PROVIDER_IMAGE_URLS.CASH,
-    providerDarkImageUrl: PROVIDER_DARK_IMAGE_URLS.CASH,
     popular: true,
   },
   {
@@ -188,8 +118,6 @@ const DEFAULT_PAYMENT_METHODS: PaymentMethod[] = [
     requiresDetails: true,
     provider: PaymentProvider.STRIPE,
     providerName: 'Stripe',
-    providerImageUrl: PROVIDER_IMAGE_URLS.STRIPE,
-    providerDarkImageUrl: PROVIDER_DARK_IMAGE_URLS.STRIPE,
     popular: true,
     recommended: true,
   },
@@ -203,8 +131,6 @@ const DEFAULT_PAYMENT_METHODS: PaymentMethod[] = [
     requiresDetails: true,
     provider: PaymentProvider.STRIPE,
     providerName: 'Stripe',
-    providerImageUrl: PROVIDER_IMAGE_URLS.STRIPE,
-    providerDarkImageUrl: PROVIDER_DARK_IMAGE_URLS.STRIPE,
   },
   {
     id: 'PAYPAL',
@@ -216,8 +142,6 @@ const DEFAULT_PAYMENT_METHODS: PaymentMethod[] = [
     requiresDetails: true,
     provider: PaymentProvider.PAYPAL,
     providerName: 'PayPal',
-    providerImageUrl: PROVIDER_IMAGE_URLS.PAYPAL,
-    providerDarkImageUrl: PROVIDER_DARK_IMAGE_URLS.PAYPAL,
     popular: true,
   },
   {
@@ -231,8 +155,6 @@ const DEFAULT_PAYMENT_METHODS: PaymentMethod[] = [
     requiresDetails: true,
     provider: PaymentProvider.FLUTTERWAVE,
     providerName: 'Flutterwave',
-    providerImageUrl: PROVIDER_IMAGE_URLS.FLUTTERWAVE,
-    providerDarkImageUrl: PROVIDER_DARK_IMAGE_URLS.FLUTTERWAVE,
   },
   {
     id: 'SQUARE',
@@ -244,21 +166,17 @@ const DEFAULT_PAYMENT_METHODS: PaymentMethod[] = [
     requiresDetails: true,
     provider: PaymentProvider.SQUARE,
     providerName: 'Square',
-    providerImageUrl: PROVIDER_IMAGE_URLS.SQUARE,
-    providerDarkImageUrl: PROVIDER_DARK_IMAGE_URLS.SQUARE,
   },
   {
     id: 'MOBILE_MONEY',
     name: 'Mobile Money',
     code: 'MOBILE_MONEY',
     icon: <Smartphone className="w-5 h-5" />,
-    description: 'M-Pesa, Tigo Pesa, Airtel Money',
+    description: 'MTN, Airtel Money, M-Pesa',
     enabled: true,
     requiresDetails: true,
     provider: PaymentProvider.MOBILE_MONEY,
     providerName: 'Mobile Money',
-    providerImageUrl: PROVIDER_IMAGE_URLS.MOBILE_MONEY,
-    providerDarkImageUrl: PROVIDER_DARK_IMAGE_URLS.MOBILE_MONEY,
     popular: true,
   },
   {
@@ -271,8 +189,6 @@ const DEFAULT_PAYMENT_METHODS: PaymentMethod[] = [
     requiresDetails: true,
     provider: PaymentProvider.BANK_TRANSFER,
     providerName: 'Bank Transfer',
-    providerImageUrl: PROVIDER_IMAGE_URLS.BANK_TRANSFER,
-    providerDarkImageUrl: PROVIDER_DARK_IMAGE_URLS.BANK_TRANSFER,
   },
   {
     id: 'GIFT_CARD',
@@ -284,8 +200,6 @@ const DEFAULT_PAYMENT_METHODS: PaymentMethod[] = [
     requiresDetails: true,
     provider: PaymentProvider.GIFT_CARD,
     providerName: 'Gift Card',
-    providerImageUrl: PROVIDER_IMAGE_URLS.GIFT_CARD,
-    providerDarkImageUrl: PROVIDER_DARK_IMAGE_URLS.GIFT_CARD,
   },
   {
     id: 'LOYALTY_POINTS',
@@ -297,18 +211,12 @@ const DEFAULT_PAYMENT_METHODS: PaymentMethod[] = [
     requiresDetails: true,
     provider: PaymentProvider.LOYALTY_POINTS,
     providerName: 'Loyalty Points',
-    providerImageUrl: PROVIDER_IMAGE_URLS.LOYALTY_POINTS,
-    providerDarkImageUrl: PROVIDER_DARK_IMAGE_URLS.LOYALTY_POINTS,
   },
 ];
 
 // ============================================
 // DISABLE-REASON METADATA
 // ============================================
-//
-// Centralizes the mapping from a disable reason to the short
-// badge label. Adding a new disable reason in `getDisabledReason`
-// means adding one entry here.
 
 const DISABLE_BADGE_LABELS: Record<string, string> = {
   'Coming soon': 'Soon',
@@ -333,14 +241,6 @@ export function PaymentMethodSelector({
   const [showAll, setShowAll] = useState(false);
   const [hoveredMethod, setHoveredMethod] = useState<string | null>(null);
 
-  // ── Derived lists ────────────────────────────────────────────
-
-  /**
-   * Methods with `enabled === true`. This is the pool that the
-   * grid iterates over. A method that's enabled but unhealthy or
-   * unconfigured still counts toward the total — the disable
-   * state is rendered per-tile, not filtered here.
-   */
   const enabledMethods = useMemo(
     () => availableMethods.filter((m) => m.enabled),
     [availableMethods],
@@ -356,73 +256,12 @@ export function PaymentMethodSelector({
     [availableMethods, selectedMethod],
   );
 
-  // ── Lookups ──────────────────────────────────────────────────
-
-  const getProviderImageUrl = useCallback(
-    (method: PaymentMethod): string => {
-      if (!method.providerImageUrl) return '';
-      return isDark && method.providerDarkImageUrl
-        ? method.providerDarkImageUrl
-        : method.providerImageUrl;
-    },
-    [isDark],
-  );
-
-  /**
-   * Resolve the `PROVIDER_CONFIGS` entry for a method's provider.
-   *
-   * ⚠ The `provider` field may arrive as either the lowercase
-   *   `PaymentProvider` enum value (`'stripe'`) or the uppercase
-   *   backend code (`'STRIPE'`). Normalize to uppercase before
-   *   lookup so both forms resolve.
-   */
   const getProviderConfig = useCallback((providerCode?: string) => {
     if (!providerCode) return null;
     const key = providerCode.toUpperCase();
     return PROVIDER_CONFIGS[key] || null;
   }, []);
 
-  const getMethodCategory = useCallback(
-    (
-      methodId: string,
-    ): 'card' | 'digital' | 'mobile' | 'bank' | 'cash' | 'other' => {
-      const categories: Record<
-        string,
-        'card' | 'digital' | 'mobile' | 'bank' | 'cash' | 'other'
-      > = {
-        CREDIT_CARD: 'card',
-        DEBIT_CARD: 'card',
-        PAYPAL: 'digital',
-        FLUTTERWAVE: 'digital',
-        SQUARE: 'card',
-        MOBILE_MONEY: 'mobile',
-        BANK_TRANSFER: 'bank',
-        GIFT_CARD: 'digital',
-        LOYALTY_POINTS: 'digital',
-        CASH: 'cash',
-      };
-      return categories[methodId] || 'other';
-    },
-    [],
-  );
-
-  const getCategoryLabel = useCallback((category: string): string => {
-    const labels: Record<string, string> = {
-      card: 'Cards',
-      digital: 'Digital Wallets',
-      mobile: 'Mobile Money',
-      bank: 'Bank Transfers',
-      cash: 'Cash',
-      other: 'Other',
-    };
-    return labels[category] || category;
-  }, []);
-
-  /**
-   * Compute why a tile is unselectable, or `null` if it's fine.
-   * Used to drive the tooltip, the disabled styling, and the
-   * short badge label.
-   */
   const getDisabledReason = useCallback(
     (method: PaymentMethod): string | null => {
       if (method.comingSoon) return 'Coming soon';
@@ -435,8 +274,6 @@ export function PaymentMethodSelector({
     },
     [respectConfiguration],
   );
-
-  // ── Render ───────────────────────────────────────────────────
 
   return (
     <div className={`${className} animate-fade-in`}>
@@ -477,22 +314,17 @@ export function PaymentMethodSelector({
                   </p>
                   {showProviderInfo && selected.providerName && (
                     <div className="flex items-center gap-2 mt-1">
-                      {getProviderImageUrl(selected) ? (
-                        <div className="relative w-5 h-5">
-                          <Image
-                            src={getProviderImageUrl(selected)}
-                            alt={selected.providerName}
-                            width={20}
-                            height={20}
-                            className="rounded object-contain"
-                            onError={(e) => {
-                              (
-                                e.target as HTMLImageElement
-                              ).style.display = 'none';
-                            }}
-                          />
-                        </div>
-                      ) : null}
+                      {(() => {
+                        const SelectedLogo = getProviderLogo(
+                          typeof selected.provider === 'string'
+                            ? selected.provider
+                            : undefined,
+                        );
+                        if (!SelectedLogo) return null;
+                        return (
+                          <SelectedLogo className="w-5 h-5 rounded object-contain" />
+                        );
+                      })()}
                       <span
                         className={`text-xs ${
                           isDark ? 'text-brand-400' : 'text-brand-600'
@@ -534,8 +366,16 @@ export function PaymentMethodSelector({
               const isHovered = hoveredMethod === method.id;
               const disabledReason = getDisabledReason(method);
               const isDisabled = disabledReason !== null;
-              const providerConfig = getProviderConfig(method.provider);
-              const imageUrl = getProviderImageUrl(method);
+              const providerConfig = getProviderConfig(
+                typeof method.provider === 'string'
+                  ? method.provider
+                  : undefined,
+              );
+              const Logo = getProviderLogo(
+                typeof method.provider === 'string'
+                  ? method.provider
+                  : undefined,
+              );
               const badgeLabel = disabledReason
                 ? DISABLE_BADGE_LABELS[disabledReason] ?? 'Off'
                 : null;
@@ -559,7 +399,6 @@ export function PaymentMethodSelector({
                   title={disabledReason || method.description}
                 >
                   <div className="flex flex-col items-center gap-2">
-                    {/* Provider Logo or Icon */}
                     <div
                       className={`relative w-12 h-12 rounded-xl flex items-center justify-center transition duration-250 ${
                         isSelected
@@ -569,38 +408,8 @@ export function PaymentMethodSelector({
                             : 'bg-gray-100 dark:bg-gray-700/50'
                       }`}
                     >
-                      {imageUrl ? (
-                        <Image
-                          src={imageUrl}
-                          alt={method.name}
-                          width={36}
-                          height={36}
-                          className="rounded object-contain"
-                          onError={(e) => {
-                            const img = e.target as HTMLImageElement;
-                            img.style.display = 'none';
-                            const parent = img.parentElement;
-                            if (!parent) return;
-
-                            // Only append the fallback once. On a
-                            // re-render (theme toggle changes the
-                            // image src), the handler runs again
-                            // — without this guard a second span
-                            // would accumulate in the DOM.
-                            if (
-                              parent.querySelector('[data-fallback]')
-                            ) {
-                              return;
-                            }
-                            const fallback =
-                              document.createElement('span');
-                            fallback.setAttribute('data-fallback', '');
-                            fallback.className = 'text-2xl';
-                            fallback.textContent =
-                              providerConfig?.icon || '💳';
-                            parent.appendChild(fallback);
-                          }}
-                        />
+                      {Logo ? (
+                        <Logo className="w-9 h-9 rounded object-contain" />
                       ) : (
                         <span className="text-2xl">
                           {providerConfig?.icon || method.icon}

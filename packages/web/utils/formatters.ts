@@ -2,16 +2,76 @@
 
 export const formatters = {
   /**
-   * Format a number as currency
+   * Format a number as currency.
+   *
+   * ⚠ `currency` is REQUIRED. There is no default.
+   *
+   * The platform invariant is that every amount is rendered in a
+   * currency that came from the backend at request time. The backend
+   * resolves a business unit's ledger currency through the registry
+   * in `packages/backend/src/lib/currencies.ts` and sends the code on
+   * every response that carries money. The frontend reads that code
+   * and passes it here.
+   *
+   * A caller that forgets the code now fails the build. That is
+   * deliberate — the only way to guarantee no hardcoded symbol
+   * anywhere is to make the fallback impossible.
+   *
+   * An unrecognised currency code degrades gracefully to the code
+   * itself (`UGX 80,000`) instead of crashing the render. `Intl`
+   * throws `RangeError` on an unknown ISO 4217 code; a stale cached
+   * response or a mis-seeded BU could otherwise take the whole tree
+   * down. Formatting in the code is honest; formatting in `$` is not.
+   *
+   * A `null`/`undefined`/`NaN` amount formats as `0` in the caller's
+   * own currency — never a hardcoded `'$0.00'`.
    */
-  currency: (amount: number, currency: string = 'USD', locale: string = 'en-US'): string => {
-    if (amount === undefined || amount === null) return '$0.00';
-    return new Intl.NumberFormat(locale, {
+  currency: (
+    amount: number,
+    currency: string,
+    locale: string = 'en-US',
+  ): string => {
+    // ── Guard: unknown currency code ───────────────────────
+    // Probe with a tiny format call. If `Intl` rejects the code,
+    // format in the code itself so the render survives.
+    try {
+      new Intl.NumberFormat(locale, {
+        style: 'currency',
+        currency,
+      }).format(0);
+    } catch {
+      const fallback = new Intl.NumberFormat(locale, {
+        minimumFractionDigits: 2,
+        maximumFractionDigits: 2,
+      });
+      const safeAmount =
+        amount === undefined ||
+        amount === null ||
+        Number.isNaN(amount)
+          ? 0
+          : amount;
+      return `${currency} ${fallback.format(safeAmount)}`;
+    }
+
+    // ── Decimal precision from the registry ────────────────
+    // UGX/JPY/KRW/VND/RWF/etc. have 0 decimals. KWD/BHD/OMR have 3.
+    // Everything else has 2. `Intl.NumberFormat` with `style:
+    // 'currency'` picks the correct count from the ISO code, so we
+    // only need to override the *bounds* to keep rounding honest.
+    const formatter = new Intl.NumberFormat(locale, {
       style: 'currency',
       currency,
-      minimumFractionDigits: 2,
-      maximumFractionDigits: 2,
-    }).format(amount);
+    });
+
+    if (
+      amount === undefined ||
+      amount === null ||
+      Number.isNaN(amount)
+    ) {
+      return formatter.format(0);
+    }
+
+    return formatter.format(amount);
   },
 
   /**
@@ -392,50 +452,81 @@ export const formatters = {
   },
 
   /**
-   * Format a discount amount
+   * Format a discount amount.
+   *
+   * ⚠ `currency` is REQUIRED for fixed discounts. It is ignored for
+   *   percentage discounts — but it is still required at the type
+   *   level so a caller cannot forget it and accidentally render a
+   *   fixed discount in the wrong currency.
    */
-  discount: (amount: number, isPercentage: boolean = false): string => {
+  discount: (
+    amount: number,
+    isPercentage: boolean,
+    currency: string,
+  ): string => {
     if (isPercentage) {
       return `${amount}%`;
     }
-    return formatters.currency(amount);
+    return formatters.currency(amount, currency);
   },
 
   /**
-   * Format tax amount
+   * Format tax amount.
+   *
+   * ⚠ `currency` is REQUIRED. See `formatters.discount` above.
    */
-  tax: (amount: number, rate: number = 0.08): string => {
+  tax: (
+    amount: number,
+    rate: number,
+    currency: string,
+  ): string => {
     const taxAmount = amount * rate;
-    return formatters.currency(taxAmount);
+    return formatters.currency(taxAmount, currency);
   },
 
   /**
-   * Format a subtotal
+   * Format a subtotal.
+   *
+   * ⚠ `currency` is REQUIRED. See `formatters.discount` above.
    */
-  subtotal: (items: Array<{ quantity: number; unitPrice: number }>): string => {
+  subtotal: (
+    items: Array<{ quantity: number; unitPrice: number }>,
+    currency: string,
+  ): string => {
     const total = items.reduce((sum, item) => sum + (item.quantity * item.unitPrice), 0);
-    return formatters.currency(total);
+    return formatters.currency(total, currency);
   },
 
   /**
-   * Format change amount
+   * Format change amount.
+   *
+   * ⚠ `currency` is REQUIRED. See `formatters.discount` above.
    */
-  change: (paid: number, total: number): string => {
+  change: (
+    paid: number,
+    total: number,
+    currency: string,
+  ): string => {
     const changeAmount = paid - total;
-    if (changeAmount < 0) return formatters.currency(0);
-    return formatters.currency(changeAmount);
+    if (changeAmount < 0) return formatters.currency(0, currency);
+    return formatters.currency(changeAmount, currency);
   },
 
   /**
-   * Format a sale summary
+   * Format a sale summary.
+   *
+   * ⚠ `currency` is REQUIRED. See `formatters.discount` above.
    */
-  saleSummary: (sale: {
-    total: number;
-    tax: number;
-    discount: number;
-    subtotal: number;
-  }): string => {
-    return `Subtotal: ${formatters.currency(sale.subtotal)} | Tax: ${formatters.currency(sale.tax)} | Discount: ${formatters.currency(sale.discount)} | Total: ${formatters.currency(sale.total)}`;
+  saleSummary: (
+    sale: {
+      total: number;
+      tax: number;
+      discount: number;
+      subtotal: number;
+    },
+    currency: string,
+  ): string => {
+    return `Subtotal: ${formatters.currency(sale.subtotal, currency)} | Tax: ${formatters.currency(sale.tax, currency)} | Discount: ${formatters.currency(sale.discount, currency)} | Total: ${formatters.currency(sale.total, currency)}`;
   },
 
   /**
@@ -510,17 +601,9 @@ export const formatTimeRange = formatters.timeRange;
 export const formatPercentageChange = formatters.percentageChange;
 
 // ============================================
-// 🔥 FIXED: EXPORT formatTimeAgo AS ALIAS FOR COMPATIBILITY
+// 🔥 Alias for formatRelativeTime
 // ============================================
 
-/**
- * 🔥 Alias for formatRelativeTime
- * Used by ProductReviews component and other components
- */
 export const formatTimeAgo = formatters.relativeTime;
-
-// ============================================
-// DEFAULT EXPORT
-// ============================================
 
 export default formatters;

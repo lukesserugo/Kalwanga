@@ -2,12 +2,12 @@
 
 'use client';
 
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import Link from 'next/link';
 import {
   ArrowLeft, Lock, Loader2, Save, AlertCircle, X, Plus,
-  Package, DollarSign, Tag, Layers,
+  Package, Banknote, Tag, Layers,
   CheckCircle, AlertTriangle, Eye, RefreshCw, Sun, Moon,
   Trash2, Edit, Copy,
   ImageIcon, Link2,
@@ -18,6 +18,7 @@ import { productService } from '../../../../../../services/productService';
 import { categoryService } from '../../../../../../services/categoryService';
 import { supplierService } from '../../../../../../services/supplierService';
 import { toast } from '../../../../../../utils/toast-manager';
+import { formatCurrency } from '../../../../../../utils/formatters';
 import { PermissionResource } from '../../../../../../types/enums';
 import { useThemeStore } from '../../../../../stores/themeStore';
 
@@ -94,6 +95,8 @@ interface LoadedProduct {
   isActive: boolean;
   rating?: number;
   inventoryId?: string;
+  businessUnitId?: string;
+  currency?: string;
   inventory?: {
     id: string;
     quantity: number;
@@ -110,7 +113,7 @@ const PLACEHOLDER_IMAGE =
 
 const SECTIONS = [
   { id: 'basic', label: 'Basic Info', icon: Package },
-  { id: 'pricing', label: 'Pricing', icon: DollarSign },
+  { id: 'pricing', label: 'Pricing', icon: Banknote },
   { id: 'inventory', label: 'Inventory', icon: Layers },
   { id: 'variants', label: 'Variants', icon: Layers },
   { id: 'classification', label: 'Classification', icon: Tag },
@@ -134,8 +137,10 @@ export default function EditProductPage() {
     canEdit,
     canManage,
     canDelete,
+    getBusinessUnits,
     isLoading: permissionLoading,
   } = usePermission();
+  const businessUnits = getBusinessUnits();
   const { isDark, toggleTheme } = useThemeStore();
 
   const [loading, setLoading] = useState(true);
@@ -155,6 +160,22 @@ export default function EditProductPage() {
   const [activeSection, setActiveSection] = useState<SectionId>('basic');
   const [newTag, setNewTag] = useState('');
   const [newSeoKeyword, setNewSeoKeyword] = useState('');
+
+  const ledgerCurrency = useMemo(() => {
+    const code =
+      originalProduct?.currency ||
+      businessUnits.find(
+        (unit) => unit.id === originalProduct?.businessUnitId,
+      )?.currency;
+    return typeof code === 'string' && /^[A-Za-z]{3}$/.test(code.trim())
+      ? code.trim().toUpperCase()
+      : null;
+  }, [businessUnits, originalProduct]);
+  const fmt = useCallback(
+    (amount: number): string =>
+      ledgerCurrency ? formatCurrency(amount, ledgerCurrency) : '—',
+    [ledgerCurrency],
+  );
 
   const [imageErrors, setImageErrors] = useState<Record<string, boolean>>({});
   const [variantImageErrors, setVariantImageErrors] = useState<Record<string, boolean>>({});
@@ -348,6 +369,8 @@ export default function EditProductPage() {
         isActive: product.isActive,
         rating: product.rating || undefined,
         inventoryId: product.inventoryId || undefined,
+        businessUnitId: product.businessUnitId,
+        currency: product.businessUnit?.currency ?? undefined,
         inventory: product.inventory
           ? {
               id: product.inventory.id,
@@ -948,7 +971,7 @@ export default function EditProductPage() {
           <div className="bg-white dark:bg-gray-800 rounded-lg shadow-sm border border-gray-200 dark:border-gray-700 p-3">
             <p className="text-xs text-gray-500 dark:text-gray-400">Price</p>
             <p className="text-sm font-bold text-gray-900 dark:text-white tabular-nums">
-              ${parseFloat(formData.unitPrice || '0').toFixed(2)}
+              {fmt(parseFloat(formData.unitPrice || '0'))}
             </p>
           </div>
           <div className="bg-white dark:bg-gray-800 rounded-lg shadow-sm border border-gray-200 dark:border-gray-700 p-3">
@@ -1227,7 +1250,7 @@ export default function EditProductPage() {
           {activeSection === 'pricing' && (
             <div>
               <h2 className="text-lg font-semibold text-gray-900 dark:text-white mb-4 flex items-center gap-2">
-                <DollarSign className="w-5 h-5 text-success-500" />
+                <Banknote className="w-5 h-5 text-success-500" />
                 Pricing
               </h2>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -1236,8 +1259,8 @@ export default function EditProductPage() {
                     Unit Price <span className="text-brand-accent-500">*</span>
                   </label>
                   <div className="relative">
-                    <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-500 dark:text-gray-400">
-                      $
+                    <span className="absolute left-3 top-1/2 -translate-y-1/2 text-xs font-medium text-gray-500 dark:text-gray-400">
+                      {ledgerCurrency ?? '—'}
                     </span>
                     <input
                       type="number"
@@ -1260,13 +1283,14 @@ export default function EditProductPage() {
                         }
                       }}
                       onBlur={(e) => handleBlur('unitPrice', e.target.value)}
-                      className={`w-full pl-8 pr-3 py-2 border rounded-lg focus:ring-2 focus:ring-brand-500 focus:border-brand-500 dark:focus:ring-brand-400 focus:outline-none bg-white dark:bg-gray-700 text-gray-900 dark:text-white placeholder-gray-400 dark:placeholder-gray-500 transition-colors duration-200 tabular-nums ${
+                      className={`w-full pl-14 pr-3 py-2 border rounded-lg focus:ring-2 focus:ring-brand-500 focus:border-brand-500 dark:focus:ring-brand-400 focus:outline-none bg-white dark:bg-gray-700 text-gray-900 dark:text-white placeholder-gray-400 dark:placeholder-gray-500 transition-colors duration-200 tabular-nums ${
                         errors.unitPrice
                           ? 'border-brand-accent-500 dark:border-brand-accent-500'
                           : 'border-gray-300 dark:border-gray-600'
                       }`}
                       placeholder="0.00"
                       aria-invalid={!!errors.unitPrice}
+                      disabled={!ledgerCurrency}
                     />
                   </div>
                   {errors.unitPrice && (
@@ -1282,8 +1306,8 @@ export default function EditProductPage() {
                     Cost Price
                   </label>
                   <div className="relative">
-                    <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-500 dark:text-gray-400">
-                      $
+                    <span className="absolute left-3 top-1/2 -translate-y-1/2 text-xs font-medium text-gray-500 dark:text-gray-400">
+                      {ledgerCurrency ?? '—'}
                     </span>
                     <input
                       type="number"
@@ -1293,8 +1317,9 @@ export default function EditProductPage() {
                       onChange={(e) =>
                         setFormData({ ...formData, costPrice: e.target.value })
                       }
-                      className="w-full pl-8 pr-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-brand-500 focus:border-brand-500 dark:focus:ring-brand-400 focus:outline-none bg-white dark:bg-gray-700 text-gray-900 dark:text-white placeholder-gray-400 dark:placeholder-gray-500 transition-colors duration-200 tabular-nums"
+                      className="w-full pl-14 pr-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-brand-500 focus:border-brand-500 dark:focus:ring-brand-400 focus:outline-none bg-white dark:bg-gray-700 text-gray-900 dark:text-white placeholder-gray-400 dark:placeholder-gray-500 transition-colors duration-200 tabular-nums"
                       placeholder="0.00"
+                      disabled={!ledgerCurrency}
                     />
                   </div>
                 </div>
@@ -1345,7 +1370,7 @@ export default function EditProductPage() {
                           Unit Price:
                         </span>
                         <span className="font-medium text-gray-900 dark:text-white ml-2 tabular-nums">
-                          ${parseFloat(formData.unitPrice || '0').toFixed(2)}
+                          {fmt(parseFloat(formData.unitPrice || '0'))}
                         </span>
                       </div>
                       <div>
@@ -1353,7 +1378,7 @@ export default function EditProductPage() {
                           Cost Price:
                         </span>
                         <span className="font-medium text-gray-900 dark:text-white ml-2 tabular-nums">
-                          ${parseFloat(formData.costPrice || '0').toFixed(2)}
+                          {fmt(parseFloat(formData.costPrice || '0'))}
                         </span>
                       </div>
                       <div>

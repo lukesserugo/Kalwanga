@@ -39,7 +39,13 @@ interface ExportPaymentRow {
   id: string;
   reference?: string;
   amount: number;
-  currency?: string;
+  /**
+   * Ledger currency code for `amount`. Read from
+   * `Payment.currency` on the backend row. When absent, the CSV
+   * and print handlers emit an empty cell rather than a
+   * fabricated `UGX` (which the old code did unconditionally).
+   */
+  currency?: string | null;
   paymentMethod: string;
   status: string;
   processedAt: string;
@@ -95,6 +101,19 @@ function resolveProvider(payment: ExportPaymentRow): string {
 }
 
 /**
+ * Resolve the currency code for a single payment row. Reads the
+ * row's own `currency` first, then the deployment default from env,
+ * then `''`. No hardcoded fallback in this file.
+ */
+function resolvePaymentCurrency(payment: ExportPaymentRow): string {
+  return (
+    payment.currency ||
+    process.env.NEXT_PUBLIC_DEFAULT_CURRENCY ||
+    ''
+  );
+}
+
+/**
  * Escape a value for CSV. Quotes the value if it contains a comma,
  * a double quote, a newline, or leading/trailing whitespace. Doubles
  * any interior quotes as per RFC 4180.
@@ -116,6 +135,10 @@ function csvEscape(value: unknown): string {
  * Build a CSV string from payment rows. Columns are stable and
  * ordered so a user opening the file in Excel sees a predictable
  * layout.
+ *
+ * ⚠ The `Currency` column carries whatever `resolvePaymentCurrency`
+ *   yields. When the row has no code and the deployment env is
+ *   unset, the cell is empty — never a fabricated `UGX`.
  */
 function buildCsv(
   rows: ExportPaymentRow[],
@@ -164,7 +187,9 @@ function buildCsv(
       payment.reference || payment.id,
       payment.processedAt,
       payment.amount.toFixed(2),
-      payment.currency || 'UGX',
+      // Empty string when no code is resolvable — never a
+      // fabricated symbol or default.
+      resolvePaymentCurrency(payment),
       payment.paymentMethod,
       payment.status,
       resolveProvider(payment),
@@ -218,6 +243,12 @@ function escapeHtml(value: string): string {
  * in a new tab lets the user use the browser's native
  * Print → Save as PDF, which produces a correctly paginated,
  * styled document without pulling in a PDF library.
+ *
+ * ⚠ Amounts are grouped by currency in the summary block so a
+ *   mixed-currency export doesn't produce a mathematically
+ *   meaningless single total. Each per-row amount is rendered as
+ *   `amount CODE` when a code is resolvable, else as a bare
+ *   number.
  */
 function buildPrintHtml(
   rows: ExportPaymentRow[],
@@ -228,7 +259,26 @@ function buildPrintHtml(
     includeBusinessUnit: boolean;
   },
 ): string {
-  const total = rows.reduce((sum, p) => sum + p.amount, 0);
+  // Group totals by currency. When a row has no code, group it
+  // under a `(no currency)` bucket rather than folding it into an
+  // arbitrary default.
+  const totalsByCurrency = new Map<string, number>();
+  for (const p of rows) {
+    const code = resolvePaymentCurrency(p) || '(no currency)';
+    totalsByCurrency.set(
+      code,
+      (totalsByCurrency.get(code) ?? 0) + p.amount,
+    );
+  }
+
+  const totalsHtml = Array.from(totalsByCurrency.entries())
+    .map(
+      ([code, total]) =>
+        `<div><span>${escapeHtml(code)}</span><strong>${total.toFixed(
+          2,
+        )}</strong></div>`,
+    )
+    .join('');
 
   const rowsHtml = rows
     .map((payment) => {
@@ -236,10 +286,15 @@ function buildPrintHtml(
         ? `${payment.user.firstName ?? ''} ${payment.user.lastName ?? ''}`.trim()
         : '';
 
+      const code = resolvePaymentCurrency(payment);
+      const amountCell = code
+        ? `${escapeHtml(payment.amount.toFixed(2))} ${escapeHtml(code)}`
+        : escapeHtml(payment.amount.toFixed(2));
+
       const cells = [
         `<td>${escapeHtml(payment.reference || payment.id)}</td>`,
         `<td>${escapeHtml(new Date(payment.processedAt).toLocaleString())}</td>`,
-        `<td class="right">${escapeHtml(payment.amount.toFixed(2))}</td>`,
+        `<td class="right">${amountCell}</td>`,
         `<td>${escapeHtml(payment.paymentMethod)}</td>`,
         `<td>${escapeHtml(payment.status)}</td>`,
         `<td>${escapeHtml(resolveProvider(payment))}</td>`,
@@ -288,7 +343,7 @@ function buildPrintHtml(
   body { font-family: system-ui, -apple-system, sans-serif; padding: 24px; color: #111; }
   h1 { font-size: 20px; margin: 0 0 4px; }
   .meta { color: #555; font-size: 12px; margin-bottom: 16px; }
-  .summary { display: flex; gap: 24px; margin-bottom: 16px; font-size: 13px; }
+  .summary { display: flex; flex-wrap: wrap; gap: 24px; margin-bottom: 16px; font-size: 13px; }
   .summary strong { display: block; font-size: 18px; }
   table { width: 100%; border-collapse: collapse; font-size: 12px; }
   th { text-align: left; background: #f3f4f6; padding: 6px 8px; border-bottom: 1px solid #d1d5db; }
@@ -303,7 +358,7 @@ function buildPrintHtml(
   <div class="meta">Generated ${escapeHtml(new Date().toLocaleString())}</div>
   <div class="summary">
     <div><span>Transactions</span><strong>${rows.length}</strong></div>
-    <div><span>Total Amount</span><strong>${total.toFixed(2)}</strong></div>
+    ${totalsHtml}
   </div>
   <table>
     <thead><tr>${headers.map((h) => `<th>${escapeHtml(h)}</th>`).join('')}</tr></thead>
@@ -343,11 +398,9 @@ function openPrintDocument(html: string): void {
 }
 
 /**
- * Provider logo with a graceful emoji fallback. Kept as a component
- * (and keyed by provider at the call site) so a provider change
- * always mounts a fresh instance — the previous inline `onError`
- * DOM mutation persisted the `display: none` across provider
- * switches.
+ * Provider logo with a graceful fallback that returns `null` when
+ * no local asset exists or the image failed to load. Kept as a
+ * component so a provider change always mounts a fresh instance.
  */
 function ProviderLogo({
   provider,
@@ -384,48 +437,37 @@ function ProviderLogo({
 // ============================================
 // CONSTANTS
 // ============================================
+//
+// ⚠ All provider logos are LOCAL asset paths under
+//   `packages/web/public/`. No external CDN dependency.
+//
+// ⚠ PAYSTACK, TIGO, and VODAFONE are intentionally absent from the
+//   provider options list — no backend handler exists for any of
+//   them, and the export filter should not offer a choice that
+//   will always produce an empty result.
 
 const PROVIDER_IMAGE_URLS: Record<string, string> = {
-  STRIPE: 'https://stripe.com/img/v3/home/social.png',
-  PAYPAL:
-    'https://www.paypalobjects.com/webstatic/mktg/logo/pp_cc_mark_111x69.jpg',
-  FLUTTERWAVE: 'https://flutterwave.com/images/logo/flyer.png',
-  SQUARE: 'https://squareup.com/icons/square_logo.svg',
-  MTN: 'https://www.mtn.co.ug/wp-content/uploads/2023/05/mtn-logo.png',
-  AIRTEL:
-    'https://www.airtel.in/static-assets/new-home/img/airtel-red-logo.svg',
-  TIGO: 'https://www.tigo.com.tz/sites/default/files/tigo-logo.png',
-  VODAFONE:
-    'https://www.vodafone.com/content/dam/vodcom/Images/Logo/vodafone_logo_red.png',
-  CASH: 'https://cdn-icons-png.flaticon.com/512/2331/2331970.png',
-  MOBILE_MONEY: 'https://cdn-icons-png.flaticon.com/512/545/545245.png',
-  BANK_TRANSFER:
-    'https://cdn-icons-png.flaticon.com/512/2845/2845813.png',
-  GIFT_CARD: 'https://cdn-icons-png.flaticon.com/512/3144/3144456.png',
-  LOYALTY_POINTS:
-    'https://cdn-icons-png.flaticon.com/512/1828/1828665.png',
+  STRIPE: '/icons/payments/stripe.svg',
+  PAYPAL: '/icons/payments/paypal.svg',
+  FLUTTERWAVE: '/icons/payments/flutterwave.svg',
+  SQUARE: '/icons/payments/square.svg',
+  MPESA: '/icons/payments/mpesa.svg',
+  MTN: '/icons/payments/mtn.svg',
+  AIRTEL: '/icons/payments/airtel.svg',
+  CASH: '/icons/payments/cash.svg',
+  MOBILE_MONEY: '/icons/payments/mobile-money.svg',
+  BANK_TRANSFER: '/icons/payments/bank-transfer.svg',
+  GIFT_CARD: '/icons/payments/gift-card.svg',
+  LOYALTY_POINTS: '/icons/payments/loyalty-points.svg',
 };
 
-const PROVIDER_DARK_IMAGE_URLS: Record<string, string> = {
-  STRIPE: 'https://stripe.com/img/v3/home/social.png',
-  PAYPAL:
-    'https://www.paypalobjects.com/webstatic/mktg/logo/pp_cc_mark_111x69.jpg',
-  FLUTTERWAVE: 'https://flutterwave.com/images/logo/flyer.png',
-  SQUARE: 'https://squareup.com/icons/square_logo.svg',
-  MTN: 'https://www.mtn.co.ug/wp-content/uploads/2023/05/mtn-logo.png',
-  AIRTEL:
-    'https://www.airtel.in/static-assets/new-home/img/airtel-red-logo.svg',
-  TIGO: 'https://www.tigo.com.tz/sites/default/files/tigo-logo.png',
-  VODAFONE:
-    'https://www.vodafone.com/content/dam/vodcom/Images/Logo/vodafone_logo_red.png',
-  CASH: 'https://cdn-icons-png.flaticon.com/512/2331/2331970.png',
-  MOBILE_MONEY: 'https://cdn-icons-png.flaticon.com/512/545/545245.png',
-  BANK_TRANSFER:
-    'https://cdn-icons-png.flaticon.com/512/2845/2845813.png',
-  GIFT_CARD: 'https://cdn-icons-png.flaticon.com/512/3144/3144456.png',
-  LOYALTY_POINTS:
-    'https://cdn-icons-png.flaticon.com/512/1828/1828665.png',
-};
+/**
+ * @deprecated The dark-mode image map is intentionally empty. If
+ *   you later add dark-mode-specific logos, add them here — the
+ *   lookup helper falls through to `PROVIDER_IMAGE_URLS` for any
+ *   code not present in this map.
+ */
+const PROVIDER_DARK_IMAGE_URLS: Record<string, string> = {};
 
 const PAYMENT_METHOD_OPTIONS = [
   { value: 'all', label: 'All Methods' },
@@ -440,6 +482,8 @@ const PAYMENT_METHOD_OPTIONS = [
   { value: 'PAYPAL', label: 'PayPal' },
   { value: 'FLUTTERWAVE', label: 'Flutterwave' },
   { value: 'SQUARE', label: 'Square' },
+  { value: 'MTN', label: 'MTN Mobile Money' },
+  { value: 'AIRTEL', label: 'Airtel Money' },
 ];
 
 const PROVIDER_OPTIONS = [
@@ -453,10 +497,9 @@ const PROVIDER_OPTIONS = [
   { value: 'PAYPAL', label: 'PayPal' },
   { value: 'FLUTTERWAVE', label: 'Flutterwave' },
   { value: 'SQUARE', label: 'Square' },
+  { value: 'MPESA', label: 'M-Pesa' },
   { value: 'MTN', label: 'MTN Mobile Money' },
   { value: 'AIRTEL', label: 'Airtel Money' },
-  { value: 'TIGO', label: 'Tigo Pesa' },
-  { value: 'VODAFONE', label: 'Vodafone Cash' },
 ];
 
 const STATUS_OPTIONS = [
@@ -617,6 +660,10 @@ export default function AdminPaymentExportPage() {
             data: rows.map((p) => ({
               ...p,
               provider: resolveProvider(p),
+              // Persist the resolved currency code alongside the
+              // amount so downstream tooling doesn't need to
+              // re-derive it.
+              resolvedCurrency: resolvePaymentCurrency(p) || null,
             })),
           };
           downloadBlob(

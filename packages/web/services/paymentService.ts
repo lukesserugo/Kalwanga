@@ -33,6 +33,20 @@ const MOBILE_MONEY_BASE = '/mobile-money';
 // MULTI-PROVIDER TYPES
 // ============================================
 
+/**
+ * Payment providers this client can address.
+ *
+ * ⚠ `PAYSTACK` was removed — the backend has no handler for it and
+ *   the registry no longer lists it as a `SupportedGateway`.
+ *
+ * ⚠ `TIGO` / `VODAFONE` are NOT listed. The backend's
+ *   `mobileMoneyService` only registers MTN and AIRTEL handlers;
+ *   a request routed to either would 400 from the service layer.
+ *   The registry's `SupportedMobileMoneyProvider` union still
+ *   contains them as reserved values, but no currency lists them
+ *   in its `mobileMoneyProviders` array, and the API surface here
+ *   should match what the backend can actually deliver.
+ */
 export enum PaymentProvider {
   STRIPE = 'stripe',
   CASH = 'cash',
@@ -51,9 +65,12 @@ export enum PaymentProvider {
 /**
  * Mobile-money sub-providers the backend can actually route.
  *
- * The backend `mobileMoneyController.initiatePaymentSchema` accepts
- * only `MTN` and `AIRTEL`. M-Pesa is routed through a separate
- * service (`mpesaService`) and its own controller.
+ * ⚠ `MPESA` is exposed on this union for callers that already send
+ *   it as a `paymentMethod` (the canonical path is
+ *   `paymentMethod: 'MPESA'`, handled by `mpesaService`), but it is
+ *   NOT a valid value for the `mobileMoneyProvider` field on a
+ *   `MOBILE_MONEY` request. The backend's MOBILE_MONEY handler
+ *   family covers MTN and Airtel only.
  */
 export type MobileMoneyProvider = 'MTN' | 'AIRTEL' | 'MPESA';
 
@@ -336,12 +353,14 @@ export interface MpesaSTKPushRequest {
   idempotencyKey?: string;
   /**
    * Optional. M-Pesa is currency-locked to the country of the
-   * shortcode (KE → KES, TZ → TZS, …). The backend's
-   * `mpesaSTKPushSchema` does not declare this field, and
-   * `mobileMoneyService` overrides whatever the caller sends with
-   * the country config. Declared here so a caller can pass it
-   * without a TS2353 excess-property error; the backend will
-   * ignore it.
+   * shortcode (`MPESA_COUNTRY` env var on the backend). The
+   * `chargeCurrencyService` resolves the settlement currency from
+   * that country and passes it to `mpesaService.initiateSTKPush`.
+   *
+   * ⚠ A caller-supplied value here is IGNORED by the backend. The
+   *   country-derived currency is authoritative. Declared on this
+   *   type only so a caller can pass it without a TS2353
+   *   excess-property error; do not rely on it being honoured.
    */
   currency?: string;
 }
@@ -362,6 +381,19 @@ export interface InitiateMobileMoneyPaymentInput {
   provider: 'MTN' | 'AIRTEL';
   phoneNumber: string;
   amount: number;
+  /**
+   * Optional. When omitted, the backend resolves the currency from
+   * the provider's country config (`MTN_COUNTRY` / `AIRTEL_COUNTRY`)
+   * via the registry. This is the AUTHORITATIVE source.
+   *
+   * ⚠ When you DO supply a value, it must match the provider's
+   *   country currency. A mismatch is rejected by the backend with
+   *   a 400 from `mobileMoneyService.assertCurrencyMatches` —
+   *   the resolver must have been skipped. If you are calling this
+   *   endpoint from a checkout flow, get the value from
+   *   `checkoutService.chargePreview(...)` and pass
+   *   `preview.charge.currency` here.
+   */
   currency?: string;
   reference?: string;
   description?: string;
@@ -525,7 +557,9 @@ export type PosPaymentMethod =
   | 'CHECK'
   | 'PAYPAL'
   | 'FLUTTERWAVE'
-  | 'SQUARE';
+  | 'SQUARE'
+  | 'MTN'
+  | 'AIRTEL';
 
 export interface ProcessOrderPaymentInput {
   saleId: string;
@@ -693,12 +727,25 @@ export const paymentService = {
     refund: any;
     payment: Payment;
     refundedAmount: number;
+    refundedCurrency: string;
+    refundedGatewayAmount: number;
+    refundedGatewayCurrency: string;
+    refundRate: number | null;
     totalRefunded: number;
   }> {
+    // ⚠ Phase D1 — the refund response carries both the ledger
+    //   amount (`refundedAmount` / `refundedCurrency`) and the
+    //   gateway amount (`refundedGatewayAmount` /
+    //   `refundedGatewayCurrency`). When the two currencies differ,
+    //   the gateway figures are what the provider actually refunded.
     return api.post<{
       refund: any;
       payment: Payment;
       refundedAmount: number;
+      refundedCurrency: string;
+      refundedGatewayAmount: number;
+      refundedGatewayCurrency: string;
+      refundRate: number | null;
       totalRefunded: number;
     }>(`${PAYMENTS_BASE}/${paymentId}/refund`, data);
   },
@@ -737,9 +784,10 @@ export const paymentService = {
       phoneNumber: data.phoneNumber,
       amount: data.amount,
       // `currency` is forwarded only when the caller supplied one.
-      // MTN/Airtel derive it from their country config, so a
-      // mismatched value here is logged and discarded by the
-      // backend, never sent to the provider.
+      // MTN/Airtel derive it from their country config; the backend
+      // REJECTS a mismatched value rather than silently overriding
+      // it. A caller that supplies a currency from
+      // `checkoutService.chargePreview(...)` will always match.
       currency: data.currency,
       reference: data.reference,
       description: data.description,
@@ -1519,6 +1567,17 @@ export const paymentService = {
     );
   },
 
+  /**
+   * Providers that can service a given `paymentMethod`.
+   *
+   * ⚠ For `MOBILE_MONEY`, this returns MTN and Airtel — NOT MPesa.
+   *   MPesa is a distinct `paymentMethod: 'MPESA'` in the backend,
+   *   routed through `mpesaService`, not through the umbrella
+   *   `MOBILE_MONEY` handler. The previous version listed MPesa
+   *   here, which produced a request that the backend's
+   *   `MOBILE_MONEY` handler family would reject with
+   *   "Unsupported mobile money provider".
+   */
   getSupportedProviders(paymentMethod: string): PaymentProvider[] {
     const providerMap: Record<string, PaymentProvider[]> = {
       CASH: [PaymentProvider.CASH],
@@ -1532,17 +1591,16 @@ export const paymentService = {
         PaymentProvider.SQUARE,
         PaymentProvider.FLUTTERWAVE,
       ],
-      MOBILE_MONEY: [
-        PaymentProvider.MPESA,
-        PaymentProvider.MTN,
-        PaymentProvider.AIRTEL,
-      ],
+      MOBILE_MONEY: [PaymentProvider.MTN, PaymentProvider.AIRTEL],
+      MPESA: [PaymentProvider.MPESA],
       BANK_TRANSFER: [PaymentProvider.BANK_TRANSFER],
       GIFT_CARD: [PaymentProvider.GIFT_CARD],
       LOYALTY_POINTS: [PaymentProvider.LOYALTY_POINTS],
       PAYPAL: [PaymentProvider.PAYPAL],
       FLUTTERWAVE: [PaymentProvider.FLUTTERWAVE],
       SQUARE: [PaymentProvider.SQUARE],
+      MTN: [PaymentProvider.MTN],
+      AIRTEL: [PaymentProvider.AIRTEL],
     };
     return providerMap[paymentMethod] || [];
   },

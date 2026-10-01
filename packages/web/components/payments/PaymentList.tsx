@@ -1,28 +1,17 @@
-// packages/web/components/payments/PaymentHistory.tsx
+// packages/web/components/payments/PaymentList.tsx
 
 'use client';
 
-import {
-  useState,
-  useEffect,
-  useCallback,
-  useMemo,
-  useRef,
-} from 'react';
+import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import Image from 'next/image';
 import {
   CreditCard,
   Clock,
-  Copy,
   CheckCircle,
   XCircle,
   AlertCircle,
   Loader2,
-  Search,
-  Filter,
   RefreshCw,
-  FileText,
-  ArrowDownRight,
   Receipt,
   Star,
   Banknote,
@@ -31,6 +20,7 @@ import {
   Smartphone,
   Landmark,
   Globe,
+  ArrowDownRight,
   type LucideIcon,
 } from 'lucide-react';
 import { useThemeStore } from '../../app/stores/themeStore';
@@ -47,10 +37,9 @@ import { PaymentReceipt } from './PaymentReceipt';
 // TYPES
 // ============================================
 
-interface PaymentHistoryProps {
+interface PaymentListProps {
   userId?: string;
   limit?: number;
-  showFilters?: boolean;
   className?: string;
   onPaymentSelect?: (payment: Payment) => void;
 }
@@ -74,10 +63,6 @@ interface Payment {
     total: number;
     items?: any[];
   };
-  order?: {
-    orderNumber: string;
-    total: number;
-  };
   customer?: {
     name: string;
     email: string;
@@ -92,13 +77,8 @@ interface Payment {
 }
 
 // ============================================
-// PROVIDER CONSTANTS
+// CONSTANTS
 // ============================================
-//
-// ⚠ PAYSTACK has been removed from this project. Historical rows
-//   that carry `metadata.provider: 'PAYSTACK'` will fail the
-//   `KNOWN_PROVIDER_CODES` lookup and fall through to the generic
-//   method label. Everything else about the row renders normally.
 
 const KNOWN_PROVIDER_CODES = new Set<string>([
   'STRIPE',
@@ -118,33 +98,6 @@ const KNOWN_PROVIDER_CODES = new Set<string>([
   'CHECK',
 ]);
 
-/**
- * Values that make sense as a *provider* filter. Deliberately a
- * narrower set than `KNOWN_PROVIDER_CODES` — filtering by
- * `MOBILE_MONEY` or `CHECK` is a method-level concern, not a
- * provider-level one, and the backend's `provider` query param
- * is meant for gateway selection.
- */
-const PROVIDER_FILTER_OPTIONS: string[] = [
-  'STRIPE',
-  'PAYPAL',
-  'FLUTTERWAVE',
-  'SQUARE',
-  'MPESA',
-  'MTN',
-  'AIRTEL',
-  'TIGO',
-  'VODAFONE',
-];
-
-/**
- * Local icon paths under `packages/web/public/`. Add one SVG per
- * code to restore the images. Until then, the `onError` fallback
- * hides the broken image and the method icon renders instead.
- *
- * ⚠ No external CDN dependencies — every request stays on the
- *   deployment's own origin.
- */
 const PROVIDER_IMAGE_URLS: Record<string, string> = {
   STRIPE: '/icons/payments/stripe.svg',
   PAYPAL: '/icons/payments/paypal.svg',
@@ -162,14 +115,6 @@ const PROVIDER_IMAGE_URLS: Record<string, string> = {
   LOYALTY_POINTS: '/icons/payments/loyalty-points.svg',
 };
 
-/**
- * @deprecated The dark-mode image map is intentionally empty. If
- *   you later add dark-mode-specific logos, add them here — the
- *   lookup helper falls through to `PROVIDER_IMAGE_URLS` for any
- *   code not present in this map.
- */
-const PROVIDER_DARK_IMAGE_URLS: Record<string, string> = {};
-
 const PAYMENT_METHOD_ICONS: Record<string, LucideIcon> = {
   CASH: Banknote,
   CREDIT_CARD: CreditCard,
@@ -178,7 +123,7 @@ const PAYMENT_METHOD_ICONS: Record<string, LucideIcon> = {
   BANK_TRANSFER: Landmark,
   GIFT_CARD: Gift,
   LOYALTY_POINTS: Star,
-  CHECK: FileText,
+  CHECK: CreditCard,
   PAYPAL: Globe,
   FLUTTERWAVE: Globe,
   SQUARE: CreditCard,
@@ -206,51 +151,23 @@ const PROVIDER_NAMES: Record<string, string> = {
   VODAFONE: 'Vodafone Cash',
 };
 
-/**
- * Full literal Tailwind class strings for each status. The
- * compiler can only see literal strings, so a helper that
- * interpolates `bg-${color}` never emits a rule.
- */
 const STATUS_BADGE_CLASSES: Record<string, string> = {
   PAID: 'bg-success-100 text-success-700 dark:bg-success-900/30 dark:text-success-300',
-  PENDING:
-    'bg-warning-100 text-warning-700 dark:bg-warning-900/30 dark:text-warning-300',
-  FAILED:
-    'bg-danger-100 text-danger-700 dark:bg-danger-900/30 dark:text-danger-300',
-  REFUNDED:
-    'bg-gray-100 text-gray-700 dark:bg-gray-700/50 dark:text-gray-300',
-  PARTIAL:
-    'bg-primary-100 text-primary-700 dark:bg-primary-900/30 dark:text-primary-300',
-  PROCESSING:
-    'bg-secondary-100 text-secondary-700 dark:bg-secondary-900/30 dark:text-secondary-300',
-  AUTHORIZED:
-    'bg-primary-100 text-primary-700 dark:bg-primary-900/30 dark:text-primary-300',
-  DECLINED:
-    'bg-danger-100 text-danger-700 dark:bg-danger-900/30 dark:text-danger-300',
-  DISPUTED:
-    'bg-brand-100 text-brand-700 dark:bg-brand-900/30 dark:text-brand-300',
-  CANCELLED:
-    'bg-gray-100 text-gray-700 dark:bg-gray-700/50 dark:text-gray-300',
+  PENDING: 'bg-warning-100 text-warning-700 dark:bg-warning-900/30 dark:text-warning-300',
+  FAILED: 'bg-danger-100 text-danger-700 dark:bg-danger-900/30 dark:text-danger-300',
+  REFUNDED: 'bg-gray-100 text-gray-700 dark:bg-gray-700/50 dark:text-gray-300',
+  PARTIAL: 'bg-primary-100 text-primary-700 dark:bg-primary-900/30 dark:text-primary-300',
+  PROCESSING: 'bg-secondary-100 text-secondary-700 dark:bg-secondary-900/30 dark:text-secondary-300',
+  AUTHORIZED: 'bg-primary-100 text-primary-700 dark:bg-primary-900/30 dark:text-primary-300',
+  DECLINED: 'bg-danger-100 text-danger-700 dark:bg-danger-900/30 dark:text-danger-300',
+  DISPUTED: 'bg-brand-100 text-brand-700 dark:bg-brand-900/30 dark:text-brand-300',
+  CANCELLED: 'bg-gray-100 text-gray-700 dark:bg-gray-700/50 dark:text-gray-300',
 };
-
-// Backwards-compatible alias — some callers import the old name.
-export const PAYMENT_STATUS_COLORS = STATUS_BADGE_CLASSES;
 
 // ============================================
 // HELPERS
 // ============================================
 
-/**
- * Resolve the provider name from an API Payment.
- *
- * Priority:
- *   1. Top-level `provider` field — if it's a known code.
- *   2. `metadata.provider` — the canonical location the backend
- *      writes on every online checkout.
- *   3. `gatewayId` — ONLY if it happens to be a known provider
- *      code. In practice this is a PaymentGateway row FK, so
- *      consulting it unconditionally would render a UUID.
- */
 function resolveProvider(payment: ApiPayment): string | undefined {
   const meta = (payment.metadata ?? {}) as PaymentMetadata;
   const metaProvider =
@@ -259,20 +176,12 @@ function resolveProvider(payment: ApiPayment): string | undefined {
   const gateway = payment.gatewayId;
 
   if (legacy && KNOWN_PROVIDER_CODES.has(legacy)) return legacy;
-  if (metaProvider && KNOWN_PROVIDER_CODES.has(metaProvider)) {
-    return metaProvider;
-  }
+  if (metaProvider && KNOWN_PROVIDER_CODES.has(metaProvider)) return metaProvider;
   if (gateway && KNOWN_PROVIDER_CODES.has(gateway)) return gateway;
 
   return metaProvider || legacy || undefined;
 }
 
-/**
- * For MOBILE_MONEY payments, resolve the actual provider
- * (MPESA / MTN / AIRTEL / TIGO / VODAFONE). Falls back to the
- * generic `MOBILE_MONEY` label when the metadata doesn't carry a
- * specific provider.
- */
 function resolveMobileProvider(payment: ApiPayment): string | undefined {
   const meta = (payment.metadata ?? {}) as PaymentMetadata;
   const candidate =
@@ -292,11 +201,6 @@ function resolveMobileProvider(payment: ApiPayment): string | undefined {
   return undefined;
 }
 
-/**
- * Extract a customer view-model from the joined relation or from
- * metadata (online checkouts write `customerName` / `customerEmail`
- * into metadata before a Customer row exists).
- */
 function resolveCustomer(payment: ApiPayment): Payment['customer'] {
   const joined = (payment as any).customer;
   if (joined) {
@@ -330,16 +234,10 @@ function resolveCustomer(payment: ApiPayment): Payment['customer'] {
   return undefined;
 }
 
-/**
- * Map an API `Payment` into the component's local view-model.
- */
 function toViewPayment(payment: ApiPayment): Payment {
   const method = String(payment.paymentMethod);
   const resolvedProvider = resolveProvider(payment);
 
-  // For MOBILE_MONEY, prefer the specific provider (MPESA / MTN /
-  // AIRTEL / TIGO / VODAFONE) over the generic method code, so the
-  // row can say "M-Pesa" instead of "Mobile Money".
   const provider =
     method === 'MOBILE_MONEY'
       ? resolveMobileProvider(payment) || resolvedProvider
@@ -370,12 +268,6 @@ function toViewPayment(payment: ApiPayment): Payment {
           items: (payment.sale as any).items,
         }
       : undefined,
-    order: payment.order
-      ? {
-          orderNumber: payment.order.orderNumber,
-          total: payment.order.total,
-        }
-      : undefined,
     customer: resolveCustomer(payment),
     businessUnit: payment.businessUnit
       ? {
@@ -389,16 +281,15 @@ function toViewPayment(payment: ApiPayment): Payment {
 }
 
 // ============================================
-// MAIN COMPONENT
+// COMPONENT
 // ============================================
 
-export function PaymentHistory({
+export function PaymentList({
   userId,
-  limit = 10,
-  showFilters = true,
+  limit = 20,
   className = '',
   onPaymentSelect,
-}: PaymentHistoryProps) {
+}: PaymentListProps) {
   const { isDark } = useThemeStore();
   const [payments, setPayments] = useState<Payment[]>([]);
   const [loading, setLoading] = useState(true);
@@ -408,30 +299,10 @@ export function PaymentHistory({
     totalPages: 1,
     limit,
   });
-  const [filters, setFilters] = useState({
-    status: 'all',
-    paymentMethod: 'all',
-    provider: 'all',
-    startDate: '',
-    endDate: '',
-  });
-  const [search, setSearch] = useState('');
-  const [showFilterPanel, setShowFilterPanel] = useState(false);
-  const [selectedPayment, setSelectedPayment] = useState<Payment | null>(
-    null,
-  );
+  const [selectedPayment, setSelectedPayment] = useState<Payment | null>(null);
   const [showReceiptModal, setShowReceiptModal] = useState(false);
 
-  /**
-   * Guards against overlapping loads. When two `loadPayments` calls
-   * are in flight (e.g. a user clicking Search twice quickly, or a
-   * Search while the mount effect is still resolving), only the
-   * most recent request's response is committed. The ref holds the
-   * id of the latest request; older responses are dropped.
-   */
   const latestRequestIdRef = useRef(0);
-
-  // ── Data loading ─────────────────────────────────────────────
 
   const loadPayments = useCallback(async () => {
     const requestId = ++latestRequestIdRef.current;
@@ -444,18 +315,9 @@ export function PaymentHistory({
       };
 
       if (userId) params.userId = userId;
-      if (filters.status !== 'all') params.status = filters.status;
-      if (filters.paymentMethod !== 'all')
-        params.paymentMethod = filters.paymentMethod;
-      if (filters.provider !== 'all') params.provider = filters.provider;
-      if (filters.startDate) params.startDate = filters.startDate;
-      if (filters.endDate) params.endDate = filters.endDate;
-      if (search) params.search = search;
 
       const response = await paymentService.getPayments(params);
 
-      // Drop a stale response — a newer request has already been
-      // issued and will commit its own result.
       if (requestId !== latestRequestIdRef.current) return;
 
       const items: ApiPayment[] = Array.isArray(response.data)
@@ -479,9 +341,6 @@ export function PaymentHistory({
         const nextTotalPages = paginationData.totalPages || 1;
         const nextLimit = paginationData.limit || limit;
 
-        // Avoid a redundant state update that would retrigger
-        // the mount effect. If nothing changed, return the
-        // previous object so React bails out of the re-render.
         if (
           prev.page === nextPage &&
           prev.total === nextTotal &&
@@ -500,74 +359,24 @@ export function PaymentHistory({
       });
     } catch (error) {
       if (requestId !== latestRequestIdRef.current) return;
-      console.error('Failed to load payment history:', error);
-      toast.error('Failed to load payment history');
+      console.error('Failed to load payments:', error);
+      toast.error('Failed to load payments');
     } finally {
       if (requestId === latestRequestIdRef.current) {
         setLoading(false);
       }
     }
-  }, [
-    userId,
-    pagination.page,
-    pagination.limit,
-    filters.status,
-    filters.paymentMethod,
-    filters.provider,
-    filters.startDate,
-    filters.endDate,
-    search,
-    limit,
-  ]);
+  }, [userId, pagination.page, pagination.limit, limit]);
 
-  // Refetch on scalar changes only. The `filters` object identity
-  // is deliberately excluded so keystrokes in `search` don't
-  // trigger a fetch storm — the user submits with Enter.
   useEffect(() => {
     void loadPayments();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [
-    userId,
-    pagination.page,
-    pagination.limit,
-    filters.status,
-    filters.paymentMethod,
-    filters.provider,
-    filters.startDate,
-    filters.endDate,
-  ]);
-
-  // ── Handlers ─────────────────────────────────────────────────
+  }, [userId, pagination.page, pagination.limit]);
 
   const handleRefresh = useCallback(() => {
     void loadPayments();
     toast.success('Payments refreshed');
   }, [loadPayments]);
-
-  /**
-   * Search.
-   *
-   * If the page is not already 1, reset it and let the effect
-   * issue the fetch — `setPagination` changes `pagination.page`,
-   * which the effect depends on, so exactly one fetch fires with
-   * the new page. If the page IS 1, call `loadPayments` directly;
-   * the effect wouldn't fire otherwise.
-   *
-   * The previous version called `setPagination` AND `loadPayments`
-   * unconditionally, which double-fetched when the page changed.
-   */
-  const handleSearch = useCallback(() => {
-    if (pagination.page !== 1) {
-      setPagination((prev) => ({ ...prev, page: 1 }));
-    } else {
-      void loadPayments();
-    }
-  }, [pagination.page, loadPayments]);
-
-  const handleCopyReference = useCallback((reference: string) => {
-    navigator.clipboard.writeText(reference);
-    toast.success('Reference copied');
-  }, []);
 
   const handleViewReceipt = useCallback(
     (payment: Payment) => {
@@ -578,44 +387,12 @@ export function PaymentHistory({
     [onPaymentSelect],
   );
 
-  /**
-   * Clear every filter.
-   *
-   * The previous version called `loadPayments()` immediately after
-   * the setters. That fetch read the *old* filter values (state
-   * hasn't settled yet), then the effect fired with the new values
-   * and fetched again — two requests, one wasted.
-   *
-   * This version only resets state. The effect observes the
-   * `filters.*` and `pagination.page` changes and issues exactly
-   * one fetch with the new values.
-   *
-   * Edge case: if the user clicks Clear while already on page 1
-   * with no filters applied, the effect won't fire. That's a no-op
-   * in practice — there is nothing to clear.
-   */
-  const handleClearFilters = useCallback(() => {
-    setFilters({
-      status: 'all',
-      paymentMethod: 'all',
-      provider: 'all',
-      startDate: '',
-      endDate: '',
-    });
-    setSearch('');
-    setPagination((prev) => ({ ...prev, page: 1 }));
-  }, []);
-
-  // ── Lookups ──────────────────────────────────────────────────
-
   const getProviderImageUrl = useCallback(
     (provider?: string): string => {
       if (!provider) return '';
-      const dark = PROVIDER_DARK_IMAGE_URLS[provider];
-      if (isDark && dark) return dark;
       return PROVIDER_IMAGE_URLS[provider] || '';
     },
-    [isDark],
+    [],
   );
 
   const getProviderName = useCallback((provider?: string): string => {
@@ -638,11 +415,6 @@ export function PaymentHistory({
     [],
   );
 
-  /**
-   * Human-readable label for the payment method. For MOBILE_MONEY
-   * this returns the specific provider name (M-Pesa / MTN / Airtel)
-   * when the backend stored one; otherwise the generic method name.
-   */
   const paymentMethodLabel = useCallback((payment: Payment): string => {
     if (payment.provider && PROVIDER_NAMES[payment.provider]) {
       return PROVIDER_NAMES[payment.provider];
@@ -674,18 +446,16 @@ export function PaymentHistory({
     [],
   );
 
-  // ── Derived ──────────────────────────────────────────────────
-  //
-  // Provider dropdown is the curated `PROVIDER_FILTER_OPTIONS` set
-  // plus any provider actually present on the current page.
-
-  const providerOptions = useMemo(() => {
-    const fromPage = payments
-      .map((p) => p.provider)
-      .filter((v): v is string => !!v);
-    return Array.from(
-      new Set([...PROVIDER_FILTER_OPTIONS, ...fromPage]),
-    ).sort((a, b) => a.localeCompare(b));
+  const summary = useMemo(() => {
+    const total = payments.reduce(
+      (sum, p) =>
+        p.status === 'PAID' ? sum + Math.max(0, p.amount) : sum,
+      0,
+    );
+    return {
+      count: payments.length,
+      totalPaid: total,
+    };
   }, [payments]);
 
   return (
@@ -693,234 +463,38 @@ export function PaymentHistory({
       <div className="animate-fade-in">
         {/* Header */}
         <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
-          <h3
-            className={`text-lg font-semibold ${
-              isDark ? 'text-white' : 'text-gray-900'
-            }`}
-          >
-            Payment History
-          </h3>
-          <div className="flex items-center gap-2">
-            <button
-              onClick={handleRefresh}
-              disabled={loading}
-              className={`p-2 rounded-lg transition duration-250 focus-ring ${
-                isDark
-                  ? 'hover:bg-gray-700 text-gray-400 hover:text-white'
-                  : 'hover:bg-gray-100 text-gray-500 hover:text-gray-700'
-              } disabled:opacity-50`}
-              aria-label="Refresh payments"
-              aria-busy={loading}
+          <div>
+            <h3
+              className={`text-lg font-semibold ${
+                isDark ? 'text-white' : 'text-gray-900'
+              }`}
             >
-              <RefreshCw
-                className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`}
-              />
-            </button>
-            {showFilters && (
-              <button
-                onClick={() => setShowFilterPanel(!showFilterPanel)}
-                className={`p-2 rounded-lg transition duration-250 focus-ring ${
-                  showFilterPanel
-                    ? 'bg-brand-gradient text-white shadow-brand'
-                    : isDark
-                      ? 'hover:bg-gray-700 text-gray-400 hover:text-white'
-                      : 'hover:bg-gray-100 text-gray-500 hover:text-gray-700'
-                }`}
-                aria-label="Toggle filters"
-                aria-expanded={showFilterPanel}
-              >
-                <Filter className="w-4 h-4" />
-              </button>
-            )}
+              Payments
+            </h3>
+            <p
+              className={`text-xs ${isDark ? 'text-gray-400' : 'text-gray-500'}`}
+            >
+              {summary.count} payment{summary.count === 1 ? '' : 's'} on this page
+            </p>
           </div>
-        </div>
-
-        {/* Search */}
-        <div className="flex flex-wrap gap-3 mb-4">
-          <div className="flex-1 min-w-[200px] relative">
-            <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-gray-400 dark:text-gray-500" />
-            <input
-              type="text"
-              placeholder="Search by reference, customer..."
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              onKeyDown={(e) => e.key === 'Enter' && handleSearch()}
-              aria-label="Search payments"
-              className={`w-full pl-10 pr-4 py-2 rounded-lg text-sm ${
-                isDark
-                  ? 'bg-gray-700 text-white placeholder-gray-400'
-                  : 'bg-gray-100 text-gray-900 placeholder-gray-500'
-              } focus:outline-none focus:ring-2 focus:ring-brand-500 transition duration-250`}
+          <button
+            onClick={handleRefresh}
+            disabled={loading}
+            className={`p-2 rounded-lg transition duration-250 focus-ring ${
+              isDark
+                ? 'hover:bg-gray-700 text-gray-400 hover:text-white'
+                : 'hover:bg-gray-100 text-gray-500 hover:text-gray-700'
+            } disabled:opacity-50`}
+            aria-label="Refresh payments"
+            aria-busy={loading}
+          >
+            <RefreshCw
+              className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`}
             />
-          </div>
-          <button onClick={handleSearch} className="btn-brand">
-            Search
           </button>
         </div>
 
-        {/* Filter Panel */}
-        {showFilters && showFilterPanel && (
-          <div
-            className={`p-4 rounded-2xl mb-4 animate-slide-down ${
-              isDark ? 'bg-gray-700/30' : 'bg-gray-50'
-            }`}
-          >
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-              <div>
-                <label
-                  className={`block text-sm font-medium mb-1 ${
-                    isDark ? 'text-gray-300' : 'text-gray-700'
-                  }`}
-                >
-                  Status
-                </label>
-                <select
-                  value={filters.status}
-                  onChange={(e) =>
-                    setFilters((prev) => ({
-                      ...prev,
-                      status: e.target.value,
-                    }))
-                  }
-                  className={`w-full px-3 py-2 rounded-lg text-sm ${
-                    isDark
-                      ? 'bg-gray-600 text-white border-gray-500'
-                      : 'bg-white text-gray-900 border-gray-300'
-                  } border focus:outline-none focus:ring-2 focus:ring-brand-500 transition duration-250`}
-                >
-                  <option value="all">All Status</option>
-                  <option value="PAID">Paid</option>
-                  <option value="PENDING">Pending</option>
-                  <option value="FAILED">Failed</option>
-                  <option value="REFUNDED">Refunded</option>
-                  <option value="PARTIAL">Partial</option>
-                  <option value="PROCESSING">Processing</option>
-                  <option value="AUTHORIZED">Authorized</option>
-                  <option value="DECLINED">Declined</option>
-                  <option value="DISPUTED">Disputed</option>
-                  <option value="CANCELLED">Cancelled</option>
-                </select>
-              </div>
-              <div>
-                <label
-                  className={`block text-sm font-medium mb-1 ${
-                    isDark ? 'text-gray-300' : 'text-gray-700'
-                  }`}
-                >
-                  Payment Method
-                </label>
-                <select
-                  value={filters.paymentMethod}
-                  onChange={(e) =>
-                    setFilters((prev) => ({
-                      ...prev,
-                      paymentMethod: e.target.value,
-                    }))
-                  }
-                  className={`w-full px-3 py-2 rounded-lg text-sm ${
-                    isDark
-                      ? 'bg-gray-600 text-white border-gray-500'
-                      : 'bg-white text-gray-900 border-gray-300'
-                  } border focus:outline-none focus:ring-2 focus:ring-brand-500 transition duration-250`}
-                >
-                  <option value="all">All Methods</option>
-                  <option value="CASH">Cash</option>
-                  <option value="CREDIT_CARD">Credit Card</option>
-                  <option value="DEBIT_CARD">Debit Card</option>
-                  <option value="MOBILE_MONEY">Mobile Money</option>
-                  <option value="BANK_TRANSFER">Bank Transfer</option>
-                  <option value="GIFT_CARD">Gift Card</option>
-                  <option value="LOYALTY_POINTS">Loyalty Points</option>
-                  <option value="CHECK">Check</option>
-                  <option value="PAYPAL">PayPal</option>
-                  <option value="FLUTTERWAVE">Flutterwave</option>
-                  <option value="SQUARE">Square</option>
-                </select>
-              </div>
-              <div>
-                <label
-                  className={`block text-sm font-medium mb-1 ${
-                    isDark ? 'text-gray-300' : 'text-gray-700'
-                  }`}
-                >
-                  Provider
-                </label>
-                <select
-                  value={filters.provider}
-                  onChange={(e) =>
-                    setFilters((prev) => ({
-                      ...prev,
-                      provider: e.target.value,
-                    }))
-                  }
-                  className={`w-full px-3 py-2 rounded-lg text-sm ${
-                    isDark
-                      ? 'bg-gray-600 text-white border-gray-500'
-                      : 'bg-white text-gray-900 border-gray-300'
-                  } border focus:outline-none focus:ring-2 focus:ring-brand-500 transition duration-250`}
-                >
-                  <option value="all">All Providers</option>
-                  {providerOptions.map((code) => (
-                    <option key={code} value={code}>
-                      {getProviderName(code)}
-                    </option>
-                  ))}
-                </select>
-              </div>
-              <div>
-                <label
-                  className={`block text-sm font-medium mb-1 ${
-                    isDark ? 'text-gray-300' : 'text-gray-700'
-                  }`}
-                >
-                  Date Range
-                </label>
-                <div className="flex gap-2">
-                  <input
-                    type="date"
-                    value={filters.startDate}
-                    onChange={(e) =>
-                      setFilters((prev) => ({
-                        ...prev,
-                        startDate: e.target.value,
-                      }))
-                    }
-                    className={`flex-1 px-3 py-2 rounded-lg text-sm ${
-                      isDark
-                        ? 'bg-gray-600 text-white border-gray-500'
-                        : 'bg-white text-gray-900 border-gray-300'
-                    } border focus:outline-none focus:ring-2 focus:ring-brand-500 transition duration-250 tabular-nums`}
-                  />
-                  <input
-                    type="date"
-                    value={filters.endDate}
-                    onChange={(e) =>
-                      setFilters((prev) => ({
-                        ...prev,
-                        endDate: e.target.value,
-                      }))
-                    }
-                    className={`flex-1 px-3 py-2 rounded-lg text-sm ${
-                      isDark
-                        ? 'bg-gray-600 text-white border-gray-500'
-                        : 'bg-white text-gray-900 border-gray-300'
-                    } border focus:outline-none focus:ring-2 focus:ring-brand-500 transition duration-250 tabular-nums`}
-                  />
-                </div>
-              </div>
-            </div>
-            <div className="mt-4 flex justify-end gap-2">
-              <button
-                onClick={handleClearFilters}
-                className="text-sm text-danger-600 dark:text-danger-400 hover:text-danger-800 dark:hover:text-danger-300 transition duration-250 focus-ring rounded"
-              >
-                Clear Filters
-              </button>
-            </div>
-          </div>
-        )}
-
-        {/* Payments List */}
+        {/* List */}
         {loading ? (
           <div className="flex items-center justify-center py-8">
             <Loader2 className="w-6 h-6 animate-spin text-brand-600" />
@@ -937,9 +511,7 @@ export function PaymentHistory({
         ) : (
           <div className="space-y-3">
             {payments.map((payment) => {
-              const providerImageUrl = getProviderImageUrl(
-                payment.provider,
-              );
+              const providerImageUrl = getProviderImageUrl(payment.provider);
               const providerName = getProviderName(payment.provider);
               const methodLabel = paymentMethodLabel(payment);
 
@@ -954,7 +526,6 @@ export function PaymentHistory({
                 >
                   <div className="flex flex-wrap items-start justify-between gap-3">
                     <div className="flex items-start gap-3">
-                      {/* Provider Logo or Icon */}
                       <div
                         className={`p-2 rounded-lg ${getStatusColor(
                           payment.status,
@@ -987,7 +558,10 @@ export function PaymentHistory({
                               isDark ? 'text-white' : 'text-gray-900'
                             }`}
                           >
-                            {formatCurrency(payment.amount)}
+                            {formatCurrency(
+                              payment.amount,
+                              payment.currency ?? '',
+                            )}
                           </p>
                           <span
                             className={`px-2 py-0.5 text-2xs font-medium rounded-full flex items-center gap-1 ${getStatusColor(
@@ -999,29 +573,13 @@ export function PaymentHistory({
                           </span>
                           {payment.provider && (
                             <span
-                              className={`px-2 py-0.5 text-2xs font-medium rounded-full flex items-center gap-1 ${
+                              className={`px-2 py-0.5 text-2xs font-medium rounded-full ${
                                 isDark
                                   ? 'bg-gray-700 text-gray-300'
                                   : 'bg-gray-100 text-gray-600'
                               }`}
                               aria-label={`Provider: ${providerName}`}
                             >
-                              {providerImageUrl && (
-                                <span className="relative w-3 h-3">
-                                  <Image
-                                    src={providerImageUrl}
-                                    alt=""
-                                    width={12}
-                                    height={12}
-                                    className="rounded object-contain"
-                                    onError={(e) => {
-                                      (
-                                        e.target as HTMLImageElement
-                                      ).style.display = 'none';
-                                    }}
-                                  />
-                                </span>
-                              )}
                               {providerName}
                             </span>
                           )}
@@ -1036,18 +594,6 @@ export function PaymentHistory({
                             {payment.reference ||
                               `PAY-${payment.id.slice(0, 8)}`}
                           </span>
-                          <button
-                            onClick={() =>
-                              handleCopyReference(
-                                payment.reference || payment.id,
-                              )
-                            }
-                            className="p-1 rounded hover:bg-gray-200 dark:hover:bg-gray-600 transition duration-250 focus-ring"
-                            title="Copy reference"
-                            aria-label="Copy payment reference"
-                          >
-                            <Copy className="w-3 h-3 text-gray-400" />
-                          </button>
                           <span className="w-px h-4 bg-gray-300 dark:bg-gray-600" />
                           <span
                             className={
@@ -1144,9 +690,7 @@ export function PaymentHistory({
                   }))
                 }
                 disabled={pagination.page === pagination.totalPages}
-                aria-disabled={
-                  pagination.page === pagination.totalPages
-                }
+                aria-disabled={pagination.page === pagination.totalPages}
                 className={`px-3 py-1 rounded-lg text-sm transition duration-250 disabled:opacity-50 focus-ring ${
                   isDark
                     ? 'border-gray-600 text-gray-300 hover:bg-gray-700'
@@ -1164,20 +708,13 @@ export function PaymentHistory({
       {showReceiptModal && selectedPayment && (
         <div className="fixed inset-0 z-modal flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm overflow-y-auto custom-scrollbar animate-fade-in">
           <div className="max-w-2xl w-full">
-            {/*
-              Keyed on the payment id so React remounts the receipt
-              when the user switches payments without closing the
-              modal. Resets any internal state (scroll position,
-              transient copy indicator) that would otherwise leak
-              between views.
-            */}
             <PaymentReceipt
               key={selectedPayment.id}
               payment={{
                 id: selectedPayment.id,
-                reference:
-                  selectedPayment.reference || selectedPayment.id,
+                reference: selectedPayment.reference || selectedPayment.id,
                 amount: selectedPayment.amount,
+                currency: selectedPayment.currency,
                 paymentMethod: selectedPayment.paymentMethod,
                 status: selectedPayment.status,
                 processedAt: selectedPayment.processedAt,
@@ -1185,8 +722,7 @@ export function PaymentHistory({
                 metadata: selectedPayment.metadata,
                 sale: selectedPayment.sale
                   ? {
-                      receiptNumber:
-                        selectedPayment.sale.receiptNumber,
+                      receiptNumber: selectedPayment.sale.receiptNumber,
                       items: selectedPayment.sale.items || [],
                     }
                   : undefined,
@@ -1200,8 +736,7 @@ export function PaymentHistory({
                 businessUnit: selectedPayment.businessUnit
                   ? {
                       name: selectedPayment.businessUnit.name,
-                      address:
-                        selectedPayment.businessUnit.address || '',
+                      address: selectedPayment.businessUnit.address || '',
                       phone: selectedPayment.businessUnit.phone || '',
                       email: selectedPayment.businessUnit.email || '',
                     }
@@ -1216,4 +751,4 @@ export function PaymentHistory({
   );
 }
 
-export default PaymentHistory;
+export default PaymentList;

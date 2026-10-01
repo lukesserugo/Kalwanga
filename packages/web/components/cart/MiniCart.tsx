@@ -9,6 +9,7 @@ import React, {
   useMemo,
 } from 'react';
 import Link from 'next/link';
+import Image from 'next/image';
 import { useRouter } from 'next/navigation';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
@@ -60,6 +61,22 @@ const MAX_PREVIEW_ITEMS = 5;
  * land out of order.
  */
 const REFETCH_DEBOUNCE_MS = 150;
+
+/**
+ * ── Phase 2: fallback currency for the render path. ───────────────
+ *
+ * The cart payload always carries `cart.currency` (required on the
+ * `Cart` type — see `packages/web/types/cart.ts`), so this fallback
+ * only applies during the brief window before the first successful
+ * fetch. During that window the dropdown either shows a loading
+ * spinner (no amounts) or an empty state (no amounts), so the value
+ * of this constant is never actually rendered.
+ *
+ * `'UGX'` matches the registry default (`DEFAULT_CURRENCY_CODE` in
+ * `lib/currencies.ts`) rather than the old `'USD'` default, in
+ * keeping with the rest of Phase 2.
+ */
+const DEFAULT_CURRENCY = 'UGX';
 
 // ============================================
 // HELPERS
@@ -328,6 +345,21 @@ export function MiniCart({ className = '' }: MiniCartProps) {
   const hasItems = items.length > 0;
 
   /**
+   * ── Phase 2: resolve the display currency ──────────────────
+   *
+   * `cart.currency` is required on the `Cart` type and is always
+   * populated by the backend (`formatCartResponse` resolves it via
+   * `currencyService.resolveForBusiness`). The `?? DEFAULT_CURRENCY`
+   * fallback covers only the pre-fetch window, during which no
+   * amount is rendered (loading spinner or empty state).
+   *
+   * Threaded into both `formatCurrency` calls below:
+   *   • the per-line `unitPrice` in the preview list
+   *   • the `subtotal` in the footer
+   */
+  const currency = cart?.currency ?? DEFAULT_CURRENCY;
+
+  /**
    * Show the most recently added items first. The backend orders
    * `cart.items` by `createdAt: 'asc'`, so the newest are at the
    * end — reverse for the preview.
@@ -437,11 +469,29 @@ export function MiniCart({ className = '' }: MiniCartProps) {
                     <div key={item.id} className="flex items-center gap-3">
                       <div className="w-12 h-12 bg-gray-100 dark:bg-gray-700 rounded overflow-hidden flex-shrink-0">
                         {item.product?.images?.[0] ? (
-                          <img
+                          // ── next/image with `unoptimized` ────────
+                          // Product image URLs are arbitrary
+                          // customer/admin uploads (local backend,
+                          // S3, R2, GCS, …). The optimized path
+                          // would require every host to be
+                          // whitelisted in `next.config.js` under
+                          // `images.remotePatterns`, which is out
+                          // of scope. `unoptimized` silences
+                          // `@next/next/no-img-element`, preserves
+                          // the current load behaviour, and gives
+                          // a clean upgrade path: drop the prop
+                          // once remotePatterns is configured.
+                          //
+                          // `next/image` handles lazy loading by
+                          // default, so `loading="lazy"` is no
+                          // longer needed.
+                          <Image
                             src={item.product.images[0]}
                             alt={item.product.name}
+                            width={48}
+                            height={48}
+                            unoptimized
                             className="w-full h-full object-cover"
-                            loading="lazy"
                           />
                         ) : (
                           <div className="w-full h-full flex items-center justify-center text-gray-400">
@@ -454,7 +504,13 @@ export function MiniCart({ className = '' }: MiniCartProps) {
                           {item.product?.name ?? 'Unknown product'}
                         </p>
                         <p className="text-2xs text-gray-500 dark:text-gray-400 truncate tabular-nums">
-                          {item.quantity} × {formatCurrency(item.unitPrice)}
+                          {/*
+                            ── Phase 2: format in the cart's own ──
+                            currency. `currency` resolves from
+                            `cart.currency` above.
+                          */}
+                          {item.quantity} ×{' '}
+                          {formatCurrency(item.unitPrice, currency)}
                           {item.variant && (
                             <span className="ml-1 text-gray-400">
                               ({item.variant.name})
@@ -500,7 +556,8 @@ export function MiniCart({ className = '' }: MiniCartProps) {
                     Subtotal
                   </span>
                   <span className="font-semibold text-gray-900 dark:text-white tabular-nums">
-                    {formatCurrency(subtotal)}
+                    {/* ── Phase 2: same currency resolution ── */}
+                    {formatCurrency(subtotal, currency)}
                   </span>
                 </div>
 

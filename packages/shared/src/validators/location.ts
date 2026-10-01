@@ -5,7 +5,7 @@ import {
   type CreateLocationInput,
   type ListLocationsQueryInput,
   type UpdateLocationInput,
-} from "../schemas/location";
+} from "../../../shared/src/schemas/location";
 
 export class LocationValidation {
   static validateCreateLocation(data: unknown): CreateLocationInput {
